@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 
 interface Product {
@@ -36,7 +36,9 @@ export default function Products() {
   const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
 
   const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkMode, setBulkMode] = useState<'import' | 'stock_update'>('import');
   const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [parsedImportProducts, setParsedImportProducts] = useState<any[]>([]);
   const [bulkStatus, setBulkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
   const [formData, setFormData] = useState({
@@ -57,6 +59,180 @@ export default function Products() {
           setCategories(cats);
       })
       .finally(() => setLoading(false));
+  };
+
+  const downloadCSVTemplate = () => {
+    const headers = ['Name', 'SKU', 'Category', 'Cost Price', 'Selling Price', 'Stock Quantity', 'Barcode', 'Brand', 'Unit of Measure', 'Min Stock Level'];
+    const sampleRows = [
+      ['Ideal Milk 160g', 'MLK-160', 'Dairy & Frozen', '5.50', '7.00', '50', '6001001', 'Nestlé', 'Cans', '15'],
+      ['Milo Beverage 400g', 'MLO-400', 'Beverages', '22.00', '28.50', '40', '6001002', 'Nestlé', 'Tins', '10'],
+      ['Bel-Aqua Water 750ml', 'WAT-750', 'Beverages', '1.50', '2.50', '100', '6001007', 'Bel-Beverages', 'Bottles', '25']
+    ];
+    const csvContent = [headers.join(','), ...sampleRows.map(r => r.map(cell => `"${cell}"`).join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', 'products_bulk_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const parseCSVLines = (text: string) => {
+    const lines = text.split(/\r\n|\n/);
+    const rows: string[][] = [];
+    for (let line of lines) {
+      if (!line.trim()) continue;
+      const row: string[] = [];
+      let insideQuote = false;
+      let entry = '';
+      for (let i = 0; i < line.length; i++) {
+        const char = line[i];
+        if (char === '"') {
+          insideQuote = !insideQuote;
+        } else if (char === ',' && !insideQuote) {
+          row.push(entry.trim());
+          entry = '';
+        } else {
+          entry += char;
+        }
+      }
+      row.push(entry.trim());
+      rows.push(row);
+    }
+    return rows;
+  };
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0] || null;
+    setBulkFile(file);
+    setBulkStatus(null);
+    setParsedImportProducts([]);
+
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      const rows = parseCSVLines(text);
+      if (rows.length < 2) {
+        setBulkStatus({ type: 'error', message: 'CSV file appears empty or missing rows.' });
+        return;
+      }
+
+      if (bulkMode === 'import') {
+        const headers = rows[0].map(h => h.toLowerCase().replace(/[^a-z0-9_]/g, '_'));
+        const parsed: any[] = [];
+
+        for (let i = 1; i < rows.length; i++) {
+          const row = rows[i];
+          if (row.length === 0 || !row.some(cell => cell.trim())) continue;
+
+          let item: any = {};
+          headers.forEach((h, idx) => {
+            const val = row[idx] || '';
+            if (h.includes('name')) item.name = val;
+            else if (h.includes('sku')) item.sku = val;
+            else if (h.includes('cat')) item.category = val;
+            else if (h.includes('cost')) item.cost_price = parseFloat(val) || 0;
+            else if (h.includes('sell') || h.includes('price')) item.selling_price = parseFloat(val) || 0;
+            else if (h.includes('qty') || h.includes('stock')) item.stock_quantity = parseInt(val, 10) || 0;
+            else if (h.includes('barcode')) item.barcode = val;
+            else if (h.includes('brand')) item.brand = val;
+            else if (h.includes('unit') || h.includes('uom')) item.unit_of_measure = val;
+            else if (h.includes('min')) item.min_stock_level = parseInt(val, 10) || 10;
+          });
+
+          // Fallback positional indexing if headers didn't match
+          if (!item.name && row[0]) item.name = row[0];
+          if (!item.sku && row[1]) item.sku = row[1];
+          if (!item.category && row[2]) item.category = row[2];
+
+          if (item.name) {
+            parsed.push(item);
+          }
+        }
+
+        if (parsed.length === 0) {
+          setBulkStatus({ type: 'error', message: 'Could not parse any valid product rows from CSV.' });
+        } else {
+          setParsedImportProducts(parsed);
+        }
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleBulkSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkFile) return;
+
+    if (bulkMode === 'import') {
+      if (parsedImportProducts.length === 0) {
+        setBulkStatus({ type: 'error', message: 'No valid products to import.' });
+        return;
+      }
+
+      try {
+        const res = await fetchApi('/products/bulk-import', {
+          method: 'POST',
+          body: JSON.stringify({ products: parsedImportProducts })
+        });
+
+        setBulkStatus({
+          type: 'success',
+          message: `Success! ${res.importedCount || 0} new products added, ${res.updatedCount || 0} existing products updated.`
+        });
+        loadProducts();
+        setTimeout(() => {
+          setShowBulkModal(false);
+          setBulkStatus(null);
+          setBulkFile(null);
+          setParsedImportProducts([]);
+        }, 2000);
+      } catch (err: any) {
+        setBulkStatus({ type: 'error', message: err.message });
+      }
+    } else {
+      // Stock update mode
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const text = event.target?.result as string;
+        const rows = parseCSVLines(text);
+        const updates = [];
+        
+        for (let i = 1; i < rows.length; i++) {
+          const [sku, qty] = rows[i];
+          const product = products.find(p => p.sku === sku);
+          if (product && !isNaN(parseInt(qty))) {
+            updates.push({ id: product.id, quantity_change: parseInt(qty) });
+          }
+        }
+        
+        if (updates.length === 0) {
+          setBulkStatus({ type: 'error', message: 'No matching products found by SKU.' });
+          return;
+        }
+
+        try {
+          await fetchApi('/products/bulk-stock-update', {
+            method: 'POST',
+            body: JSON.stringify({ updates, reason: 'Bulk CSV Stock Adjustment' })
+          });
+          setBulkStatus({ type: 'success', message: `Successfully updated stock for ${updates.length} products.` });
+          loadProducts();
+          setTimeout(() => {
+            setShowBulkModal(false);
+            setBulkStatus(null);
+            setBulkFile(null);
+          }, 2000);
+        } catch (err: any) {
+          setBulkStatus({ type: 'error', message: err.message });
+        }
+      };
+      reader.readAsText(bulkFile);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -427,65 +603,181 @@ export default function Products() {
       )}
 
       {showBulkModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-sm max-w-md w-full p-8 border border-slate-200 shadow-2xl">
-            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
-               <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center text-slate-600">
-                  <Upload size={20} />
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-md max-w-2xl w-full p-6 sm:p-8 border border-slate-200 shadow-2xl my-8">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+               <div className="flex items-center gap-3">
+                 <div className="w-10 h-10 bg-blue-50 text-blue-600 rounded flex items-center justify-center font-bold">
+                    <Upload size={20} />
+                 </div>
+                 <div>
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">Bulk Product Import & Operations</h2>
+                    <p className="text-[11px] text-slate-500 font-medium">Add multiple products or update inventory via CSV upload</p>
+                 </div>
                </div>
-               <div>
-                  <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-widest">Bulk Stock Update</h2>
-                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-tight">CSV Protocol Upload</p>
-               </div>
+               <button 
+                 onClick={() => {
+                   setShowBulkModal(false);
+                   setBulkFile(null);
+                   setParsedImportProducts([]);
+                   setBulkStatus(null);
+                 }} 
+                 className="text-slate-400 hover:text-slate-600 p-1 rounded"
+               >
+                 <X size={18} />
+               </button>
             </div>
             
-            <form onSubmit={handleBulkUpload} className="space-y-6">
-              <div className="bg-blue-50 border border-blue-100 rounded-sm p-4">
-                <div className="flex gap-2 text-blue-800 mb-2">
-                   <FileText size={16} />
-                   <span className="text-[11px] font-black uppercase tracking-widest">CSV Requirements</span>
+            {/* Operation Mode Tabs */}
+            <div className="flex border-b border-slate-200 my-5 text-xs font-bold">
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkMode('import');
+                  setBulkStatus(null);
+                  setParsedImportProducts([]);
+                }}
+                className={`pb-2.5 px-4 transition-colors border-b-2 ${
+                  bulkMode === 'import'
+                    ? 'border-blue-600 text-blue-600 font-black'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Import New Products (CSV)
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkMode('stock_update');
+                  setBulkStatus(null);
+                  setParsedImportProducts([]);
+                }}
+                className={`pb-2.5 px-4 transition-colors border-b-2 ${
+                  bulkMode === 'stock_update'
+                    ? 'border-blue-600 text-blue-600 font-black'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                Stock Quantity Adjustment (CSV)
+              </button>
+            </div>
+
+            <form onSubmit={handleBulkSubmit} className="space-y-5">
+              {/* Instructions Box & Template Download */}
+              <div className="bg-slate-50 border border-slate-200 rounded p-4 text-xs space-y-2">
+                <div className="flex items-center justify-between">
+                   <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                      <FileText size={15} className="text-blue-600" />
+                      <span>{bulkMode === 'import' ? 'Bulk Product Import Template' : 'Stock Adjustment Template'}</span>
+                   </div>
+
+                   {bulkMode === 'import' && (
+                     <button
+                       type="button"
+                       onClick={downloadCSVTemplate}
+                       className="px-2.5 py-1 bg-white hover:bg-slate-100 text-blue-600 border border-slate-300 rounded font-bold text-[11px] transition flex items-center gap-1"
+                     >
+                       <FileText size={13} /> Download Sample CSV Template
+                     </button>
+                   )}
                 </div>
-                <p className="text-[12px] text-blue-700/80 leading-relaxed">
-                  Upload a CSV file with the following headers:<br/>
-                  <code className="bg-white px-1 font-mono font-bold">SKU,QuantityChange</code><br/>
-                  Example: <code className="bg-white px-1 font-mono">SKU-001, 10</code>
-                </p>
+
+                {bulkMode === 'import' ? (
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    Your CSV should contain columns for <span className="font-bold text-slate-800">Name, SKU, Category, Cost Price, Selling Price, Stock Quantity, Barcode, Brand, Unit of Measure</span>. If an SKU matches an existing product, its stock will be incremented and details updated.
+                  </p>
+                ) : (
+                  <p className="text-slate-600 leading-relaxed text-[11px]">
+                    CSV must include headers: <code className="bg-white px-1.5 py-0.5 rounded font-mono font-bold text-slate-800 border">SKU, QuantityChange</code> (e.g. <code className="bg-white px-1 font-mono">MLK-160, 20</code>).
+                  </p>
+                )}
               </div>
 
-              <div className="space-y-2">
-                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest">Select CSV File</label>
+              {/* File Input */}
+              <div className="space-y-1.5">
+                <label className="block text-xs font-bold text-slate-700">Select CSV File to Upload</label>
                 <input 
                   required
                   type="file" 
                   accept=".csv" 
-                  onChange={e => setBulkFile(e.target.files?.[0] || null)}
-                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-[11px] file:font-black file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition-all cursor-pointer border border-dashed border-slate-200 p-2 rounded-sm"
+                  onChange={handleFileChange}
+                  className="w-full text-xs text-slate-600 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition cursor-pointer border border-dashed border-slate-300 p-2 rounded bg-white"
                 />
               </div>
 
+              {/* Parsed Preview Table for Product Import */}
+              {bulkMode === 'import' && parsedImportProducts.length > 0 && (
+                <div className="space-y-2 border border-slate-200 rounded overflow-hidden">
+                  <div className="bg-slate-100 px-3 py-2 text-xs font-bold text-slate-700 flex justify-between items-center">
+                    <span>Parsed CSV Preview ({parsedImportProducts.length} Products Found)</span>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded font-bold">Ready to Import</span>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 text-xs">
+                    <table className="w-full text-left border-collapse">
+                      <thead className="bg-slate-50 text-[10px] uppercase text-slate-400 font-bold sticky top-0">
+                        <tr>
+                          <th className="p-2">Name</th>
+                          <th className="p-2">SKU</th>
+                          <th className="p-2">Category</th>
+                          <th className="p-2 text-right">Cost</th>
+                          <th className="p-2 text-right">Selling</th>
+                          <th className="p-2 text-right">Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {parsedImportProducts.slice(0, 8).map((p, idx) => (
+                          <tr key={idx} className="hover:bg-slate-50">
+                            <td className="p-2 font-bold text-slate-800 truncate max-w-[140px]">{p.name}</td>
+                            <td className="p-2 font-mono text-[11px] text-slate-500">{p.sku || 'Auto'}</td>
+                            <td className="p-2 text-slate-600">{p.category || 'General'}</td>
+                            <td className="p-2 text-right text-slate-600">{formatGHS(p.cost_price || 0)}</td>
+                            <td className="p-2 text-right font-bold text-slate-900">{formatGHS(p.selling_price || 0)}</td>
+                            <td className="p-2 text-right font-bold text-emerald-600">{p.stock_quantity || 0}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                    {parsedImportProducts.length > 8 && (
+                      <div className="p-2 text-center text-[11px] text-slate-500 bg-slate-50 border-t border-slate-100 font-medium">
+                        ...and {parsedImportProducts.length - 8} more products in CSV file
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Status Message */}
               {bulkStatus && (
-                <div className={`p-3 rounded-sm text-[12px] font-bold ${
-                  bulkStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
+                <div className={`p-3 rounded text-xs font-bold ${
+                  bulkStatus.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-red-50 text-red-800 border border-red-200'
                 }`}>
                   {bulkStatus.message}
                 </div>
               )}
 
-              <div className="flex gap-3 pt-4">
+              {/* Actions Footer */}
+              <div className="flex gap-3 pt-3 border-t border-slate-100">
                 <button 
                   type="button" 
                   disabled={!!bulkStatus && bulkStatus.type === 'success'}
-                  onClick={() => setShowBulkModal(false)} 
-                  className="flex-1 py-3 px-4 border border-slate-200 rounded-sm text-[11px] font-black text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
+                  onClick={() => {
+                    setShowBulkModal(false);
+                    setBulkFile(null);
+                    setParsedImportProducts([]);
+                    setBulkStatus(null);
+                  }} 
+                  className="flex-1 py-2.5 px-4 border border-slate-300 rounded text-xs font-bold text-slate-600 hover:bg-slate-50 transition"
                 >
                   Cancel
                 </button>
                 <button 
                   type="submit"
-                  disabled={!bulkFile || (!!bulkStatus && bulkStatus.type === 'success')}
-                  className="flex-1 py-3 px-4 bg-slate-900 text-white rounded-sm font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-30"
+                  disabled={!bulkFile || (bulkMode === 'import' && parsedImportProducts.length === 0) || (!!bulkStatus && bulkStatus.type === 'success')}
+                  className="flex-1 py-2.5 px-4 bg-slate-900 hover:bg-blue-600 text-white rounded text-xs font-bold transition shadow-sm disabled:opacity-40"
                 >
-                  Confirm Upload
+                  {bulkMode === 'import' ? `Import ${parsedImportProducts.length || ''} Products` : 'Apply Stock Updates'}
                 </button>
               </div>
             </form>

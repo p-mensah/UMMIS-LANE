@@ -194,6 +194,152 @@ function initDb() {
       db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Staff User', 'staff@staff.com', hash, 'staff');
     }
   }
+
+  // Populate initial demo database if fresh
+  seedDatabase(db);
+}
+
+function seedDatabase(dbInstance: any) {
+  try {
+    const prodCount: any = dbInstance.prepare('SELECT COUNT(*) as count FROM products').get();
+    if (prodCount && prodCount.count >= 5) return;
+
+    console.log('Seeding demo database for Ummis Lane Enterprise...');
+
+    const categories = ['Beverages', 'Groceries', 'Bakery & Pastry', 'Household & Cleaning', 'Snacks & Sweets', 'Dairy & Frozen', 'Personal Care'];
+    for (const cat of categories) {
+      dbInstance.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)').run(cat);
+    }
+
+    const adminUser: any = dbInstance.prepare('SELECT id FROM users WHERE role = ?').get('admin');
+    const staffUser: any = dbInstance.prepare('SELECT id FROM users WHERE role = ?').get('staff');
+    const adminId = adminUser?.id || 1;
+    const staffId = staffUser?.id || 2;
+
+    dbInstance.prepare('INSERT OR IGNORE INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(
+      'Nestlé Ghana Ltd', 'John Addo', 'orders@nestle.com.gh', '0302111222', 'Industrial Area, Tema'
+    );
+    dbInstance.prepare('INSERT OR IGNORE INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(
+      'GB Foods Ghana', 'Sarah Quaye', 'sales@gbfoods.com', '0302333444', 'Spintex Road, Accra'
+    );
+    dbInstance.prepare('INSERT OR IGNORE INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(
+      'Wilmar Africa Ltd', 'Emmanuel Darko', 'info@wilmar.com', '0302555666', 'Heavy Industrial Area, Tema'
+    );
+
+    dbInstance.prepare('INSERT OR IGNORE INTO customers (name, phone, email, loyalty_points) VALUES (?, ?, ?, ?)').run('Ama Serwaa', '0244123456', 'ama@gmail.com', 120);
+    dbInstance.prepare('INSERT OR IGNORE INTO customers (name, phone, email, loyalty_points) VALUES (?, ?, ?, ?)').run('Kojo Mensah', '0208987654', 'kojo.m@gmail.com', 85);
+    dbInstance.prepare('INSERT OR IGNORE INTO customers (name, phone, email, loyalty_points) VALUES (?, ?, ?, ?)').run('Abena Osei', '0277334455', 'abena@yahoo.com', 210);
+
+    const sampleProducts = [
+      { name: 'Ideal Milk 160g', sku: 'MLK-160', category: 'Dairy & Frozen', cost_price: 5.50, selling_price: 7.00, stock_quantity: 8, barcode: '6001001', brand: 'Nestlé', unit_of_measure: 'Cans', min_stock_level: 15 },
+      { name: 'Milo Beverage 400g', sku: 'MLO-400', category: 'Beverages', cost_price: 22.00, selling_price: 28.50, stock_quantity: 45, barcode: '6001002', brand: 'Nestlé', unit_of_measure: 'Tins', min_stock_level: 10 },
+      { name: 'Gino Tomato Paste 70g', sku: 'GNO-070', category: 'Groceries', cost_price: 2.20, selling_price: 3.00, stock_quantity: 3, barcode: '6001003', brand: 'Gino', unit_of_measure: 'Sachets', min_stock_level: 20 },
+      { name: 'Royal Aroma Rice 5kg', sku: 'RICE-05K', category: 'Groceries', cost_price: 85.00, selling_price: 110.00, stock_quantity: 0, barcode: '6001004', brand: 'Royal Aroma', unit_of_measure: 'Bags', min_stock_level: 5 },
+      { name: 'Frytol Cooking Oil 1L', sku: 'OIL-01L', category: 'Groceries', cost_price: 32.00, selling_price: 42.00, stock_quantity: 28, barcode: '6001005', brand: 'Frytol', unit_of_measure: 'Bottles', min_stock_level: 8 },
+      { name: 'Geisha Mackerel 425g', sku: 'GSH-425', category: 'Groceries', cost_price: 14.00, selling_price: 18.50, stock_quantity: 18, barcode: '6001006', brand: 'Geisha', unit_of_measure: 'Cans', min_stock_level: 10 },
+      { name: 'Bel-Aqua Mineral Water 750ml', sku: 'WAT-750', category: 'Beverages', cost_price: 1.50, selling_price: 2.50, stock_quantity: 120, barcode: '6001007', brand: 'Bel-Beverages', unit_of_measure: 'Bottles', min_stock_level: 30 },
+      { name: 'Key Soap 800g', sku: 'SOAP-800', category: 'Household & Cleaning', cost_price: 18.00, selling_price: 24.00, stock_quantity: 4, barcode: '6001008', brand: 'Unilever', unit_of_measure: 'Bars', min_stock_level: 10 },
+      { name: 'Pepsodent Toothpaste 175g', sku: 'PEP-175', category: 'Personal Care', cost_price: 12.00, selling_price: 16.00, stock_quantity: 35, barcode: '6001009', brand: 'Pepsodent', unit_of_measure: 'Tubes', min_stock_level: 10 },
+      { name: 'This Way Chocolate Drink 30g', sku: 'TSW-030', category: 'Beverages', cost_price: 1.80, selling_price: 2.50, stock_quantity: 85, barcode: '6001010', brand: 'This Way', unit_of_measure: 'Sachets', min_stock_level: 25 }
+    ];
+
+    for (const p of sampleProducts) {
+      dbInstance.prepare(`
+        INSERT OR IGNORE INTO products (name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, min_stock_level)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(p.name, p.sku, p.category, p.cost_price, p.selling_price, p.stock_quantity, p.barcode, p.brand, p.unit_of_measure, p.min_stock_level);
+    }
+
+    const prods = dbInstance.prepare('SELECT id, name, cost_price, selling_price FROM products').all() as any[];
+
+    if (prods.length > 1) {
+      dbInstance.prepare('INSERT INTO price_history (product_id, old_selling_price, new_selling_price, changed_at) VALUES (?, ?, ?, datetime("now", "-15 days"))').run(prods[1].id, 25.00, 28.50);
+      dbInstance.prepare('INSERT INTO price_history (product_id, old_selling_price, new_selling_price, changed_at) VALUES (?, ?, ?, datetime("now", "-30 days"))').run(prods[3].id, 100.00, 110.00);
+    }
+
+    for (const p of prods) {
+      dbInstance.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change, created_at) VALUES (?, ?, ?, ?, datetime("now", "-20 days"))').run(
+        p.id, adminId, 'Initial Stock Count Audit', 50
+      );
+    }
+    if (prods.length > 0) {
+      dbInstance.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change, created_at) VALUES (?, ?, ?, ?, datetime("now", "-5 days"))').run(
+        prods[0].id, adminId, 'Damaged Box Write-off', -2
+      );
+    }
+    if (prods.length > 2) {
+      dbInstance.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change, created_at) VALUES (?, ?, ?, ?, datetime("now", "-2 days"))').run(
+        prods[2].id, adminId, 'Stock Recount Verification', -5
+      );
+    }
+
+    if (prods.length > 0) {
+      const pRes1 = dbInstance.prepare('INSERT INTO purchases (user_id, supplier_name, supplier_contact, total_amount, created_at) VALUES (?, ?, ?, ?, datetime("now", "-12 days"))').run(
+        adminId, 'Nestlé Ghana Ltd', '0302111222', 1500.00
+      );
+      const pId1 = pRes1.lastInsertRowid;
+      dbInstance.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)').run(pId1, prods[0].id, 100, 5.50);
+      if (prods.length > 1) {
+        dbInstance.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)').run(pId1, prods[1].id, 40, 22.00);
+      }
+
+      const pRes2 = dbInstance.prepare('INSERT INTO purchases (user_id, supplier_name, supplier_contact, total_amount, created_at) VALUES (?, ?, ?, ?, datetime("now", "-3 days"))').run(
+        adminId, 'Wilmar Africa Ltd', '0302555666', 2400.00
+      );
+      const pId2 = pRes2.lastInsertRowid;
+      if (prods.length > 4) {
+        dbInstance.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)').run(pId2, prods[4].id, 50, 32.00);
+      }
+      if (prods.length > 6) {
+        dbInstance.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)').run(pId2, prods[6].id, 150, 1.50);
+      }
+    }
+
+    const shift1 = dbInstance.prepare('INSERT INTO shifts (user_id, start_time, end_time, starting_cash, ending_cash, expected_cash, status) VALUES (?, datetime("now", "-1 day", "-8 hours"), datetime("now", "-1 day"), 200, 850, 850, "closed")').run(staffId);
+    const activeShift = dbInstance.prepare('INSERT INTO shifts (user_id, start_time, starting_cash, status) VALUES (?, datetime("now", "-4 hours"), 250, "open")').run(staffId);
+    const shiftId = activeShift.lastInsertRowid;
+
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const daysAgo = i;
+      const numSales = 3;
+      for (let s = 0; s < numSales; s++) {
+        const isToday = daysAgo === 0;
+        const hourOffset = 8 + (s * 3);
+        const created_at = isToday 
+          ? new Date(now.getFullYear(), now.getMonth(), now.getDate(), hourOffset, 15).toISOString().replace('T', ' ').substring(0, 19)
+          : new Date(now.getTime() - daysAgo * 24 * 3600 * 1000 + s * 3600 * 1000).toISOString().replace('T', ' ').substring(0, 19);
+
+        const userId = (s % 2 === 0) ? staffId : adminId;
+        const pm = s % 3 === 0 ? 'Momo' : (s % 3 === 1 ? 'Cash' : 'Card');
+        const custId = (s % 3) + 1;
+
+        const p1 = prods[s % prods.length];
+        const p2 = prods[(s + 3) % prods.length];
+        const qty1 = Math.floor(Math.random() * 3) + 1;
+        const qty2 = Math.floor(Math.random() * 2) + 1;
+        const total = (p1.selling_price * qty1) + (p2.selling_price * qty2);
+
+        const saleRes = dbInstance.prepare(`
+          INSERT INTO sales (user_id, customer_id, shift_id, total_amount, payment_method, status, created_at)
+          VALUES (?, ?, ?, ?, ?, 'completed', ?)
+        `).run(userId, custId, isToday ? shiftId : shift1.lastInsertRowid, total, pm, created_at);
+
+        const sId = saleRes.lastInsertRowid;
+        dbInstance.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, cost_price) VALUES (?, ?, ?, ?, ?)').run(sId, p1.id, qty1, p1.selling_price, p1.cost_price);
+        dbInstance.prepare('INSERT INTO sale_items (sale_id, product_id, quantity, unit_price, cost_price) VALUES (?, ?, ?, ?, ?)').run(sId, p2.id, qty2, p2.selling_price, p2.cost_price);
+      }
+    }
+
+    dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now", "-2 days"))').run('Generator Diesel Fuel', 180.00, adminId);
+    dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now", "-5 days"))').run('Store Utility Bill (Electricity)', 350.00, adminId);
+    dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now", "-10 days"))').run('Packaging & Shopping Bags', 120.00, adminId);
+    dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now"))').run('Store Cleaner Weekly Stipend', 150.00, adminId);
+
+    console.log('Demo database successfully populated!');
+  } catch (err) {
+    console.error('Error seeding database:', err);
+  }
 }
 
 // --- App Setup ---
@@ -368,7 +514,7 @@ app.post('/api/sales', authenticate, (req: any, res) => {
   
   const setupSale = db.transaction((saleItems) => {
     // Check for active shift
-    const activeShift = db.prepare('SELECT id FROM shifts WHERE user_id = ? AND status = "open"').get(req.user.id) as any;
+    const activeShift = db.prepare("SELECT id FROM shifts WHERE user_id = ? AND status = 'open'").get(req.user.id) as any;
     const shiftId = activeShift ? activeShift.id : null;
 
     const saleResult = db.prepare('INSERT INTO sales (user_id, total_amount, customer_id, shift_id, payment_method) VALUES (?, ?, ?, ?, ?)').run(
@@ -465,7 +611,7 @@ app.get('/api/sales', authenticate, (req, res) => {
 app.get('/api/sales/:id', authenticate, (req, res) => {
   try {
     const sale = db.prepare(`
-      SELECT sales.*, users.name as user_name, customers.name as customer_name
+      SELECT sales.*, users.name as user_name, customers.name as customer_name, customers.phone as customer_phone, customers.email as customer_email
       FROM sales
       JOIN users ON sales.user_id = users.id
       LEFT JOIN customers ON sales.customer_id = customers.id
@@ -561,7 +707,7 @@ app.get('/api/reports/summary', authenticate, (req, res) => {
 
   const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products').get() as {count: number};
   const lowStock = db.prepare('SELECT COUNT(*) as count FROM products WHERE stock_quantity <= COALESCE(min_stock_level, ?)').get(threshold) as {count: number};
-  const totalSalesValue = db.prepare('SELECT SUM(total_amount) as total FROM sales WHERE status = "completed"').get() as {total: number};
+  const totalSalesValue = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed'").get() as {total: number};
   const todaySales = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed' AND date(created_at) = date('now')").get() as {total: number};
   const todayExpenses = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date(expense_date) = date('now')").get() as {total: number};
 
@@ -679,46 +825,87 @@ app.get('/api/reports/best-sellers', authenticate, (req, res) => {
 });
 
 app.get('/api/reports/sales-trends', authenticate, (req, res) => {
-  const { timeframe } = req.query; // 'weekly', 'monthly', 'yearly'
-  let groupBy = '';
-  let format = '';
-  let limit = 12;
-
-  switch (timeframe) {
-    case 'weekly':
-      // Showing by day for last 7 days
-      groupBy = "date(created_at)";
-      format = "date(created_at)";
-      limit = 7;
-      break;
-    case 'monthly':
-      // Showing by month for last 12 months
-      groupBy = "strftime('%Y-%m', created_at)";
-      format = "strftime('%Y-%m', created_at)";
-      limit = 12;
-      break;
-    case 'yearly':
-      // Showing by year for last 5 years
-      groupBy = "strftime('%Y', created_at)";
-      format = "strftime('%Y', created_at)";
-      limit = 5;
-      break;
-    default:
-      groupBy = "date(created_at)";
-      format = "date(created_at)";
-      limit = 30;
-  }
-
+  const { timeframe } = req.query; // '30days', 'weekly', 'monthly', 'yearly'
+  
   try {
-    const trends = db.prepare(`
-      SELECT ${format} as label, SUM(total_amount) as total
-      FROM sales
-      WHERE status = 'completed'
-      GROUP BY label
-      ORDER BY label DESC
-      LIMIT ?
-    `).all(limit);
-    res.json(trends.reverse());
+    if (timeframe === 'weekly') {
+      const days: any[] = [];
+      const now = new Date();
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        days.push({ date: dateStr, label: displayLabel, total: 0, sales_count: 0 });
+      }
+
+      const rows = db.prepare(`
+        SELECT date(created_at) as dateStr, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed' AND created_at >= date('now', '-7 days')
+        GROUP BY dateStr
+      `).all() as any[];
+
+      const map = new Map(rows.map(r => [r.dateStr, r]));
+      const result = days.map(day => {
+        const found = map.get(day.date);
+        return {
+          ...day,
+          total: found ? found.total : 0,
+          sales_count: found ? found.sales_count : 0
+        };
+      });
+      return res.json(result);
+    } else if (timeframe === 'monthly') {
+      const data = db.prepare(`
+        SELECT strftime('%Y-%m', created_at) as label, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed'
+        GROUP BY label
+        ORDER BY label DESC
+        LIMIT 12
+      `).all();
+      return res.json(data.reverse());
+    } else if (timeframe === 'yearly') {
+      const data = db.prepare(`
+        SELECT strftime('%Y', created_at) as label, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed'
+        GROUP BY label
+        ORDER BY label DESC
+        LIMIT 5
+      `).all();
+      return res.json(data.reverse());
+    } else {
+      // Default / '30days' / 'daily': Last 30 continuous calendar days
+      const days: any[] = [];
+      const now = new Date();
+      for (let i = 29; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        days.push({ date: dateStr, label: displayLabel, total: 0, sales_count: 0 });
+      }
+
+      const rows = db.prepare(`
+        SELECT date(created_at) as dateStr, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed' AND created_at >= date('now', '-30 days')
+        GROUP BY dateStr
+      `).all() as any[];
+
+      const map = new Map(rows.map(r => [r.dateStr, r]));
+      const result = days.map(day => {
+        const found = map.get(day.date);
+        return {
+          ...day,
+          total: found ? found.total : 0,
+          sales_count: found ? found.sales_count : 0
+        };
+      });
+      return res.json(result);
+    }
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -734,6 +921,201 @@ app.get('/api/reports/monthly-trends', authenticate, (req, res) => {
       ORDER BY month ASC
     `).all();
     res.json(data);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/reports/monthly-summary', authenticate, (req, res) => {
+  try {
+    const selectedMonth = (req.query.month as string) || new Date().toISOString().substring(0, 7);
+    
+    const [yearStr, monthStr] = selectedMonth.split('-');
+    let year = parseInt(yearStr, 10);
+    let month = parseInt(monthStr, 10);
+    let prevYear = year;
+    let prevMonth = month - 1;
+    if (prevMonth < 1) {
+      prevMonth = 12;
+      prevYear -= 1;
+    }
+    const prevMonthStr = `${prevYear}-${prevMonth.toString().padStart(2, '0')}`;
+
+    const currRevenue = db.prepare(`
+      SELECT SUM(total_amount) as total, COUNT(*) as count 
+      FROM sales 
+      WHERE status = 'completed' AND strftime('%Y-%m', created_at) = ?
+    `).get(selectedMonth) as { total: number, count: number };
+
+    const prevRevenue = db.prepare(`
+      SELECT SUM(total_amount) as total, COUNT(*) as count 
+      FROM sales 
+      WHERE status = 'completed' AND strftime('%Y-%m', created_at) = ?
+    `).get(prevMonthStr) as { total: number, count: number };
+
+    const currExpenses = db.prepare(`
+      SELECT SUM(amount) as total, COUNT(*) as count 
+      FROM expenses 
+      WHERE strftime('%Y-%m', expense_date) = ?
+    `).get(selectedMonth) as { total: number, count: number };
+
+    const prevExpenses = db.prepare(`
+      SELECT SUM(amount) as total, COUNT(*) as count 
+      FROM expenses 
+      WHERE strftime('%Y-%m', expense_date) = ?
+    `).get(prevMonthStr) as { total: number, count: number };
+
+    const currGrossProfit = db.prepare(`
+      SELECT SUM((si.unit_price - si.cost_price) * si.quantity) as total 
+      FROM sale_items si 
+      JOIN sales s ON si.sale_id = s.id 
+      WHERE s.status = 'completed' AND strftime('%Y-%m', s.created_at) = ?
+    `).get(selectedMonth) as { total: number };
+
+    const dailySeries = db.prepare(`
+      SELECT 
+        d.day,
+        COALESCE(s.sales_total, 0) as sales_total,
+        COALESCE(e.expense_total, 0) as expense_total,
+        (COALESCE(s.sales_total, 0) - COALESCE(e.expense_total, 0)) as net_profit
+      FROM (
+        SELECT DISTINCT date(created_at) as day FROM sales WHERE strftime('%Y-%m', created_at) = ?
+        UNION
+        SELECT DISTINCT date(expense_date) as day FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+      ) d
+      LEFT JOIN (
+        SELECT date(created_at) as day, SUM(total_amount) as sales_total 
+        FROM sales WHERE status = 'completed' AND strftime('%Y-%m', created_at) = ?
+        GROUP BY date(created_at)
+      ) s ON d.day = s.day
+      LEFT JOIN (
+        SELECT date(expense_date) as day, SUM(amount) as expense_total 
+        FROM expenses WHERE strftime('%Y-%m', expense_date) = ?
+        GROUP BY date(expense_date)
+      ) e ON d.day = e.day
+      ORDER BY d.day ASC
+    `).all(selectedMonth, selectedMonth, selectedMonth, selectedMonth);
+
+    const staffLeaderboard = db.prepare(`
+      SELECT 
+        u.id as user_id,
+        u.name as user_name,
+        u.email,
+        u.role,
+        COUNT(s.id) as total_sales_count,
+        COALESCE(SUM(s.total_amount), 0) as total_revenue,
+        CASE WHEN COUNT(s.id) > 0 THEN ROUND(SUM(s.total_amount) / COUNT(s.id), 2) ELSE 0 END as avg_order_value,
+        ROUND(COALESCE(SUM(s.total_amount), 0) * 0.02, 2) as estimated_commission
+      FROM users u
+      LEFT JOIN sales s ON u.id = s.user_id AND s.status = 'completed' AND strftime('%Y-%m', s.created_at) = ?
+      GROUP BY u.id
+      ORDER BY total_revenue DESC
+    `).all(selectedMonth);
+
+    const categoryBreakdown = db.prepare(`
+      SELECT 
+        COALESCE(p.category, 'Uncategorized') as category,
+        SUM(si.quantity) as items_sold,
+        SUM(si.unit_price * si.quantity) as total_revenue
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      JOIN products p ON si.product_id = p.id
+      WHERE s.status = 'completed' AND strftime('%Y-%m', s.created_at) = ?
+      GROUP BY p.category
+      ORDER BY total_revenue DESC
+    `).all(selectedMonth);
+
+    const revenue = currRevenue.total || 0;
+    const pRevenue = prevRevenue.total || 0;
+    const expenses = currExpenses.total || 0;
+    const pExpenses = prevExpenses.total || 0;
+    const netProfit = revenue - expenses;
+    const pNetProfit = pRevenue - pExpenses;
+
+    const revenueGrowthMoM = pRevenue > 0 ? (((revenue - pRevenue) / pRevenue) * 100).toFixed(1) : '100.0';
+    const netProfitGrowthMoM = pNetProfit > 0 ? (((netProfit - pNetProfit) / Math.abs(pNetProfit)) * 100).toFixed(1) : '100.0';
+
+    res.json({
+      month: selectedMonth,
+      prevMonth: prevMonthStr,
+      revenue,
+      prevRevenue: pRevenue,
+      revenueGrowthMoM,
+      expenses,
+      prevExpenses: pExpenses,
+      netProfit,
+      prevNetProfit: pNetProfit,
+      netProfitGrowthMoM,
+      grossProfit: currGrossProfit.total || 0,
+      salesCount: currRevenue.count || 0,
+      expensesCount: currExpenses.count || 0,
+      dailySeries,
+      staffLeaderboard,
+      categoryBreakdown
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/reports/staff-my-summary', authenticate, (req: any, res) => {
+  try {
+    const userId = req.user.id;
+    const todayStr = new Date().toISOString().split('T')[0];
+    const currentMonthStr = todayStr.substring(0, 7);
+
+    const activeShift = db.prepare('SELECT * FROM shifts WHERE user_id = ? AND status = ?').get(userId, 'open');
+
+    const todaySales = db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total 
+      FROM sales 
+      WHERE user_id = ? AND status = 'completed' AND date(created_at) = ?
+    `).get(userId, todayStr) as { count: number, total: number };
+
+    const monthSales = db.prepare(`
+      SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total 
+      FROM sales 
+      WHERE user_id = ? AND status = 'completed' AND strftime('%Y-%m', created_at) = ?
+    `).get(userId, currentMonthStr) as { count: number, total: number };
+
+    const ranks = db.prepare(`
+      SELECT user_id, SUM(total_amount) as rev 
+      FROM sales 
+      WHERE status = 'completed' AND strftime('%Y-%m', created_at) = ? 
+      GROUP BY user_id 
+      ORDER BY rev DESC
+    `).all(currentMonthStr) as any[];
+
+    const myRankIndex = ranks.findIndex(r => r.user_id === userId);
+    const myRank = myRankIndex !== -1 ? myRankIndex + 1 : (ranks.length > 0 ? ranks.length : 1);
+
+    const monthlyTarget = 15000;
+    const targetPercentage = Math.min(100, Math.round((monthSales.total / monthlyTarget) * 100));
+    const commissionEst = Math.round(monthSales.total * 0.02 * 100) / 100;
+
+    const totalStaffRow = db.prepare('SELECT COUNT(*) as count FROM users').get() as { count: number };
+
+    const recentSales = db.prepare(`
+      SELECT id, total_amount, payment_method, created_at 
+      FROM sales 
+      WHERE user_id = ? AND status = 'completed' 
+      ORDER BY created_at DESC 
+      LIMIT 5
+    `).all(userId);
+
+    res.json({
+      activeShift,
+      todaySalesCount: todaySales.count,
+      todayRevenue: todaySales.total,
+      monthSalesCount: monthSales.count,
+      monthRevenue: monthSales.total,
+      monthlyTarget,
+      targetPercentage,
+      commissionEst,
+      myRank,
+      totalStaffCount: totalStaffRow.count || 1,
+      recentSales
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -966,6 +1348,67 @@ app.get('/api/products/:id', authenticate, (req, res) => {
   }
 });
 
+// Product Full Audit Log (Adjustments, Sales, Purchases/Restocks, Refunds)
+app.get('/api/products/:id/audit-log', authenticate, (req, res) => {
+  const { id } = req.params;
+  try {
+    // 1. Stock Adjustments
+    const adjustments = db.prepare(`
+      SELECT 
+        'adjustment' as event_type,
+        sa.id as event_id,
+        sa.quantity_change,
+        sa.reason as description,
+        COALESCE(u.name, 'System') as user_name,
+        sa.created_at,
+        0 as unit_price
+      FROM stock_adjustments sa
+      LEFT JOIN users u ON sa.user_id = u.id
+      WHERE sa.product_id = ?
+    `).all(id) as any[];
+
+    // 2. Sales & Refunds
+    const sales = db.prepare(`
+      SELECT 
+        CASE WHEN s.status = 'refunded' THEN 'refund' ELSE 'sale' END as event_type,
+        si.id as event_id,
+        CASE WHEN s.status = 'refunded' THEN si.quantity ELSE -si.quantity END as quantity_change,
+        'Sale #' || s.id || ' (' || COALESCE(s.payment_method, 'Cash') || ')' || CASE WHEN s.status = 'refunded' THEN ' [REFUNDED: ' || COALESCE(s.refund_reason, 'No reason') || ']' ELSE '' END as description,
+        COALESCE(u.name, 'Cashier') as user_name,
+        s.created_at,
+        si.unit_price
+      FROM sale_items si
+      JOIN sales s ON si.sale_id = s.id
+      LEFT JOIN users u ON s.user_id = u.id
+      WHERE si.product_id = ?
+    `).all(id) as any[];
+
+    // 3. Restocking / Purchases
+    const purchases = db.prepare(`
+      SELECT 
+        'restock' as event_type,
+        pi.id as event_id,
+        pi.quantity as quantity_change,
+        'Restock / Purchase from ' || COALESCE(p.supplier_name, 'Supplier') as description,
+        COALESCE(u.name, 'Admin') as user_name,
+        p.created_at,
+        pi.unit_price
+      FROM purchase_items pi
+      JOIN purchases p ON pi.purchase_id = p.id
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE pi.product_id = ?
+    `).all(id) as any[];
+
+    const auditLog = [...adjustments, ...sales, ...purchases].sort((a, b) => 
+      new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
+    );
+
+    res.json(auditLog);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Bulk Stock Update
 app.post('/api/products/bulk-stock-update', authenticate, requireAdmin, (req, res) => {
   const { updates, reason } = req.body; // updates: [{id, quantity_change}]
@@ -981,6 +1424,91 @@ app.post('/api/products/bulk-stock-update', authenticate, requireAdmin, (req, re
   try {
     processUpdates(updates);
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Bulk Product Import
+app.post('/api/products/bulk-import', authenticate, requireAdmin, (req, res) => {
+  const { products } = req.body;
+  if (!Array.isArray(products) || products.length === 0) {
+    return res.status(400).json({ error: 'No products array provided for import' });
+  }
+
+  let importedCount = 0;
+  let updatedCount = 0;
+
+  const importTx = db.transaction((items: any[]) => {
+    for (const item of items) {
+      if (!item.name || item.name.trim() === '') continue;
+
+      let sku = item.sku && item.sku.trim() ? item.sku.trim() : '';
+      if (!sku) {
+        let isUnique = false;
+        while (!isUnique) {
+          sku = 'SKU-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+          const existing = db.prepare('SELECT id FROM products WHERE sku = ?').get(sku);
+          if (!existing) isUnique = true;
+        }
+      }
+
+      if (item.category && item.category.trim()) {
+        db.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)').run(item.category.trim());
+      }
+
+      const existingProduct: any = db.prepare('SELECT id FROM products WHERE sku = ?').get(sku);
+
+      if (existingProduct) {
+        db.prepare(`
+          UPDATE products SET 
+            name = COALESCE(?, name),
+            category = COALESCE(?, category),
+            cost_price = ?,
+            selling_price = ?,
+            stock_quantity = stock_quantity + ?,
+            barcode = COALESCE(?, barcode),
+            brand = COALESCE(?, brand),
+            unit_of_measure = COALESCE(?, unit_of_measure),
+            min_stock_level = COALESCE(?, min_stock_level)
+          WHERE id = ?
+        `).run(
+          item.name,
+          item.category || null,
+          Number(item.cost_price) || 0,
+          Number(item.selling_price) || 0,
+          Number(item.stock_quantity) || 0,
+          item.barcode || null,
+          item.brand || null,
+          item.unit_of_measure || null,
+          item.min_stock_level ? Number(item.min_stock_level) : null,
+          existingProduct.id
+        );
+        updatedCount++;
+      } else {
+        db.prepare(`
+          INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, min_stock_level)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          item.name,
+          sku,
+          item.category || 'General',
+          Number(item.cost_price) || 0,
+          Number(item.selling_price) || 0,
+          Number(item.stock_quantity) || 0,
+          item.barcode || null,
+          item.brand || null,
+          item.unit_of_measure || null,
+          item.min_stock_level ? Number(item.min_stock_level) : null
+        );
+        importedCount++;
+      }
+    }
+  });
+
+  try {
+    importTx(products);
+    res.json({ success: true, importedCount, updatedCount, totalProcessed: importedCount + updatedCount });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
