@@ -1,0 +1,498 @@
+import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { fetchApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
+import { Plus, Edit, Trash2, Search, FileText, Upload } from 'lucide-react';
+import { formatGHS } from '../lib/formatters';
+
+interface Product {
+  id: number;
+  name: string;
+  sku: string;
+  category: string;
+  cost_price: number;
+  selling_price: number;
+  stock_quantity: number;
+  barcode: string;
+  brand: string;
+  unit_of_measure: string;
+  image_url?: string;
+  min_stock_level?: number;
+}
+
+export default function Products() {
+  const { user } = useAuth();
+  const [products, setProducts] = useState<Product[]>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [categories, setCategories] = useState<any[]>([]);
+  const [showModal, setShowModal] = useState(false);
+  const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  
+  const [showAdjustModal, setShowAdjustModal] = useState(false);
+  const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
+  const [adjustData, setAdjustData] = useState({ quantity_change: 0, reason: '' });
+
+  const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
+
+  const [showBulkModal, setShowBulkModal] = useState(false);
+  const [bulkFile, setBulkFile] = useState<File | null>(null);
+  const [bulkStatus, setBulkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+
+  const [formData, setFormData] = useState({
+    name: '', sku: '', category: '', cost_price: 0, selling_price: 0, stock_quantity: 0, barcode: '', brand: '', unit_of_measure: '', image_url: '', min_stock_level: 10
+  });
+
+  useEffect(() => {
+    loadProducts();
+  }, []);
+
+  const loadProducts = () => {
+    Promise.all([
+      fetchApi('/products'),
+      fetchApi('/categories')
+    ])
+      .then(([prods, cats]) => {
+          setProducts(prods);
+          setCategories(cats);
+      })
+      .finally(() => setLoading(false));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      if (editingProduct) {
+        await fetchApi(`/products/${editingProduct.id}`, {
+          method: 'PUT',
+          body: JSON.stringify(formData)
+        });
+      } else {
+        await fetchApi('/products', {
+          method: 'POST',
+          body: JSON.stringify(formData)
+        });
+      }
+      setShowModal(false);
+      loadProducts();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleEdit = (p: Product) => {
+    setEditingProduct(p);
+    setFormData({
+      name: p.name, sku: p.sku, category: p.category, 
+      cost_price: p.cost_price, selling_price: p.selling_price, stock_quantity: p.stock_quantity, barcode: p.barcode || '',
+      brand: p.brand || '', unit_of_measure: p.unit_of_measure || '', image_url: p.image_url || '', min_stock_level: p.min_stock_level ?? 10
+    });
+    setShowModal(true);
+  };
+
+  const confirmDelete = async () => {
+    if (deletingProductId) {
+      try {
+        await fetchApi(`/products/${deletingProductId}`, { method: 'DELETE' });
+        setDeletingProductId(null);
+        loadProducts();
+      } catch (err: any) {
+        alert(err.message);
+        setDeletingProductId(null);
+      }
+    }
+  };
+
+  const openNew = () => {
+    setEditingProduct(null);
+    setFormData({ name: '', sku: '', category: '', cost_price: 0, selling_price: 0, stock_quantity: 0, barcode: '', brand: '', unit_of_measure: '' });
+    setShowModal(true);
+  };
+
+  const openAdjust = (p: Product) => {
+    setAdjustingProduct(p);
+    setAdjustData({ quantity_change: 0, reason: '' });
+    setShowAdjustModal(true);
+  };
+
+  const handleAdjustStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adjustingProduct) return;
+    if (!adjustData.reason || adjustData.reason.trim().length < 3) {
+      alert("Reason must be at least 3 characters long.");
+      return;
+    }
+    
+    try {
+      await fetchApi('/inventory/adjust', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: adjustingProduct.id,
+          quantity_change: adjustData.quantity_change,
+          reason: adjustData.reason
+        })
+      });
+      setShowAdjustModal(false);
+      loadProducts();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
+  const handleBulkUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!bulkFile) return;
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const text = event.target?.result as string;
+      const rows = text.split('\n').filter(r => r.trim() !== '');
+      const updates = [];
+      
+      // header: SKU,QuantityChange
+      for (let i = 1; i < rows.length; i++) {
+        const [sku, qty] = rows[i].split(',').map(s => s.trim());
+        const product = products.find(p => p.sku === sku);
+        if (product && !isNaN(parseInt(qty))) {
+          updates.push({ id: product.id, quantity_change: parseInt(qty) });
+        }
+      }
+      
+      if (updates.length === 0) {
+        setBulkStatus({ type: 'error', message: 'No valid products found in CSV. Check SKUs.' });
+        return;
+      }
+
+      try {
+        await fetchApi('/products/bulk-stock-update', {
+          method: 'POST',
+          body: JSON.stringify({ updates, reason: 'Bulk CSV Upload' })
+        });
+        setBulkStatus({ type: 'success', message: `Successfully updated ${updates.length} products.` });
+        loadProducts();
+        setTimeout(() => {
+          setShowBulkModal(false);
+          setBulkStatus(null);
+          setBulkFile(null);
+        }, 2000);
+      } catch (err: any) {
+        setBulkStatus({ type: 'error', message: err.message });
+      }
+    };
+    reader.readAsText(bulkFile);
+  };
+
+  const filteredProducts = products.filter(p => {
+    const q = searchQuery.toLowerCase();
+    return (
+      p.name.toLowerCase().includes(q) ||
+      p.sku.toLowerCase().includes(q) ||
+      (p.barcode && p.barcode.toLowerCase().includes(q))
+    );
+  });
+
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
+        <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Products Catalog</h1>
+        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
+          <div className="relative w-full sm:w-80 group">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={16} />
+            <input
+              type="text"
+              placeholder="Search Name, SKU, or Barcode..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border border-slate-200 rounded-sm pl-10 pr-10 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white shadow-sm transition-all"
+            />
+            {searchQuery && (
+              <button 
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
+                title="Clear Search"
+              >
+                <Plus size={16} className="rotate-45" />
+              </button>
+            )}
+          </div>
+          {user?.role === 'admin' && (
+            <>
+              <button 
+                onClick={() => setShowBulkModal(true)}
+                className="flex items-center justify-center px-4 py-2 bg-white border border-slate-200 text-slate-700 rounded-sm font-bold text-[13px] hover:bg-slate-50 transition shadow-sm w-full sm:w-auto"
+              >
+                <Upload size={16} className="mr-2" /> Bulk Update
+              </button>
+              <button 
+                onClick={openNew} 
+                className="flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-sm font-bold text-[13px] hover:bg-slate-800 transition shadow-sm active:scale-95 w-full sm:w-auto"
+              >
+                <Plus size={16} className="mr-2" /> Add Product
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
+        <table className="min-w-full divide-y divide-slate-200">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Image</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product Name</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Brand</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">SKU</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price (Sell)</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock</th>
+              {user?.role === 'admin' && <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>}
+            </tr>
+          </thead>
+          <tbody className="bg-white divide-y divide-slate-100">
+            {filteredProducts.map(p => (
+              <tr key={p.id} className="hover:bg-slate-50 transition-colors">
+                <td className="px-5 py-3 whitespace-nowrap text-[13px]">
+                   {p.image_url ? (
+                     <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded-sm border border-slate-200" />
+                   ) : (
+                     <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center text-slate-400 font-bold uppercase text-[10px]">{p.name.substring(0,2)}</div>
+                   )}
+                </td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] font-medium text-slate-900 leading-none">
+                  <Link to={`/products/${p.id}`} className="hover:text-blue-500 font-bold decoration-blue-500/20 underline decoration-2 underline-offset-2">
+                    {p.name}
+                  </Link>
+                </td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.brand || '-'}</td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.sku}</td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.unit_of_measure || '-'}</td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
+                  {p.category}
+                </td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-900 font-semibold">{formatGHS(p.selling_price)}</td>
+                <td className="px-5 py-3 whitespace-nowrap text-[13px]">
+                  <span className={`font-bold ${p.stock_quantity <= 10 ? 'text-red-600' : 'text-green-600'}`}>
+                    {p.stock_quantity}
+                  </span>
+                </td>
+                {user?.role === 'admin' && (
+                  <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
+                    <button onClick={() => openAdjust(p)} className="text-amber-500 hover:text-amber-700 mr-4">Adjust</button>
+                    <button onClick={() => handleEdit(p)} className="text-blue-500 hover:text-blue-700 mr-4">Edit</button>
+                    <button onClick={() => setDeletingProductId(p.id)} className="text-red-500 hover:text-red-700">Delete</button>
+                  </td>
+                )}
+              </tr>
+            ))}
+            {filteredProducts.length === 0 && !loading && (
+              <tr>
+                <td colSpan={8} className="px-5 py-8 text-center text-slate-500 text-[13px] italic">
+                   {searchQuery ? (
+                     <span>No products found matching <strong className="text-slate-900 font-black">"{searchQuery}"</strong></span>
+                   ) : (
+                     "No products found in catalog. Click 'Add Product' to begin."
+                   )}
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-sm max-w-md w-full p-6 border border-slate-200">
+            <h2 className="text-[14px] font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">{editingProduct ? 'Edit Product' : 'New Product'}</h2>
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Name</label>
+                <input required type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">SKU</label>
+                  <input required type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.sku} onChange={e => setFormData({...formData, sku: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Brand</label>
+                  <input type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Unit of Measure</label>
+                  <input type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.unit_of_measure} onChange={e => setFormData({...formData, unit_of_measure: e.target.value})} placeholder="e.g. pcs, kg" />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Image URL (Optional)</label>
+                  <input type="url" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.image_url} onChange={e => setFormData({...formData, image_url: e.target.value})} placeholder="https://..." />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Barcode (Alphanumeric)</label>
+                  <input type="text" pattern="[a-zA-Z0-9]*" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Category</label>
+                  <select required className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
+                     <option value="">Select Category</option>
+                     {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Cost Price (GH₵)</label>
+                  <input required type="number" step="0.01" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.cost_price} onChange={e => setFormData({...formData, cost_price: parseFloat(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Selling Price (GH₵)</label>
+                  <input required type="number" step="0.01" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.selling_price} onChange={e => setFormData({...formData, selling_price: parseFloat(e.target.value)})} />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Low Stock Threshold</label>
+                  <input type="number" min="0" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.min_stock_level} onChange={e => setFormData({...formData, min_stock_level: parseInt(e.target.value, 10) || 0})} placeholder="Default: 10" />
+                </div>
+              </div>
+              {!editingProduct && (
+                 <div>
+                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Initial Stock</label>
+                    <input required type="number" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: parseInt(e.target.value, 10)})} />
+                 </div>
+              )}
+              <div className="pt-5 flex justify-end space-x-3 border-t border-slate-200 mt-5">
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-sm hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-blue-500 border-none rounded-sm hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showAdjustModal && adjustingProduct && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-sm max-w-sm w-full p-6 border border-slate-200">
+            <h2 className="text-[14px] font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">Adjust Stock: {adjustingProduct.name}</h2>
+            <form onSubmit={handleAdjustStock} className="space-y-4">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Quantity Change</label>
+                <input required type="number" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={adjustData.quantity_change} onChange={e => setAdjustData({...adjustData, quantity_change: parseInt(e.target.value, 10)})} placeholder="E.g., -5 or 10" />
+                <p className="text-[10px] text-slate-400 mt-1">Use negative values to deduct stock.</p>
+              </div>
+              <div>
+                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Reason for Adjustment</label>
+                <select 
+                  required 
+                  className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 bg-white" 
+                  value={adjustData.reason} 
+                  onChange={e => setAdjustData({...adjustData, reason: e.target.value})}
+                >
+                  <option value="">-- Select a predefined reason --</option>
+                  <option value="Damage">Damage / Expired</option>
+                  <option value="Inventory Count Discrepancy">Inventory Count Discrepancy</option>
+                  <option value="Received Incorrectly">Received Incorrectly (Error Correction)</option>
+                  <option value="Return to Vendor">Return to Vendor</option>
+                  <option value="Internal Use">Internal consumption / Sample</option>
+                  <option value="Restock">Restock / New Shipment</option>
+                  <option value="Other">Other (Manual Entry)</option>
+                </select>
+                {adjustData.reason === 'Other' && (
+                  <input 
+                    required
+                    type="text"
+                    placeholder="Describe the other reason..."
+                    className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500 mt-2"
+                    onChange={e => setAdjustData({...adjustData, reason: `Other: ${e.target.value}`})}
+                  />
+                )}
+              </div>
+              <div className="pt-5 flex justify-end space-x-3 border-t border-slate-200 mt-5">
+                <button type="button" onClick={() => setShowAdjustModal(false)} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-sm hover:bg-slate-50">Cancel</button>
+                <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-blue-500 border-none rounded-sm hover:bg-blue-600">Save</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {deletingProductId && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-sm max-w-sm w-full p-6 border border-slate-200 text-center">
+            <h2 className="text-[16px] font-bold text-slate-900 mb-2">Delete Product</h2>
+            <p className="text-[13px] text-slate-500 mb-6">Are you sure you want to delete this product? This action cannot be undone.</p>
+            <div className="flex justify-center space-x-3">
+              <button onClick={() => setDeletingProductId(null)} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-sm hover:bg-slate-50">Cancel</button>
+              <button onClick={confirmDelete} className="px-4 py-2 text-xs font-bold text-white bg-red-500 border-none rounded-sm hover:bg-red-600">Delete</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showBulkModal && (
+        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 overflow-y-auto">
+          <div className="bg-white rounded-sm max-w-md w-full p-8 border border-slate-200 shadow-2xl">
+            <div className="flex items-center gap-3 mb-6 pb-4 border-b border-slate-100">
+               <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center text-slate-600">
+                  <Upload size={20} />
+               </div>
+               <div>
+                  <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-widest">Bulk Stock Update</h2>
+                  <p className="text-[11px] text-slate-400 font-bold uppercase tracking-tight">CSV Protocol Upload</p>
+               </div>
+            </div>
+            
+            <form onSubmit={handleBulkUpload} className="space-y-6">
+              <div className="bg-blue-50 border border-blue-100 rounded-sm p-4">
+                <div className="flex gap-2 text-blue-800 mb-2">
+                   <FileText size={16} />
+                   <span className="text-[11px] font-black uppercase tracking-widest">CSV Requirements</span>
+                </div>
+                <p className="text-[12px] text-blue-700/80 leading-relaxed">
+                  Upload a CSV file with the following headers:<br/>
+                  <code className="bg-white px-1 font-mono font-bold">SKU,QuantityChange</code><br/>
+                  Example: <code className="bg-white px-1 font-mono">SKU-001, 10</code>
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <label className="block text-[11px] font-black text-slate-500 uppercase tracking-widest">Select CSV File</label>
+                <input 
+                  required
+                  type="file" 
+                  accept=".csv" 
+                  onChange={e => setBulkFile(e.target.files?.[0] || null)}
+                  className="w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-sm file:border-0 file:text-[11px] file:font-black file:uppercase file:bg-blue-600 file:text-white hover:file:bg-blue-700 transition-all cursor-pointer border border-dashed border-slate-200 p-2 rounded-sm"
+                />
+              </div>
+
+              {bulkStatus && (
+                <div className={`p-3 rounded-sm text-[12px] font-bold ${
+                  bulkStatus.type === 'success' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'bg-red-50 text-red-700 border border-red-100'
+                }`}>
+                  {bulkStatus.message}
+                </div>
+              )}
+
+              <div className="flex gap-3 pt-4">
+                <button 
+                  type="button" 
+                  disabled={!!bulkStatus && bulkStatus.type === 'success'}
+                  onClick={() => setShowBulkModal(false)} 
+                  className="flex-1 py-3 px-4 border border-slate-200 rounded-sm text-[11px] font-black text-slate-400 uppercase tracking-widest hover:bg-slate-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit"
+                  disabled={!bulkFile || (!!bulkStatus && bulkStatus.type === 'success')}
+                  className="flex-1 py-3 px-4 bg-slate-900 text-white rounded-sm font-black text-[11px] uppercase tracking-widest hover:bg-black transition-all shadow-lg active:scale-95 disabled:opacity-30"
+                >
+                  Confirm Upload
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+    </div>
+  );
+}

@@ -1,0 +1,17 @@
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: 'IBM Plex Mono', monospace;
+  
+  /* Structured Professional Palette */
+  --color-primary: #1e293b;        /* Slate 800 - Primary UI */
+  --color-accent: #2563eb;         /* Blue 600 - Active/Action */
+  --color-bg-app: #f1f5f9;         /* Slate 100 - Background */
+  --color-border: #cbd5e1;         /* Slate 300 - Decorative/Border */
+}
+
+body {
+  @apply bg-slate-100 text-slate-800;
+}
