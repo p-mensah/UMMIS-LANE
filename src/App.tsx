@@ -21,6 +21,7 @@ import Shifts from './pages/Shifts';
 import Categories from './pages/Categories';
 import Suppliers from './pages/Suppliers';
 import Transactions from './pages/Transactions';
+import AuditLogs from './pages/AuditLogs';
 import ProductDetail from './pages/ProductDetail';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
@@ -50,6 +51,7 @@ export default function App() {
           <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
           <Route path="/suppliers" element={<PrivateRoute><Suppliers /></PrivateRoute>} />
           <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
+          <Route path="/audit-logs" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
         </Routes>
       </BrowserRouter>
     </AuthProvider>

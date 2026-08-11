@@ -147,6 +147,28 @@ function initDb() {
       changed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (product_id) REFERENCES products(id)
     );
+
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER,
+      user_name TEXT,
+      action TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'general',
+      details TEXT,
+      ip_address TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS notifications (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      message TEXT NOT NULL,
+      type TEXT NOT NULL DEFAULT 'info',
+      link TEXT,
+      is_read INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   addColumnOrIgnore('categories', 'parent_id', 'INTEGER');
@@ -169,6 +191,8 @@ function initDb() {
 
   // Seed default settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('low_stock_threshold', '10')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('audit_log_retention_days', '90')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_clear_audit_logs', 'true')").run();
 
   // Seed default admin and staff
   const checkAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@admin.com');
@@ -336,9 +360,143 @@ function seedDatabase(dbInstance: any) {
     dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now", "-10 days"))').run('Packaging & Shopping Bags', 120.00, adminId);
     dbInstance.prepare('INSERT INTO expenses (description, amount, user_id, expense_date) VALUES (?, ?, ?, datetime("now"))').run('Store Cleaner Weekly Stipend', 150.00, adminId);
 
+    const auditCount: any = dbInstance.prepare('SELECT COUNT(*) as count FROM audit_logs').get();
+    if (!auditCount || auditCount.count === 0) {
+      dbInstance.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, action, category, details, created_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '-2 days'))
+      `).run(adminId, 'Admin User', 'User Login Successful', 'auth', 'Admin signed in from Web Dashboard');
+
+      dbInstance.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, action, category, details, created_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '-1 days'))
+      `).run(adminId, 'Admin User', 'Updated System Settings', 'settings', 'Updated low stock alert threshold to 10');
+
+      dbInstance.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, action, category, details, created_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '-18 hours'))
+      `).run(staffId, 'Staff User', 'Shift Opened', 'shift', 'Staff opened register with starting cash GHS 250.00');
+
+      dbInstance.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, action, category, details, created_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '-5 hours'))
+      `).run(adminId, 'Admin User', 'Product Price Adjusted', 'product', 'Updated Milo 400g selling price from GHS 25.00 to GHS 28.50');
+
+      dbInstance.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, action, category, details, created_at)
+        VALUES (?, ?, ?, ?, ?, datetime('now', '-1 hour'))
+      `).run(staffId, 'Staff User', 'Completed POS Sale', 'sales', 'Sale #104 completed via Momo for GHS 110.00');
+    }
+
     console.log('Demo database successfully populated!');
   } catch (err) {
     console.error('Error seeding database:', err);
+  }
+}
+
+// --- Audit & Notification Helpers ---
+function logAuditEvent(userId: number | null, userName: string | null, action: string, category: string = 'general', details: string | null = null, ipAddress: string | null = null) {
+  try {
+    db.prepare(`
+      INSERT INTO audit_logs (user_id, user_name, action, category, details, ip_address)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(userId, userName || 'System', action, category, details, ipAddress);
+  } catch (err) {
+    console.error('Failed to write audit log event:', err);
+  }
+}
+
+function createNotification(title: string, message: string, type: 'info' | 'warning' | 'danger' | 'success' = 'info', link: string | null = null) {
+  try {
+    const existing: any = db.prepare(`
+      SELECT id FROM notifications 
+      WHERE title = ? AND message = ? AND is_read = 0 AND created_at >= datetime('now', '-2 hours')
+    `).get(title, message);
+
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO notifications (title, message, type, link)
+        VALUES (?, ?, ?, ?)
+      `).run(title, message, type, link);
+    }
+  } catch (err) {
+    console.error('Failed to create notification:', err);
+  }
+}
+
+function runAuditLogCleanup(retentionDaysInput?: number) {
+  try {
+    const retentionSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'audit_log_retention_days'").get();
+    const retentionDays = retentionDaysInput !== undefined ? retentionDaysInput : (retentionSetting ? parseInt(retentionSetting.value, 10) : 90);
+
+    if (isNaN(retentionDays) || retentionDays <= 0) {
+      return { success: false, clearedCount: 0, message: 'Invalid retention days value' };
+    }
+
+    const cutoffRes: any = db.prepare("SELECT datetime('now', '-' || ? || ' days') as cutoff").get(retentionDays);
+    const cutoffDate = cutoffRes?.cutoff || new Date(Date.now() - retentionDays * 24 * 3600 * 1000).toISOString();
+
+    const countBefore: any = db.prepare("SELECT COUNT(*) as cnt FROM audit_logs WHERE created_at < ?").get(cutoffDate);
+    const toDeleteCount = countBefore?.cnt || 0;
+
+    if (toDeleteCount > 0) {
+      db.prepare("DELETE FROM audit_logs WHERE created_at < ?").run(cutoffDate);
+    }
+
+    logAuditEvent(
+      1,
+      'System Auto-Maintenance',
+      'Audit Log Maintenance Performed',
+      'system',
+      `Cleared ${toDeleteCount} log entries older than ${retentionDays} days (cutoff date: ${cutoffDate})`
+    );
+
+    if (toDeleteCount > 0) {
+      createNotification(
+        'System Maintenance Executed',
+        `Cleared ${toDeleteCount} audit log records older than ${retentionDays} days to keep database performance optimal.`,
+        'info',
+        '/audit-logs'
+      );
+    }
+
+    return { success: true, clearedCount: toDeleteCount, retentionDays, cutoffDate };
+  } catch (err: any) {
+    console.error('Error running audit log cleanup:', err);
+    return { success: false, clearedCount: 0, error: err.message };
+  }
+}
+
+function checkStockAlerts() {
+  try {
+    const thresholdSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
+    const globalThreshold = thresholdSetting ? parseInt(thresholdSetting.value, 10) : 10;
+
+    const lowStockProducts = db.prepare(`
+      SELECT id, name, sku, stock_quantity, COALESCE(min_stock_level, ?) as threshold
+      FROM products
+      WHERE stock_quantity <= COALESCE(min_stock_level, ?)
+    `).all(globalThreshold, globalThreshold) as any[];
+
+    for (const prod of lowStockProducts) {
+      if (prod.stock_quantity <= 0) {
+        createNotification(
+          'Out of Stock Alert',
+          `Product "${prod.name}" (SKU: ${prod.sku}) is completely OUT OF STOCK!`,
+          'danger',
+          `/products/${prod.id}`
+        );
+      } else {
+        createNotification(
+          'Low Stock Warning',
+          `Product "${prod.name}" (SKU: ${prod.sku}) has reached low stock (${prod.stock_quantity} left).`,
+          'warning',
+          `/products/${prod.id}`
+        );
+      }
+    }
+  } catch (err) {
+    console.error('Error checking stock alerts:', err);
   }
 }
 
@@ -1525,16 +1683,126 @@ app.get('/api/settings', authenticate, requireAdmin, (req, res) => {
 });
 
 app.put('/api/settings', authenticate, requireAdmin, (req, res) => {
-  const { low_stock_threshold } = req.body;
+  const { low_stock_threshold, audit_log_retention_days, auto_clear_audit_logs } = req.body;
   if (low_stock_threshold !== undefined) {
-    db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(low_stock_threshold.toString(), 'low_stock_threshold');
+    db.prepare("INSERT INTO settings (key, value) VALUES ('low_stock_threshold', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(low_stock_threshold.toString(), low_stock_threshold.toString());
   }
+  if (audit_log_retention_days !== undefined) {
+    db.prepare("INSERT INTO settings (key, value) VALUES ('audit_log_retention_days', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(audit_log_retention_days.toString(), audit_log_retention_days.toString());
+  }
+  if (auto_clear_audit_logs !== undefined) {
+    const val = auto_clear_audit_logs ? 'true' : 'false';
+    db.prepare("INSERT INTO settings (key, value) VALUES ('auto_clear_audit_logs', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
+  }
+
+  logAuditEvent((req as any).user.id, (req as any).user.name, 'Updated System Settings', 'settings', `Updated settings: Low Stock Threshold = ${low_stock_threshold}, Retention Days = ${audit_log_retention_days}, Auto Clear = ${auto_clear_audit_logs}`);
+
   res.json({ success: true });
+});
+
+// Audit Logs API
+app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
+  const { category, user_id, search } = req.query;
+  let query = "SELECT * FROM audit_logs WHERE 1=1";
+  const params: any[] = [];
+
+  if (category && category !== 'all') {
+    query += " AND category = ?";
+    params.push(category);
+  }
+
+  if (user_id && user_id !== 'all') {
+    query += " AND user_id = ?";
+    params.push(user_id);
+  }
+
+  if (search) {
+    query += " AND (action LIKE ? OR details LIKE ? OR user_name LIKE ?)";
+    const term = `%${search}%`;
+    params.push(term, term, term);
+  }
+
+  query += " ORDER BY created_at DESC LIMIT 300";
+
+  try {
+    const logs = db.prepare(query).all(...params);
+    res.json(logs);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/audit-logs/cleanup', authenticate, requireAdmin, (req, res) => {
+  const { retention_days } = req.body;
+  const days = retention_days ? parseInt(retention_days, 10) : undefined;
+  const result = runAuditLogCleanup(days);
+  res.json(result);
+});
+
+// Notifications API
+app.get('/api/notifications', authenticate, (req, res) => {
+  try {
+    const notifications = db.prepare("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50").all();
+    const unreadCount: any = db.prepare("SELECT COUNT(*) as count FROM notifications WHERE is_read = 0").get();
+    res.json({
+      notifications,
+      unread_count: unreadCount?.count || 0
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/:id/read', authenticate, (req, res) => {
+  try {
+    db.prepare("UPDATE notifications SET is_read = 1 WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/notifications/read-all', authenticate, (req, res) => {
+  try {
+    db.prepare("UPDATE notifications SET is_read = 1 WHERE is_read = 0").run();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notifications/:id', authenticate, (req, res) => {
+  try {
+    db.prepare("DELETE FROM notifications WHERE id = ?").run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/notifications/clear-all', authenticate, (req, res) => {
+  try {
+    db.prepare("DELETE FROM notifications WHERE is_read = 1").run();
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // --- Server Startup ---
 async function startServer() {
   initDb();
+
+  // Run stock check & auto audit log cleanup if enabled
+  try {
+    checkStockAlerts();
+    const autoClearSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'auto_clear_audit_logs'").get();
+    if (autoClearSetting?.value === 'true') {
+      runAuditLogCleanup();
+    }
+  } catch (e) {
+    console.error('Startup automated maintenance error:', e);
+  }
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

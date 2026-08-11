@@ -1,7 +1,8 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, UserCheck, Tag, Inbox, ArrowLeftRight } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -33,7 +34,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                <NavItem to="/suppliers" icon={<Inbox size={20} />} label="Suppliers" />
                <NavItem to="/adjustments" icon={<FileText size={20} />} label="Adjustments" />
                <NavItem to="/expenses" icon={<CreditCard size={20} />} label="Expenses" />
-                <NavItem to="/transactions" icon={<ArrowLeftRight size={20} />} label="Transactions" />
+               <NavItem to="/transactions" icon={<ArrowLeftRight size={20} />} label="Transactions" />
+               <NavItem to="/audit-logs" icon={<ShieldCheck size={20} />} label="Audit Logs" />
                <NavItem to="/users" icon={<UsersIcon size={20} />} label="Users" />
                <NavItem to="/settings" icon={<SettingsIcon size={20} />} label="Settings" />
              </>
@@ -59,9 +61,10 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 flex flex-col overflow-hidden">
         <header className="h-[64px] bg-white border-b border-slate-200 flex items-center justify-between px-8 z-10 shrink-0">
            <div className="text-slate-500 text-sm">
-             Business Overview / <span className="text-slate-900 font-semibold">Daily Dashboard</span>
+             Business Overview / <span className="text-slate-900 font-semibold">Retail OS</span>
            </div>
-           <div className="flex items-center gap-3 text-sm font-semibold">
+           <div className="flex items-center gap-4">
+             <NotificationBell />
            </div>
         </header>
         <div className="flex-1 overflow-y-auto p-6 md:p-8">
