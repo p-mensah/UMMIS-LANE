@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { 
   Truck, Plus, Search, Filter, Calendar, Clock, CheckCircle2, 
   AlertCircle, ChevronRight, FileText, Download, X, Eye, ArrowUpRight,
-  PackageCheck, RefreshCw, AlertTriangle
+  PackageCheck, RefreshCw, AlertTriangle, Sparkles
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
@@ -37,6 +38,9 @@ export default function Purchases() {
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
   
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [isAutoDraft, setIsAutoDraft] = useState(false);
+
   // New PO Modal state
   const [showModal, setShowModal] = useState(false);
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -62,9 +66,65 @@ export default function Purchases() {
         fetchApi('/suppliers'),
         fetchApi('/products')
       ]);
-      setPurchases(pRes || []);
-      setSuppliers(sRes || []);
-      setProducts(prRes || []);
+      const fetchedPurchases = pRes || [];
+      const fetchedSuppliers = sRes || [];
+      const fetchedProducts = prRes || [];
+
+      setPurchases(fetchedPurchases);
+      setSuppliers(fetchedSuppliers);
+      setProducts(fetchedProducts);
+
+      // Check for quick reorder parameter
+      const reorderParam = searchParams.get('reorder');
+      if (reorderParam) {
+        let itemsToReorder: any[] = [];
+        if (reorderParam === 'all') {
+          itemsToReorder = fetchedProducts.filter((p: any) => p.stock_quantity <= (p.min_stock_level || 10));
+        } else {
+          const targetId = parseInt(reorderParam, 10);
+          if (!isNaN(targetId)) {
+            const found = fetchedProducts.find((p: any) => p.id === targetId);
+            if (found) itemsToReorder = [found];
+          } else {
+            // search by SKU or name
+            itemsToReorder = fetchedProducts.filter((p: any) => 
+              p.sku?.toLowerCase() === reorderParam.toLowerCase() ||
+              p.name?.toLowerCase().includes(reorderParam.toLowerCase())
+            );
+          }
+        }
+
+        if (itemsToReorder.length > 0) {
+          const draftCart: PurchaseOrderItem[] = itemsToReorder.map((p: any) => {
+            const targetQty = Math.max(20, (p.min_stock_level || 10) * 2 - Math.max(0, p.stock_quantity));
+            return {
+              product_id: p.id,
+              product_name: p.name,
+              sku: p.sku,
+              quantity: targetQty,
+              unit_price: p.cost_price || 0
+            };
+          });
+
+          setCart(draftCart);
+          if (fetchedSuppliers.length > 0) {
+            setSelectedSupplier(fetchedSuppliers[0].name);
+          }
+          setPoStatus('draft');
+          setIsAutoDraft(true);
+          setShowModal(true);
+          setNotes(`Quick Reorder Draft generated from Low Stock Alert (${itemsToReorder.map((i: any) => i.sku || i.name).join(', ')})`);
+
+          addToast({
+            title: 'Draft PO Auto-Populated! ⚡',
+            message: `Created Purchase Order draft with ${draftCart.length} low-stock item(s).`,
+            type: 'warning'
+          });
+
+          // Clean search param
+          setSearchParams({}, { replace: true });
+        }
+      }
     } catch (err) {
       console.error('Failed to load purchases:', err);
     } finally {
@@ -446,6 +506,21 @@ export default function Purchases() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[400px]">
+                {isAutoDraft && (
+                  <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-bold flex items-center justify-between shadow-2xs">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="text-amber-600 shrink-0" size={16} />
+                      <span>⚡ Auto-populated draft from low-stock notification! Review quantities and supplier before saving.</span>
+                    </div>
+                    <button 
+                      onClick={() => setIsAutoDraft(false)} 
+                      className="text-amber-600 hover:text-amber-900 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white/80 border border-amber-200"
+                    >
+                      Dismiss
+                    </button>
+                  </div>
+                )}
+
                 {/* Supplier & Status Form */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>

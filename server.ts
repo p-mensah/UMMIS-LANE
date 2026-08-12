@@ -520,14 +520,14 @@ function checkStockAlerts() {
           'Out of Stock Alert',
           `Product "${prod.name}" (SKU: ${prod.sku}) is completely OUT OF STOCK!`,
           'danger',
-          `/products/${prod.id}`
+          `/purchases?reorder=${prod.id}`
         );
       } else {
         createNotification(
           'Low Stock Warning',
           `Product "${prod.name}" (SKU: ${prod.sku}) has reached low stock (${prod.stock_quantity} left).`,
           'warning',
-          `/products/${prod.id}`
+          `/purchases?reorder=${prod.id}`
         );
       }
     }
