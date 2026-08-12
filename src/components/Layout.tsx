@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck } from 'lucide-react';
+import { LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 
@@ -25,6 +25,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           <NavItem to="/" icon={<LayoutDashboard size={20} />} label="Dashboard" />
           <NavItem to="/products" icon={<Package size={20} />} label="Products" />
           <NavItem to="/sales" icon={<ShoppingCart size={20} />} label="Sales" />
+          <NavItem to="/returns" icon={<RotateCcw size={20} />} label="Returns" />
           <NavItem to="/shifts" icon={<Clock size={20} />} label="Register/Shift" />
           <NavItem to="/customers" icon={<UserCheck size={20} />} label="Customers" />
           {user?.role === 'admin' && (

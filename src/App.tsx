@@ -24,6 +24,7 @@ import Suppliers from './pages/Suppliers';
 import Transactions from './pages/Transactions';
 import AuditLogs from './pages/AuditLogs';
 import ProductDetail from './pages/ProductDetail';
+import Returns from './pages/Returns';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -42,6 +43,7 @@ export default function App() {
             <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
             <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
             <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />
+            <Route path="/returns" element={<PrivateRoute><Returns /></PrivateRoute>} />
             <Route path="/purchases" element={<PrivateRoute><Purchases /></PrivateRoute>} />
             <Route path="/adjustments" element={<PrivateRoute><Adjustments /></PrivateRoute>} />
             <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />

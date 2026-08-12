@@ -1795,7 +1795,26 @@ app.put('/api/users/:id/status', authenticate, requireAdmin, (req, res) => {
 // Categories
 app.get('/api/categories', authenticate, (req, res) => {
   try {
-    const cats = db.prepare('SELECT * FROM categories ORDER BY name ASC').all();
+    const cats = db.prepare(`
+      SELECT 
+        c.*,
+        p.name as parent_name,
+        COALESCE(prod.product_count, 0) as product_count,
+        COALESCE(prod.total_stock, 0) as total_stock,
+        COALESCE(prod.total_value, 0) as total_value
+      FROM categories c
+      LEFT JOIN categories p ON c.parent_id = p.id
+      LEFT JOIN (
+        SELECT 
+          category,
+          COUNT(*) as product_count,
+          SUM(stock_quantity) as total_stock,
+          SUM(stock_quantity * selling_price) as total_value
+        FROM products
+        GROUP BY category
+      ) prod ON c.name = prod.category
+      ORDER BY c.name ASC
+    `).all();
     res.json(cats);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -1825,7 +1844,7 @@ app.put('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
 app.delete('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
   try {
     const used = db.prepare('SELECT count(*) as count FROM products WHERE category = (SELECT name FROM categories WHERE id = ?)').get(req.params.id) as any;
-    if (used.count > 0) {
+    if (used && used.count > 0) {
       return res.status(400).json({ error: 'This category is currently assigned to products and cannot be deleted.' });
     }
     db.prepare('DELETE FROM categories WHERE id = ?').run(req.params.id);
@@ -1838,7 +1857,25 @@ app.delete('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
 // Suppliers
 app.get('/api/suppliers', authenticate, (req, res) => {
   try {
-    const suppliers = db.prepare('SELECT * FROM suppliers_list ORDER BY name ASC').all();
+    const suppliers = db.prepare(`
+      SELECT 
+        s.*,
+        COALESCE(p.total_purchases, 0) as total_purchases,
+        COALESCE(p.total_spent, 0) as total_spent,
+        p.last_purchase_date
+      FROM suppliers_list s
+      LEFT JOIN (
+        SELECT 
+          supplier_name,
+          COUNT(*) as total_purchases,
+          SUM(total_amount) as total_spent,
+          MAX(created_at) as last_purchase_date
+        FROM purchases
+        WHERE status != 'cancelled'
+        GROUP BY supplier_name
+      ) p ON LOWER(s.name) = LOWER(p.supplier_name)
+      ORDER BY s.name ASC
+    `).all();
     res.json(suppliers);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -1848,8 +1885,55 @@ app.get('/api/suppliers', authenticate, (req, res) => {
 app.post('/api/suppliers', authenticate, requireAdmin, (req, res) => {
   const { name, contact_person, email, phone, address } = req.body;
   try {
-    const result = db.prepare('INSERT INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(name, contact_person, email, phone, address);
+    const result = db.prepare('INSERT INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(name, contact_person || null, email || null, phone || null, address || null);
     res.json({ id: result.lastInsertRowid });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/suppliers/:id', authenticate, requireAdmin, (req, res) => {
+  const { name, contact_person, email, phone, address } = req.body;
+  try {
+    db.prepare('UPDATE suppliers_list SET name = ?, contact_person = ?, email = ?, phone = ?, address = ? WHERE id = ?')
+      .run(name, contact_person || null, email || null, phone || null, address || null, req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/suppliers/:id', authenticate, requireAdmin, (req, res) => {
+  try {
+    const supplier = db.prepare('SELECT name FROM suppliers_list WHERE id = ?').get(req.params.id) as any;
+    if (!supplier) {
+      return res.status(404).json({ error: 'Supplier not found' });
+    }
+    const purchasesCount = db.prepare('SELECT COUNT(*) as count FROM purchases WHERE LOWER(supplier_name) = LOWER(?)').get(supplier.name) as any;
+    if (purchasesCount && purchasesCount.count > 0) {
+      return res.status(400).json({ error: `Cannot delete supplier "${supplier.name}" because they have ${purchasesCount.count} purchase order(s) attached.` });
+    }
+    db.prepare('DELETE FROM suppliers_list WHERE id = ?').run(req.params.id);
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/suppliers/:id/purchases', authenticate, (req, res) => {
+  try {
+    const supplier = db.prepare('SELECT * FROM suppliers_list WHERE id = ?').get(req.params.id) as any;
+    if (!supplier) return res.status(404).json({ error: 'Supplier not found' });
+    
+    const purchases = db.prepare(`
+      SELECT p.*, u.name as user_name
+      FROM purchases p
+      LEFT JOIN users u ON p.user_id = u.id
+      WHERE LOWER(p.supplier_name) = LOWER(?)
+      ORDER BY p.created_at DESC
+    `).all(supplier.name);
+
+    res.json({ supplier, purchases });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

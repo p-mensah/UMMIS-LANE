@@ -1,66 +1,67 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
-import { fetchApi } from '../lib/api';
-import InvoiceModal from '../components/InvoiceModal';
-import ReturnModal from '../components/ReturnModal';
-import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
+import { Link, useNavigate } from 'react-router-dom';
 import { 
-  Package, AlertCircle, AlertTriangle, DollarSign, TrendingUp, Info, 
-  Search, Download, Settings, PlusCircle, ArrowRight, RefreshCw, CheckCircle2,
-  Calendar, FileText, Printer, ArrowUpRight, ArrowDownRight, Wallet, Receipt,
-  UserCheck, Shield, Award, Target, Clock, ShoppingCart, UserPlus, BarChart3, Users, ChevronRight, RotateCcw
+  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell
+} from 'recharts';
+import { 
+  TrendingUp, ShoppingCart, DollarSign, Package, AlertTriangle, 
+  Users, Calendar, RefreshCw, ChevronRight, FileText, Settings, 
+  ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
+  CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
+  CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
-import { AreaChart, Area, ReferenceLine, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie } from 'recharts';
+import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
-
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6'];
+import InvoiceModal from '../components/InvoiceModal';
 
 export default function Dashboard() {
   const { user } = useAuth();
+  const navigate = useNavigate();
+
+  // Mode Selection
   const [viewMode, setViewMode] = useState<'admin' | 'staff'>(user?.role === 'admin' ? 'admin' : 'staff');
 
-  const [summary, setSummary] = useState<any>(null);
-  const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
-  const [weeklyData, setWeeklyData] = useState<any[]>([]);
-  const [monthlyTrends, setMonthlyTrends] = useState<any[]>([]);
-  const [salesTrends, setSalesTrends] = useState<any[]>([]);
-  const [trendTimeframe, setTrendTimeframe] = useState<'30days' | 'weekly' | 'monthly' | 'yearly'>('30days');
-  const [chartType, setChartType] = useState<'area' | 'line' | 'bar'>('area');
-  const [bestSellers, setBestSellers] = useState<any[]>([]);
-  const [bestSellerChartType, setBestSellerChartType] = useState<'bar' | 'pie'>('bar');
-  const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
-  const [selectedInvoiceSale, setSelectedInvoiceSale] = useState<any>(null);
-  const [loadingInvoiceId, setLoadingInvoiceId] = useState<number | null>(null);
+  // Loading States
   const [loading, setLoading] = useState(true);
 
-  // Staff specific states
-  const [staffSummary, setStaffSummary] = useState<any>(null);
-  const [staffLoading, setStaffLoading] = useState(false);
+  // Executive Data States
+  const [summary, setSummary] = useState<any>(null);
+  const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
+  const [salesTrends, setSalesTrends] = useState<any[]>([]);
+  const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('7days');
+  const [trendChartType, setTrendChartType] = useState<'area' | 'bar'>('area');
+  const [bestSellers, setBestSellers] = useState<any[]>([]);
+  const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
 
-  // Staff Transactions Report states
-  const [staffReportPeriod, setStaffReportPeriod] = useState<'today' | 'week' | 'month' | 'custom'>('today');
-  const [staffReportPaymentMethod, setStaffReportPaymentMethod] = useState<string>('all');
-  const [staffReportStartDate, setStaffReportStartDate] = useState<string>('');
-  const [staffReportEndDate, setStaffReportEndDate] = useState<string>('');
-  const [staffReportSearch, setStaffReportSearch] = useState<string>('');
-  const [staffReportData, setStaffReportData] = useState<any>(null);
-  const [staffReportLoading, setStaffReportLoading] = useState<boolean>(false);
-
-  // Monthly breakdown states
+  // Monthly Financial Breakdown
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [monthlySummaryData, setMonthlySummaryData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
 
-  // Low stock alert section states
+  // Low Stock Table Filters
   const [lowStockSearch, setLowStockSearch] = useState('');
   const [lowStockFilter, setLowStockFilter] = useState<'all' | 'out_of_stock' | 'critical'>('all');
-  
+
+  // Staff Personal Data
+  const [staffSummary, setStaffSummary] = useState<any>(null);
+  const [staffLoading, setStaffLoading] = useState(false);
+  const [staffReportPeriod, setStaffReportPeriod] = useState<'today' | '7days' | '30days' | 'custom'>('today');
+  const [staffReportPaymentMethod, setStaffReportPaymentMethod] = useState<string>('all');
+  const [staffReportStartDate, setStaffReportStartDate] = useState<string>('');
+  const [staffReportEndDate, setStaffReportEndDate] = useState<string>('');
+  const [staffReportData, setStaffReportData] = useState<any>(null);
+  const [staffReportLoading, setStaffReportLoading] = useState(false);
+
+  // Modals State
+  const [selectedInvoiceSale, setSelectedInvoiceSale] = useState<any | null>(null);
+  const [loadingInvoiceId, setLoadingInvoiceId] = useState<number | null>(null);
+
   // Quick Restock Modal
   const [showRestockModal, setShowRestockModal] = useState(false);
   const [selectedProductForRestock, setSelectedProductForRestock] = useState<any>(null);
   const [restockQty, setRestockQty] = useState<number>(10);
-  const [restockReason, setRestockReason] = useState<string>('Restock / New Shipment');
+  const [restockReason, setRestockReason] = useState<string>('Restock Shipment');
   const [isSubmittingRestock, setIsSubmittingRestock] = useState(false);
 
   // Global Threshold Modal
@@ -68,42 +69,64 @@ export default function Dashboard() {
   const [globalThreshold, setGlobalThreshold] = useState<number>(10);
   const [isSavingThreshold, setIsSavingThreshold] = useState(false);
 
-  // Daily Summary Modal
+  // Daily EOD Summary Modal
   const [showDailySummaryModal, setShowDailySummaryModal] = useState(false);
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [dailySummaryLoading, setDailySummaryLoading] = useState(false);
-  const [dailySummaryTab, setDailySummaryTab] = useState<'all' | 'sales' | 'expenses'>('all');
 
-  // Returns Analytics State
-  const [returnsSummary, setReturnsSummary] = useState<any>(null);
-  const [showDashboardReturnModal, setShowDashboardReturnModal] = useState(false);
-  const [dashboardReturnCreditNote, setDashboardReturnCreditNote] = useState<any | null>(null);
-
-  // Trend derived analytics
-  const totalTrendRevenue = salesTrends.reduce((acc, curr) => acc + (curr.total || 0), 0);
-  const avgTrendRevenue = salesTrends.length > 0 ? totalTrendRevenue / salesTrends.length : 0;
-  const peakTrendDay = salesTrends.length > 0 ? [...salesTrends].sort((a, b) => (b.total || 0) - (a.total || 0))[0] : null;
-  const activeSalesDaysCount = salesTrends.filter(d => (d.total || 0) > 0).length;
-
+  // Initial Load
   useEffect(() => {
     loadDashboardData();
     loadStaffSummary();
-    loadReturnsSummary();
   }, [user]);
 
-  const loadReturnsSummary = () => {
-    fetchApi('/returns/summary')
-      .then(data => setReturnsSummary(data))
-      .catch(console.error);
-  };
-
   useEffect(() => {
-    loadStaffTransactionsReport();
-  }, [staffReportPeriod, staffReportPaymentMethod, staffReportStartDate, staffReportEndDate, user]);
+    fetchApi(`/reports/sales-trends?timeframe=${trendTimeframe}`)
+      .then(data => setSalesTrends(data))
+      .catch(console.error);
+  }, [trendTimeframe]);
 
   useEffect(() => {
     loadMonthlySummary(selectedMonth);
   }, [selectedMonth]);
+
+  useEffect(() => {
+    if (viewMode === 'staff') {
+      loadStaffTransactionsReport();
+    }
+  }, [viewMode, staffReportPeriod, staffReportPaymentMethod, staffReportStartDate, staffReportEndDate]);
+
+  const loadDashboardData = () => {
+    setLoading(true);
+    Promise.all([
+      fetchApi('/reports/summary'),
+      fetchApi('/reports/low-stock'),
+      fetchApi('/reports/best-sellers'),
+      fetchApi('/sales').catch(() => []),
+      fetchApi('/settings').catch(() => ({}))
+    ])
+      .then(([summaryData, lowStockData, top, sales, settingsData]) => {
+         setSummary(summaryData);
+         setLowStockProducts(lowStockData);
+         setBestSellers(top);
+         if (Array.isArray(sales)) {
+           setRecentSalesList(sales.slice(0, 6));
+         }
+         if (settingsData && settingsData.low_stock_threshold) {
+           setGlobalThreshold(parseInt(settingsData.low_stock_threshold, 10));
+         }
+      })
+      .catch(console.error)
+      .finally(() => setLoading(false));
+  };
+
+  const loadMonthlySummary = (monthStr: string) => {
+    setMonthlyLoading(true);
+    fetchApi(`/reports/monthly-summary?month=${monthStr}`)
+      .then(data => setMonthlySummaryData(data))
+      .catch(console.error)
+      .finally(() => setMonthlyLoading(false));
+  };
 
   const loadStaffSummary = () => {
     setStaffLoading(true);
@@ -128,35 +151,92 @@ export default function Dashboard() {
       .finally(() => setStaffReportLoading(false));
   };
 
-  const handleExportStaffReportCSV = () => {
-    if (!staffReportData || !staffReportData.transactions || staffReportData.transactions.length === 0) return;
-    const headers = ['Sale ID', 'Date & Time', 'Customer', 'Items Sold', 'Payment Method', 'Status', 'Total Amount (GHS)'];
-    const rows = staffReportData.transactions.map((s: any) => [
-      `"#SALE-${s.id}"`,
-      `"${new Date(s.created_at).toLocaleString()}"`,
-      `"${(s.customer_name || 'Walk-in Customer').replace(/"/g, '""')}"`,
-      s.total_items_sold || s.item_count || 1,
-      `"${s.payment_method}"`,
-      `"${s.status}"`,
-      s.total_amount
-    ]);
-    const csvContent = [headers.join(','), ...rows.map((r: any) => r.join(','))].join('\n');
+  const handleViewInvoice = async (saleId: number) => {
+    setLoadingInvoiceId(saleId);
+    try {
+      const sale = await fetchApi(`/sales/${saleId}`);
+      setSelectedInvoiceSale(sale);
+    } catch (err: any) {
+      alert('Failed to load invoice: ' + err.message);
+    } finally {
+      setLoadingInvoiceId(null);
+    }
+  };
+
+  const handleOpenDailySummary = async () => {
+    setShowDailySummaryModal(true);
+    setDailySummaryLoading(true);
+    try {
+      const data = await fetchApi('/reports/daily-summary');
+      setDailySummary(data);
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setDailySummaryLoading(false);
+    }
+  };
+
+  const handleQuickRestockSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductForRestock || restockQty <= 0) return;
+    setIsSubmittingRestock(true);
+    try {
+      await fetchApi('/inventory/adjust', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: selectedProductForRestock.id,
+          quantity_change: Number(restockQty),
+          reason: restockReason || 'Restock via Dashboard'
+        })
+      });
+      setShowRestockModal(false);
+      setSelectedProductForRestock(null);
+      loadDashboardData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update stock');
+    } finally {
+      setIsSubmittingRestock(false);
+    }
+  };
+
+  const handleSaveThreshold = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingThreshold(true);
+    try {
+      await fetchApi('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ low_stock_threshold: globalThreshold })
+      });
+      setShowThresholdModal(false);
+      loadDashboardData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to update settings');
+    } finally {
+      setIsSavingThreshold(false);
+    }
+  };
+
+  const handleExportLowStockCSV = () => {
+    if (lowStockProducts.length === 0) return;
+    const headers = ['ID', 'SKU', 'Product Name', 'Category', 'Current Stock', 'Threshold', 'Selling Price (GHS)'];
+    const rows = lowStockProducts.map(p => [
+      p.id,
+      `"${p.sku || ''}"`,
+      `"${(p.name || '').replace(/"/g, '""')}"`,
+      `"${p.category || ''}"`,
+      p.stock_quantity,
+      p.threshold || 10,
+      p.selling_price || 0
+    ].join(','));
+
+    const csvContent = [headers.join(','), ...rows].join('\n');
     const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `Staff_Transactions_Report_${user?.name?.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `Low_Stock_Alert_Report_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
-    document.body.removeChild(link);
-  };
-
-  const loadMonthlySummary = (monthStr: string) => {
-    setMonthlyLoading(true);
-    fetchApi(`/reports/monthly-summary?month=${monthStr}`)
-      .then(data => setMonthlySummaryData(data))
-      .catch(console.error)
-      .finally(() => setMonthlyLoading(false));
   };
 
   const getMonthOptions = () => {
@@ -171,1921 +251,713 @@ export default function Dashboard() {
     return options;
   };
 
-  const loadDashboardData = () => {
-    setLoading(true);
-    Promise.all([
-      fetchApi('/reports/summary'),
-      fetchApi('/reports/low-stock'),
-      fetchApi('/reports/chart'),
-      fetchApi('/reports/monthly-trends'),
-      fetchApi('/reports/best-sellers'),
-      fetchApi('/sales').catch(() => []),
-      fetchApi('/settings').catch(() => ({}))
-    ])
-      .then(([summaryData, lowStockData, weekly, monthly, top, sales, settingsData]) => {
-         setSummary(summaryData);
-         setLowStockProducts(lowStockData);
-         setWeeklyData(weekly.map((d: any) => ({ ...d, total: d.total || 0 })));
-         setMonthlyTrends(monthly.map((d: any) => ({ ...d, total: d.total || 0 })));
-         setBestSellers(top);
-         if (Array.isArray(sales)) {
-           setRecentSalesList(sales.slice(0, 5));
-         }
-         if (settingsData && settingsData.low_stock_threshold) {
-           setGlobalThreshold(parseInt(settingsData.low_stock_threshold, 10));
-         }
-      })
-      .catch(console.error)
-      .finally(() => setLoading(false));
-  };
+  // Trend Analytics Math
+  const totalTrendRevenue = salesTrends.reduce((acc, curr) => acc + (curr.total || 0), 0);
+  const avgTrendRevenue = salesTrends.length > 0 ? totalTrendRevenue / salesTrends.length : 0;
+  const peakTrendDay = salesTrends.length > 0 ? [...salesTrends].sort((a, b) => (b.total || 0) - (a.total || 0))[0] : null;
 
-  const handleViewInvoice = async (saleId: number) => {
-    setLoadingInvoiceId(saleId);
-    try {
-      const sale = await fetchApi(`/sales/${saleId}`);
-      setSelectedInvoiceSale(sale);
-    } catch (err) {
-      console.error('Failed to fetch invoice details', err);
-      alert('Failed to load invoice details');
-    } finally {
-      setLoadingInvoiceId(null);
-    }
-  };
-
-  const handleOpenDailySummary = async () => {
-    setShowDailySummaryModal(true);
-    setDailySummaryLoading(true);
-    try {
-      const data = await fetchApi('/reports/daily-summary');
-      setDailySummary(data);
-    } catch (err: any) {
-      console.error('Failed to fetch daily summary', err);
-    } finally {
-      setDailySummaryLoading(false);
-    }
-  };
-
-  useEffect(() => {
-    fetchApi(`/reports/sales-trends?timeframe=${trendTimeframe}`)
-      .then(data => setSalesTrends(data))
-      .catch(console.error);
-  }, [trendTimeframe]);
-
-  const handleQuickRestockSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedProductForRestock || restockQty <= 0) return;
-    setIsSubmittingRestock(true);
-    try {
-      await fetchApi('/inventory/adjust', {
-        method: 'POST',
-        body: JSON.stringify({
-          product_id: selectedProductForRestock.id,
-          quantity_change: Number(restockQty),
-          reason: restockReason || 'Restock via Dashboard Alert'
-        })
-      });
-      setShowRestockModal(false);
-      setSelectedProductForRestock(null);
-      loadDashboardData();
-    } catch (err: any) {
-      alert(err.message || 'Failed to adjust stock');
-    } finally {
-      setIsSubmittingRestock(false);
-    }
-  };
-
-  const handleSaveThreshold = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsSavingThreshold(true);
-    try {
-      await fetchApi('/settings', {
-        method: 'PUT',
-        body: JSON.stringify({
-          low_stock_threshold: globalThreshold
-        })
-      });
-      setShowThresholdModal(false);
-      loadDashboardData();
-    } catch (err: any) {
-      alert(err.message || 'Failed to update threshold setting');
-    } finally {
-      setIsSavingThreshold(false);
-    }
-  };
-
-  const handleExportLowStockCSV = () => {
-    if (lowStockProducts.length === 0) return;
-    const headers = ['ID', 'SKU', 'Product Name', 'Category', 'Current Stock', 'Min Threshold', 'Shortage Gap', 'Selling Price (GHS)'];
-    const rows = lowStockProducts.map(p => {
-      const threshold = p.threshold || 10;
-      const shortage = Math.max(0, threshold - p.stock_quantity);
-      return [
-        p.id,
-        `"${p.sku || ''}"`,
-        `"${(p.name || '').replace(/"/g, '""')}"`,
-        `"${p.category || ''}"`,
-        p.stock_quantity,
-        threshold,
-        shortage,
-        p.selling_price || 0
-      ].join(',');
-    });
-
-    const csvContent = [headers.join(','), ...rows].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.setAttribute('download', `Low_Stock_Alert_Sheet_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-  };
-
-  // Filter low stock list
+  // Low Stock Table Filter Math
   const filteredLowStock = lowStockProducts.filter(p => {
-    const matchesSearch = p.name.toLowerCase().includes(lowStockSearch.toLowerCase()) || 
-                          p.sku.toLowerCase().includes(lowStockSearch.toLowerCase()) ||
-                          (p.category && p.category.toLowerCase().includes(lowStockSearch.toLowerCase()));
-    
-    if (!matchesSearch) return false;
-    
-    if (lowStockFilter === 'out_of_stock') return p.stock_quantity === 0;
-    if (lowStockFilter === 'critical') return p.stock_quantity > 0 && p.stock_quantity <= (p.threshold / 2);
-    return true;
+    const matchSearch = !lowStockSearch || 
+      p.name.toLowerCase().includes(lowStockSearch.toLowerCase()) || 
+      p.sku.toLowerCase().includes(lowStockSearch.toLowerCase()) ||
+      p.category.toLowerCase().includes(lowStockSearch.toLowerCase());
+
+    if (lowStockFilter === 'out_of_stock') return matchSearch && p.stock_quantity === 0;
+    if (lowStockFilter === 'critical') return matchSearch && p.stock_quantity > 0 && p.stock_quantity <= Math.ceil((p.threshold || 10) / 2);
+    return matchSearch;
   });
 
-  const outOfStockCount = lowStockProducts.filter(p => p.stock_quantity === 0).length;
-  const criticalCount = lowStockProducts.filter(p => p.stock_quantity > 0 && p.stock_quantity <= ((p.threshold || 10) / 2)).length;
-
-  if (loading) {
-    return (
-      <div className="space-y-6 animate-pulse">
-        <div className="grid grid-cols-4 gap-4">
-           {[1,2,3,4].map(i => <div key={i} className="h-32 bg-slate-200 rounded-sm"></div>)}
-        </div>
-        <div className="grid grid-cols-2 gap-8">
-           <div className="h-80 bg-slate-200 rounded-sm"></div>
-           <div className="h-80 bg-slate-200 rounded-sm"></div>
-        </div>
-      </div>
-    );
-  }
-
   return (
-    <div className="space-y-8 pb-12">
-      {/* Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded-sm border border-slate-200 shadow-2xs">
+    <div className="space-y-6 pb-12">
+      {/* Executive Header */}
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
         <div>
-           <div className="flex items-center gap-3">
-             <h1 className="text-[22px] font-black text-slate-900 tracking-tight">
-               {viewMode === 'admin' ? 'Executive Business Intelligence' : 'Staff Sales Terminal'}
-             </h1>
-             {user?.role === 'admin' && (
-               <span className="px-2.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black uppercase rounded-full">
-                 Admin Active
-               </span>
-             )}
-           </div>
-           <p className="text-[11px] text-slate-400 font-black uppercase tracking-[0.2em] mt-0.5">
-             Ummis Lane Enterprise / {viewMode === 'admin' ? 'Monthly Operational & Financial Analytics' : 'Cashier Counter & Performance Hub'}
-           </p>
+          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            Retail OS Overview
+          </h1>
+          <p className="text-xs text-slate-500 font-medium">Real-time revenue monitoring, POS sales trends, stock alerts, and financial ledgers.</p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-           {/* Role Switcher Toggle for Admin */}
-           {user?.role === 'admin' && (
-             <div className="flex items-center bg-slate-100 p-1 rounded-sm border border-slate-200">
-               <button
-                 onClick={() => setViewMode('admin')}
-                 className={`px-3 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-sm transition-all flex items-center gap-1.5 ${
-                   viewMode === 'admin' 
-                     ? 'bg-blue-600 text-white shadow-xs' 
-                     : 'text-slate-600 hover:text-slate-900'
-                 }`}
-               >
-                 <BarChart3 size={14} /> Admin View
-               </button>
-               <button
-                 onClick={() => setViewMode('staff')}
-                 className={`px-3 py-1.5 text-[11px] font-black uppercase tracking-wider rounded-sm transition-all flex items-center gap-1.5 ${
-                   viewMode === 'staff' 
-                     ? 'bg-blue-600 text-white shadow-xs' 
-                     : 'text-slate-600 hover:text-slate-900'
-                 }`}
-               >
-                 <UserCheck size={14} /> Staff View
-               </button>
-             </div>
-           )}
-
-           <button 
-             onClick={handleOpenDailySummary}
-             className="flex items-center gap-2 px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-black uppercase tracking-wider rounded-sm transition-colors shadow-2xs"
-             id="daily-summary-btn"
-           >
-             <Calendar size={14} />
-             Daily Summary
-           </button>
-
-           {user?.role === 'admin' && viewMode === 'admin' && (
-             <button 
-               onClick={() => setShowThresholdModal(true)}
-               className="flex items-center gap-2 px-3 py-2 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm transition-colors shadow-2xs"
-               id="threshold-config-btn"
-             >
-               <Settings size={14} className="text-slate-500" />
-               Threshold Config
-             </button>
-           )}
-        </div>
-      </div>
-
-      {/* STAFF TERMINAL VIEW */}
-      {viewMode === 'staff' && (
-        <div className="space-y-6 animate-fadeIn">
-          {/* Staff Header & Shift Action Banner */}
-          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white rounded-sm p-6 shadow-md border border-slate-800">
-            <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
-              <div className="flex items-center gap-4">
-                <div className="w-12 h-12 rounded-full bg-blue-600/30 border border-blue-400/40 flex items-center justify-center shrink-0">
-                  <UserCheck size={24} className="text-blue-400" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-black tracking-tight">{user?.name}</h2>
-                    <span className="px-2.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-400/30 text-[10px] font-black uppercase tracking-widest rounded-full">
-                      {user?.role || 'Staff Attendant'}
-                    </span>
-                    <span className="text-xs text-slate-400">|</span>
-                    <span className="text-xs text-emerald-400 font-bold flex items-center gap-1">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span> Terminal Active
-                    </span>
-                  </div>
-                  <p className="text-xs text-slate-300 mt-1">
-                    {staffSummary?.activeShift 
-                      ? `Shift #${staffSummary.activeShift.id} OPEN since ${new Date(staffSummary.activeShift.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} (Start Cash: ${formatGHS(staffSummary.activeShift.starting_cash)})`
-                      : 'No active shift currently open. Please start a shift to begin recording counter sales.'}
-                  </p>
-                </div>
-              </div>
-
-              {/* Quick Staff Controls */}
-              <div className="flex flex-wrap items-center gap-2.5 w-full md:w-auto">
-                <Link
-                  to="/sales"
-                  className="flex-1 md:flex-none px-4 py-2.5 bg-blue-600 hover:bg-blue-500 text-white text-xs font-black uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-2 shadow-sm"
-                >
-                  <ShoppingCart size={16} /> New Sale / POS
-                </Link>
-                <Link
-                  to="/shifts"
-                  className={`flex-1 md:flex-none px-4 py-2.5 text-xs font-black uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-2 shadow-sm ${
-                    staffSummary?.activeShift 
-                      ? 'bg-amber-600 hover:bg-amber-500 text-white' 
-                      : 'bg-emerald-600 hover:bg-emerald-500 text-white'
-                  }`}
-                >
-                  <Clock size={16} /> {staffSummary?.activeShift ? 'Manage / Close Shift' : 'Start New Shift'}
-                </Link>
-                <Link
-                  to="/customers"
-                  className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold uppercase tracking-wider rounded-sm transition-all flex items-center justify-center gap-1.5"
-                >
-                  <UserPlus size={16} /> Register Customer
-                </Link>
-              </div>
-            </div>
-          </div>
-
-          {/* Staff Personal KPI Cards Grid */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded-sm border border-slate-200 shadow-2xs">
-              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-2">
-                <span>Today's Sales Revenue</span>
-                <DollarSign size={16} className="text-emerald-500" />
-              </div>
-              <div className="text-2xl font-black text-slate-900">{formatGHS(staffSummary?.todayRevenue || 0)}</div>
-              <div className="text-[11px] text-slate-500 font-medium mt-1">
-                {staffSummary?.todaySalesCount || 0} completed transactions today
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-sm border border-slate-200 shadow-2xs">
-              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-2">
-                <span>Month-to-Date Volume</span>
-                <TrendingUp size={16} className="text-blue-500" />
-              </div>
-              <div className="text-2xl font-black text-slate-900">{formatGHS(staffSummary?.monthRevenue || 0)}</div>
-              <div className="text-[11px] text-slate-500 font-medium mt-1">
-                {staffSummary?.monthSalesCount || 0} total sales logged this month
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-sm border border-slate-200 shadow-2xs">
-              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-2">
-                <span>Monthly Target Progress</span>
-                <Target size={16} className="text-amber-500" />
-              </div>
-              <div className="flex items-baseline justify-between mb-1">
-                <span className="text-xl font-black text-slate-900">{staffSummary?.targetPercentage || 0}%</span>
-                <span className="text-[10px] font-bold text-slate-400">Target: {formatGHS(staffSummary?.monthlyTarget || 15000)}</span>
-              </div>
-              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                <div 
-                  className="bg-amber-500 h-full rounded-full transition-all duration-500" 
-                  style={{ width: `${Math.min(100, staffSummary?.targetPercentage || 0)}%` }}
-                ></div>
-              </div>
-            </div>
-
-            <div className="bg-white p-5 rounded-sm border border-slate-200 shadow-2xs">
-              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-2">
-                <span>Incentive & Store Rank</span>
-                <Award size={16} className="text-purple-500" />
-              </div>
-              <div className="flex items-baseline justify-between">
-                <div className="text-xl font-black text-purple-700">{formatGHS(staffSummary?.commissionEst || 0)}</div>
-                <span className="px-2 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 text-[10px] font-black uppercase rounded-full">
-                  Rank #{staffSummary?.myRank || 1}
-                </span>
-              </div>
-              <div className="text-[10px] text-slate-400 font-medium mt-1">
-                Est. 2% sales commission reward accrued
-              </div>
-            </div>
-          </div>
-
-          {/* Staff Recent Sales Transactions Feed */}
-          <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Receipt size={16} className="text-blue-600" />
-                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">My Recent Completed Sales Today</h3>
-              </div>
-              <Link to="/sales" className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                View All Sales History <ChevronRight size={14} />
-              </Link>
-            </div>
-
-            <div className="divide-y divide-slate-100">
-              {staffSummary?.recentSales && staffSummary.recentSales.length > 0 ? (
-                staffSummary.recentSales.map((sale: any) => (
-                  <div key={sale.id} className="p-4 hover:bg-slate-50/80 transition-colors flex items-center justify-between">
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-sm bg-emerald-50 text-emerald-700 border border-emerald-200 flex items-center justify-center font-bold text-xs">
-                        #{sale.id}
-                      </div>
-                      <div>
-                        <div className="text-xs font-black text-slate-900">{formatGHS(sale.total_amount)}</div>
-                        <div className="text-[10px] text-slate-400 font-mono">
-                          {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })} • Payment: {sale.payment_method.toUpperCase()}
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded-sm text-[10px] font-bold uppercase tracking-wider">
-                        Completed
-                      </span>
-                      <button
-                        onClick={() => handleViewInvoice(sale.id)}
-                        disabled={loadingInvoiceId === sale.id}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors shadow-2xs"
-                      >
-                        {loadingInvoiceId === sale.id ? (
-                          <RefreshCw size={12} className="animate-spin" />
-                        ) : (
-                          <FileText size={12} />
-                        )}
-                        Invoice
-                      </button>
-                    </div>
-                  </div>
-                ))
-              ) : (
-                <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                  No sales completed by you yet today. Click "New Sale / POS" above to record your first transaction!
-                </div>
-              )}
-            </div>
-          </div>
-
-          {/* Staff Transactions Report Module */}
-          <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
-            <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-              <div>
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-blue-100 text-blue-700 rounded-sm">
-                    <FileText size={18} />
-                  </div>
-                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                    Staff Sales Transactions & Ledger Report
-                  </h3>
-                </div>
-                <p className="text-[11px] text-slate-500 font-medium mt-1">
-                  Comprehensive audit report of your personal counter transactions, payment channels, and shift reconciliation.
-                </p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
-                <button
-                  onClick={handleExportStaffReportCSV}
-                  disabled={!staffReportData || !staffReportData.transactions || staffReportData.transactions.length === 0}
-                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-sm text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-2xs"
-                >
-                  <Download size={14} /> Export CSV Report
-                </button>
-                <button
-                  onClick={() => window.print()}
-                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-sm text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
-                >
-                  <Printer size={14} /> Print Ledger
-                </button>
-              </div>
-            </div>
-
-            {/* Filter Bar */}
-            <div className="p-4 bg-slate-50 border-b border-slate-100 space-y-3">
-              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Period:</span>
-                  <button
-                    onClick={() => setStaffReportPeriod('today')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
-                      staffReportPeriod === 'today' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Today
-                  </button>
-                  <button
-                    onClick={() => setStaffReportPeriod('week')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
-                      staffReportPeriod === 'week' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Last 7 Days
-                  </button>
-                  <button
-                    onClick={() => setStaffReportPeriod('month')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
-                      staffReportPeriod === 'month' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    This Month
-                  </button>
-                  <button
-                    onClick={() => setStaffReportPeriod('custom')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
-                      staffReportPeriod === 'custom' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
-                    }`}
-                  >
-                    Custom Dates
-                  </button>
-
-                  {staffReportPeriod === 'custom' && (
-                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-1 rounded-sm ml-2">
-                      <input 
-                        type="date" 
-                        value={staffReportStartDate} 
-                        onChange={e => setStaffReportStartDate(e.target.value)} 
-                        className="text-xs bg-transparent focus:outline-none" 
-                      />
-                      <span className="text-slate-400 text-xs">-</span>
-                      <input 
-                        type="date" 
-                        value={staffReportEndDate} 
-                        onChange={e => setStaffReportEndDate(e.target.value)} 
-                        className="text-xs bg-transparent focus:outline-none" 
-                      />
-                    </div>
-                  )}
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
-                  <select
-                    value={staffReportPaymentMethod}
-                    onChange={e => setStaffReportPaymentMethod(e.target.value)}
-                    className="border border-slate-200 bg-white px-3 py-1.5 rounded-sm text-xs text-slate-700 font-bold focus:outline-none focus:border-blue-500"
-                  >
-                    <option value="all">All Payment Channels</option>
-                    <option value="Cash">Cash Only</option>
-                    <option value="Mobile Money">Mobile Money (MoMo) Only</option>
-                    <option value="Card">Card Only</option>
-                  </select>
-
-                  <div className="relative flex-1 lg:w-48">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-                    <input
-                      type="text"
-                      placeholder="Search my ledger..."
-                      value={staffReportSearch}
-                      onChange={e => setStaffReportSearch(e.target.value)}
-                      className="w-full border border-slate-200 bg-white rounded-sm pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Metrics Breakdown Grid */}
-            <div className="p-5 border-b border-slate-100 bg-white">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-sm">
-                  <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest block mb-1">
-                    Total Revenue
-                  </span>
-                  <div className="text-xl font-black text-emerald-950">
-                    {formatGHS(staffReportData?.totalVolume || 0)}
-                  </div>
-                  <span className="text-[10px] text-emerald-700 font-medium mt-1 block">
-                    Total sales value logged by you
-                  </span>
-                </div>
-
-                <div className="p-4 bg-blue-50/70 border border-blue-200/80 rounded-sm">
-                  <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest block mb-1">
-                    Total Transactions
-                  </span>
-                  <div className="text-xl font-black text-blue-950">
-                    {staffReportData?.transactionCount || 0}
-                  </div>
-                  <span className="text-[10px] text-blue-700 font-medium mt-1 block">
-                    Completed customer sales
-                  </span>
-                </div>
-
-                <div className="p-4 bg-purple-50/70 border border-purple-200/80 rounded-sm">
-                  <span className="text-[10px] font-black text-purple-800 uppercase tracking-widest block mb-1">
-                    Avg Transaction Value
-                  </span>
-                  <div className="text-xl font-black text-purple-950">
-                    {formatGHS(staffReportData?.avgOrderValue || 0)}
-                  </div>
-                  <span className="text-[10px] text-purple-700 font-medium mt-1 block">
-                    Average size per receipt
-                  </span>
-                </div>
-
-                <div className="p-4 bg-rose-50/70 border border-rose-200/80 rounded-sm flex flex-col justify-between">
-                  <div>
-                    <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest flex items-center justify-between">
-                      My Returns Today
-                      <RotateCcw size={13} className="text-rose-600" />
-                    </span>
-                    <div className="text-xl font-black text-rose-950 mt-1">
-                      {formatGHS(returnsSummary?.myTodayRefundValue || 0)}
-                    </div>
-                    <span className="text-[10px] text-rose-700 font-medium mt-0.5 block">
-                      {returnsSummary?.myTodayReturnCount || 0} return(s) processed today
-                    </span>
-                  </div>
-                  <button
-                    onClick={() => setShowDashboardReturnModal(true)}
-                    className="mt-2 text-[10px] font-black uppercase tracking-wider text-white bg-rose-600 hover:bg-rose-700 py-1.5 px-2 rounded flex items-center justify-center gap-1 transition shadow-2xs"
-                  >
-                    <RotateCcw size={12} /> Process Sale Return
-                  </button>
-                </div>
-
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm space-y-1.5">
-                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
-                    Payment Channel Breakdown
-                  </span>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-slate-600">Cash:</span>
-                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.cash || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-slate-600">MoMo:</span>
-                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.mobileMoney || 0)}</span>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px]">
-                    <span className="font-bold text-slate-600">Card:</span>
-                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.card || 0)}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Transactions Ledger Table */}
-            <div className="overflow-x-auto">
-              {staffReportLoading ? (
-                <div className="p-12 text-center space-y-2">
-                  <RefreshCw size={24} className="animate-spin text-blue-600 mx-auto" />
-                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Loading transactions report...</p>
-                </div>
-              ) : staffReportData && staffReportData.transactions && staffReportData.transactions.length > 0 ? (
-                <table className="min-w-full divide-y divide-slate-200">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Sale Ref</th>
-                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
-                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Customer</th>
-                      <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">Items</th>
-                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Payment Channel</th>
-                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</th>
-                      <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Amount</th>
-                      <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="bg-white divide-y divide-slate-100 text-xs">
-                    {staffReportData.transactions
-                      .filter((s: any) => {
-                        if (!staffReportSearch) return true;
-                        const q = staffReportSearch.toLowerCase();
-                        return (
-                          `SALE-${s.id}`.toLowerCase().includes(q) ||
-                          (s.customer_name && s.customer_name.toLowerCase().includes(q)) ||
-                          (s.payment_method && s.payment_method.toLowerCase().includes(q)) ||
-                          s.total_amount.toString().includes(q)
-                        );
-                      })
-                      .map((s: any) => (
-                        <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="px-5 py-3 font-mono font-bold text-slate-900">
-                            #SALE-{s.id}
-                          </td>
-                          <td className="px-5 py-3 text-slate-500 whitespace-nowrap">
-                            {new Date(s.created_at).toLocaleString()}
-                          </td>
-                          <td className="px-5 py-3 text-slate-800 font-medium">
-                            {s.customer_name || 'Walk-in Customer'}
-                          </td>
-                          <td className="px-5 py-3 text-center font-bold text-slate-700">
-                            {s.total_items_sold || s.item_count || 1}
-                          </td>
-                          <td className="px-5 py-3 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              s.payment_method === 'Cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
-                              s.payment_method === 'Mobile Money' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
-                              'bg-blue-50 text-blue-700 border border-blue-200'
-                            }`}>
-                              {s.payment_method}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                              s.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
-                            }`}>
-                              {s.status}
-                            </span>
-                          </td>
-                          <td className="px-5 py-3 text-right font-black text-slate-900 whitespace-nowrap">
-                            {formatGHS(s.total_amount)}
-                          </td>
-                          <td className="px-5 py-3 text-right whitespace-nowrap">
-                            <button
-                              onClick={() => handleViewInvoice(s.id)}
-                              disabled={loadingInvoiceId === s.id}
-                              className="px-2.5 py-1 bg-slate-800 hover:bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors shadow-2xs ml-auto"
-                            >
-                              {loadingInvoiceId === s.id ? (
-                                <RefreshCw size={12} className="animate-spin" />
-                              ) : (
-                                <FileText size={12} />
-                              )}
-                              Invoice
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                  </tbody>
-                </table>
-              ) : (
-                <div className="p-12 text-center text-slate-400 text-xs">
-                  <FileText className="mx-auto mb-2 opacity-30" size={32} />
-                  No transactions recorded for the selected period or filters.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ADMIN INTELLIGENCE VIEW */}
-      {viewMode === 'admin' && (
-        <>
-          {/* Low Stock High Priority Banner */}
-          {lowStockProducts.length > 0 && (
-            <div className="bg-red-500 text-white rounded-sm p-5 shadow-lg flex flex-col md:flex-row items-start md:items-center justify-between gap-4 border-l-4 border-red-700 animate-fadeIn">
-              <div className="flex items-start gap-3">
-                <div className="p-2 bg-white/10 rounded-sm shrink-0">
-                  <AlertTriangle size={24} className="text-amber-200 animate-bounce" />
-                </div>
-                <div>
-                  <div className="flex items-center gap-2">
-                    <h3 className="text-[14px] font-black uppercase tracking-widest">Low Stock Inventory Alert</h3>
-                    <span className="px-2 py-0.5 bg-white text-red-700 text-[10px] font-extrabold uppercase rounded-full">
-                      {lowStockProducts.length} Items Affected
-                    </span>
-                  </div>
-                  <p className="text-[12px] text-red-100 mt-1 font-medium">
-                    {outOfStockCount > 0 ? `${outOfStockCount} items completely out of stock.` : ''} {criticalCount > 0 ? `${criticalCount} items critically near depletion.` : ''} Immediate replenishment recommended to avoid lost sales.
-                  </p>
-                </div>
-              </div>
-              <a 
-                href="#low-stock-section" 
-                className="px-4 py-2 bg-white text-red-700 hover:bg-red-50 rounded-sm font-black text-[11px] uppercase tracking-widest transition-colors shadow-sm shrink-0 flex items-center gap-2"
+        <div className="flex items-center gap-3">
+          {/* Admin vs Staff View Toggle */}
+          {user?.role === 'admin' && (
+            <div className="flex items-center bg-slate-100 p-1 rounded border border-slate-200">
+              <button
+                onClick={() => setViewMode('admin')}
+                className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all ${
+                  viewMode === 'admin' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
               >
-                Manage Reorders <ArrowRight size={14} />
-              </a>
+                Executive Admin
+              </button>
+              <button
+                onClick={() => setViewMode('staff')}
+                className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all ${
+                  viewMode === 'staff' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Cashier Terminal
+              </button>
             </div>
           )}
 
-          {/* KPI Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-            <StatCard title="Inventory Depth" value={summary?.totalProducts || 0} icon={<Package size={18} className="text-blue-500" />} subtitle="Total Unique SKUs" />
-            <a href="#low-stock-section" className="block transition-transform hover:-translate-y-0.5">
-              <StatCard 
-                title="Low Stock Alerts" 
-                value={summary?.lowStockProducts || 0} 
-                icon={<AlertCircle size={18} className="text-red-500" />} 
-                subtitle={`${outOfStockCount} Out of stock`} 
-                color={summary?.lowStockProducts > 0 ? "text-red-600" : "text-emerald-600"} 
-              />
-            </a>
-            <StatCard title="Lifetime Revenue" value={formatGHS(summary?.totalSalesValue || 0)} icon={<DollarSign size={18} className="text-emerald-500" />} subtitle="Across all transactions" />
-            <StatCard title="Today's Velocity" value={formatGHS(summary?.todaySalesValue || 0)} icon={<TrendingUp size={18} className="text-blue-600" />} subtitle="Daily performance" />
+          <button
+            onClick={handleOpenDailySummary}
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs uppercase tracking-wider transition border border-slate-200 flex items-center gap-1.5"
+          >
+            <FileText size={15} /> EOD Summary
+          </button>
+
+          <button
+            onClick={loadDashboardData}
+            disabled={loading}
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition border border-slate-200"
+            title="Refresh Data"
+          >
+            <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
+          </button>
+        </div>
+      </div>
+
+      {/* QUICK SHORTCUT TOOLBAR */}
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+        <Link
+          to="/sales"
+          className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <ShoppingCart size={20} className="group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">New POS Sale</span>
+        </Link>
+
+        <Link
+          to="/returns"
+          className="p-3 bg-white hover:bg-rose-50 text-slate-800 hover:text-rose-700 border border-slate-200 hover:border-rose-300 rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <RotateCcw size={20} className="text-rose-600 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">Process Return</span>
+        </Link>
+
+        <Link
+          to="/products"
+          className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <Package size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">Products Catalog</span>
+        </Link>
+
+        <Link
+          to="/expenses"
+          className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <CreditCard size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">Record Expense</span>
+        </Link>
+
+        <Link
+          to="/shifts"
+          className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <Clock size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">Shift Register</span>
+        </Link>
+
+        <Link
+          to="/customers"
+          className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
+        >
+          <Users size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+          <span className="text-xs font-black uppercase tracking-wider">Customers</span>
+        </Link>
+      </div>
+
+      {/* ADMIN OVERVIEW VIEW */}
+      {viewMode === 'admin' ? (
+        <>
+          {/* PRIMARY BUSINESS KPI CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Card 1: Today's Gross Sales */}
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
+                <span>Today's Gross Sales</span>
+                <DollarSign size={18} className="text-blue-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">
+                {formatGHS(summary?.todaySales || 0)}
+              </div>
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span>{summary?.todayCount || 0} order(s) completed</span>
+                {summary?.percentChange !== undefined && (
+                  <span className={`flex items-center font-bold text-[11px] ${summary.percentChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {summary.percentChange >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                    {Math.abs(summary.percentChange)}% vs Ytd
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Card 2: Month Net Profit */}
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
+                <span>Monthly Net Profit</span>
+                <TrendingUp size={18} className="text-emerald-600" />
+              </div>
+              <div className="text-2xl font-black text-emerald-700">
+                {formatGHS(summary?.monthProfit || 0)}
+              </div>
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span>Revenue: {formatGHS(summary?.monthSales || 0)}</span>
+                <span className="font-bold text-slate-900">
+                  {summary?.monthSales > 0 ? ((summary.monthProfit / summary.monthSales) * 100).toFixed(1) : 0}% Margin
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Active Shift Drawer Status */}
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
+                <span>Shift Cash Status</span>
+                <Clock size={18} className="text-indigo-600" />
+              </div>
+              <div className="text-2xl font-black text-slate-900">
+                {summary?.activeShiftCount || 0} Open Shift(s)
+              </div>
+              <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span>Expected Cash: {formatGHS(summary?.openShiftsCashTotal || 0)}</span>
+                <span className="font-bold text-indigo-600">Live Counter</span>
+              </div>
+            </div>
+
+            {/* Card 4: Low Stock Alert */}
+            <div className="bg-white p-5 rounded border border-amber-200 bg-amber-50/30 shadow-2xs space-y-2">
+              <div className="flex items-center justify-between text-amber-800 text-[11px] font-black uppercase tracking-wider">
+                <span>Low Stock Urgency</span>
+                <AlertTriangle size={18} className="text-amber-600" />
+              </div>
+              <div className="text-2xl font-black text-amber-900">
+                {lowStockProducts.length} Product(s)
+              </div>
+              <div className="flex items-center justify-between text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
+                <span>{lowStockProducts.filter(p => p.stock_quantity === 0).length} completely out of stock</span>
+                <a href="#low-stock-section" className="font-bold underline hover:text-amber-900">
+                  Restock
+                </a>
+              </div>
+            </div>
           </div>
 
-          {/* Sales Returns & Refund Loss Prevention Section */}
-          <div className="bg-white border border-rose-200/80 rounded-sm shadow-2xs overflow-hidden">
-            <div className="p-4 border-b border-rose-100 bg-rose-50/50 flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-2">
-                <div className="w-7 h-7 bg-rose-600 rounded flex items-center justify-center text-white shrink-0">
-                  <RotateCcw size={15} />
+          {/* REVENUE & SALES VELOCITY ANALYTICS */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Sales Velocity Chart */}
+            <div className="lg:col-span-2 bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                <div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <TrendingUp size={16} className="text-blue-600" />
+                    Sales & Revenue Velocity
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">Historical transaction volume and revenue trends.</p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200">
+                    {[
+                      { id: '7days', label: '7 Days' },
+                      { id: '30days', label: '30 Days' },
+                      { id: 'monthly', label: 'Monthly' },
+                      { id: 'yearly', label: 'Yearly' }
+                    ].map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setTrendTimeframe(t.id as any)}
+                        className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded transition-all ${
+                          trendTimeframe === t.id ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    onClick={() => setTrendChartType(trendChartType === 'area' ? 'bar' : 'area')}
+                    className="p-1.5 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-bold text-slate-700"
+                    title="Toggle Chart Type"
+                  >
+                    {trendChartType === 'area' ? 'Bar Chart' : 'Area Chart'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Chart Stats Bar */}
+              <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center text-xs">
+                <div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase">Period Revenue</div>
+                  <div className="font-black text-slate-900">{formatGHS(totalTrendRevenue)}</div>
                 </div>
                 <div>
-                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
-                    Sales Returns & Loss Prevention Analytics
-                  </h3>
-                  <p className="text-[10px] text-slate-500 font-medium">Monthly returned items, refund volume, and damaged stock tracking</p>
+                  <div className="text-[10px] font-black text-slate-400 uppercase">Daily Average</div>
+                  <div className="font-black text-slate-900">{formatGHS(avgTrendRevenue)}</div>
+                </div>
+                <div>
+                  <div className="text-[10px] font-black text-slate-400 uppercase">Peak Sales Day</div>
+                  <div className="font-black text-blue-600">{peakTrendDay ? formatGHS(peakTrendDay.total) : 'N/A'}</div>
                 </div>
               </div>
-              <button
-                onClick={() => setShowDashboardReturnModal(true)}
-                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-xs transition flex items-center gap-1.5 shadow-xs"
-              >
-                <RotateCcw size={14} /> Process New Return
-              </button>
-            </div>
 
-            <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white">
-              {/* Card 1: Today Refunds */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
-                  Today's Refunded Volume
-                </span>
-                <div className="text-2xl font-black text-rose-700">
-                  {formatGHS(returnsSummary?.todayRefundValue || 0)}
-                </div>
-                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
-                  {returnsSummary?.todayReturnCount || 0} return receipt(s) today
-                </span>
-              </div>
-
-              {/* Card 2: Month Refunds */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
-                  This Month Total Refunds
-                </span>
-                <div className="text-2xl font-black text-rose-800">
-                  {formatGHS(returnsSummary?.monthRefundValue || 0)}
-                </div>
-                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
-                  Cumulative monthly returns value
-                </span>
-              </div>
-
-              {/* Card 3: Damaged Stock Write-off */}
-              <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-sm">
-                <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider block mb-1">
-                  Damaged Stock Loss
-                </span>
-                <div className="text-2xl font-black text-amber-800">
-                  {formatGHS(returnsSummary?.damagedStockLoss || 0)}
-                </div>
-                <span className="text-[10px] text-amber-700 font-medium mt-1 block">
-                  Non-restocked inventory loss this month
-                </span>
-              </div>
-
-              {/* Card 4: Top Reason */}
-              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
-                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
-                  Primary Return Reason
-                </span>
-                <div className="text-sm font-black text-slate-900 truncate">
-                  {returnsSummary?.reasonsBreakdown?.[0]?.reason || 'None Logged'}
-                </div>
-                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
-                  {returnsSummary?.reasonsBreakdown?.[0]?.count || 0} case(s) recorded
-                </span>
+              {/* Recharts Container */}
+              <div className="h-[280px] w-full pt-2">
+                <ResponsiveContainer width="100%" height="100%">
+                  {trendChartType === 'area' ? (
+                    <AreaChart data={salesTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
+                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
+                      <Tooltip formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} />
+                      <Area type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
+                    </AreaChart>
+                  ) : (
+                    <BarChart data={salesTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
+                      <Tooltip formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} />
+                      <Bar dataKey="total" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                    </BarChart>
+                  )}
+                </ResponsiveContainer>
               </div>
             </div>
 
-            {/* Sub-grid for Top Returned Products and Reasons Breakdown */}
-            {returnsSummary && (returnsSummary.topReturnedProducts?.length > 0 || returnsSummary.reasonsBreakdown?.length > 0) && (
-              <div className="border-t border-slate-200 bg-slate-50/50 p-5 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
-                {/* Top Returned Items */}
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3">
-                  <h4 className="font-black text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <Package size={14} className="text-rose-600" />
-                    Top Returned Products
-                  </h4>
-                  <div className="divide-y divide-slate-100">
-                    {returnsSummary.topReturnedProducts?.map((item: any, idx: number) => (
-                      <div key={idx} className="py-2 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-slate-900">{item.product_name}</div>
-                          <div className="text-[10px] text-slate-400 font-medium">{item.total_qty} unit(s) returned</div>
-                        </div>
-                        <div className="font-black text-rose-700">{formatGHS(item.total_refund)}</div>
-                      </div>
-                    ))}
-                  </div>
+            {/* Top Selling Products Leaderboard */}
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
+              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+                <div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Award size={16} className="text-amber-500" />
+                    Top Selling Products
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">Highest volume items by units sold.</p>
                 </div>
-
-                {/* Return Reasons Breakdown */}
-                <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3">
-                  <h4 className="font-black text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
-                    <AlertCircle size={14} className="text-amber-600" />
-                    Return Reasons Breakdown
-                  </h4>
-                  <div className="divide-y divide-slate-100">
-                    {returnsSummary.reasonsBreakdown?.map((reasonObj: any, idx: number) => (
-                      <div key={idx} className="py-2 flex items-center justify-between">
-                        <div>
-                          <div className="font-bold text-slate-900">{reasonObj.reason}</div>
-                          <div className="text-[10px] text-slate-400 font-medium">{reasonObj.count} incidence(s)</div>
-                        </div>
-                        <div className="font-black text-slate-800">{formatGHS(reasonObj.total)}</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                <Link to="/products" className="text-xs font-bold text-blue-600 hover:underline">
+                  Catalog
+                </Link>
               </div>
-            )}
+
+              <div className="space-y-3">
+                {bestSellers.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 text-xs font-medium">
+                    No sales data available yet.
+                  </div>
+                ) : (
+                  bestSellers.slice(0, 5).map((item: any, idx: number) => {
+                    const maxQty = Math.max(...bestSellers.map((b: any) => b.total_qty || 1));
+                    const percent = Math.round(((item.total_qty || 0) / maxQty) * 100);
+
+                    return (
+                      <div key={idx} className="space-y-1">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="font-bold text-slate-800 truncate max-w-[180px]">
+                            {idx + 1}. {item.name}
+                          </span>
+                          <span className="font-black text-slate-900">
+                            {item.total_qty} units
+                          </span>
+                        </div>
+                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-blue-600 h-full rounded-full transition-all duration-500" 
+                            style={{ width: `${percent}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+            </div>
           </div>
 
-          {/* Recent Sales Widget */}
-          <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
+          {/* RECENT SALES ACTIVITY FEED & INVOICE VIEWER */}
+          <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Receipt size={16} className="text-blue-600" />
-                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">Recent Sales Transactions</h3>
-                <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-extrabold uppercase rounded-full border border-blue-100">
-                  Last 5 Completed
-                </span>
+              <div>
+                <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <ShoppingCart size={15} className="text-blue-600" />
+                  Recent Sales Transactions
+                </h2>
+                <p className="text-[11px] text-slate-500 font-medium">Live transaction activity log across all register counters.</p>
               </div>
-              <Link to="/sales" className="text-[11px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-1">
-                View All Transactions <ChevronRight size={14} />
+              <Link to="/sales" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
+                All Transactions <ChevronRight size={14} />
               </Link>
             </div>
 
-            <div className="divide-y divide-slate-100">
-              {recentSalesList.length > 0 ? (
-                recentSalesList.map((sale: any) => (
-                  <div key={sale.id} className="p-4 hover:bg-slate-50/80 transition-colors flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 rounded bg-emerald-50 text-emerald-700 border border-emerald-200 flex flex-col items-center justify-center shrink-0">
-                        <span className="text-[9px] font-black uppercase">INV</span>
-                        <span className="text-xs font-black">#{sale.id}</span>
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-xs font-black text-slate-900">{formatGHS(sale.total_amount)}</span>
-                          <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-[10px] font-bold uppercase tracking-wider">
-                            {sale.payment_method?.toUpperCase() || 'CASH'}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Sale ID</th>
+                    <th className="px-4 py-3">Date & Time</th>
+                    <th className="px-4 py-3">Cashier</th>
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-center">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {recentSalesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        No recent sales recorded today.
+                      </td>
+                    </tr>
+                  ) : (
+                    recentSalesList.map((sale: any) => (
+                      <tr key={sale.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-3 font-mono font-bold text-blue-600">
+                          #SALE-{sale.id}
+                        </td>
+                        <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">
+                          {new Date(sale.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-800">
+                          {sale.user_name || 'Cashier'}
+                        </td>
+                        <td className="px-4 py-3 font-medium text-slate-700">
+                          {sale.customer_name || 'Walk-in Customer'}
+                        </td>
+                        <td className="px-4 py-3">
+                          <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
+                            {sale.payment_method || 'Cash'}
                           </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 font-medium mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
-                          <span>{new Date(sale.created_at).toLocaleDateString()} {new Date(sale.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                          <span>•</span>
-                          <span>Customer: <strong className="text-slate-600">{sale.customer_name || 'Walk-in Customer'}</strong></span>
-                          {sale.user_name && (
-                            <>
-                              <span>•</span>
-                              <span>Staff: <strong className="text-slate-600">{sale.user_name}</strong></span>
-                            </>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    <button
-                      onClick={() => handleViewInvoice(sale.id)}
-                      disabled={loadingInvoiceId === sale.id}
-                      className="px-3.5 py-1.5 bg-slate-900 hover:bg-blue-600 text-white rounded text-[11px] font-bold uppercase tracking-wider flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-2xs disabled:opacity-50"
-                    >
-                      {loadingInvoiceId === sale.id ? (
-                        <RefreshCw size={13} className="animate-spin" />
-                      ) : (
-                        <FileText size={13} />
-                      )}
-                      View Invoice
-                    </button>
-                  </div>
-                ))
-              ) : (
-                <div className="p-8 text-center text-slate-400 text-xs font-medium">
-                  No sales recorded in the system yet.
-                </div>
-              )}
+                        </td>
+                        <td className="px-4 py-3 text-right font-black text-slate-900">
+                          {formatGHS(sale.total_amount)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => handleViewInvoice(sale.id)}
+                            disabled={loadingInvoiceId === sale.id}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[10px] uppercase tracking-wider transition border border-slate-200"
+                          >
+                            {loadingInvoiceId === sale.id ? 'Loading...' : 'View Receipt'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
 
-          {/* DEDICATED MONTHLY FINANCIAL & STAFF PERFORMANCE CENTER */}
-          <div className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden space-y-6 p-6">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+          {/* LOW STOCK CONTROL CENTER */}
+          <div id="low-stock-section" className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden space-y-3">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
-                <h2 className="text-[16px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                  <Calendar className="text-blue-600" size={20} />
-                  Monthly Financial & Staff Intelligence Center
+                <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle size={15} className="text-amber-600" />
+                  Inventory Low Stock Alert Center ({filteredLowStock.length})
                 </h2>
-                <p className="text-[11px] text-slate-500 font-medium mt-0.5">
-                  Detailed month-over-month performance analysis, expense tracking, and cashier sales metrics.
-                </p>
+                <p className="text-[11px] text-slate-500 font-medium">Restock items running below threshold to prevent stockouts.</p>
               </div>
 
-              {/* Month Selector */}
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={handleExportLowStockCSV}
+                  disabled={lowStockProducts.length === 0}
+                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded border border-slate-200 transition flex items-center gap-1 disabled:opacity-50"
+                >
+                  <Download size={13} /> Export CSV
+                </button>
+
+                <button
+                  onClick={() => setShowThresholdModal(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded transition flex items-center gap-1"
+                >
+                  <Settings size={13} /> Set Alert Threshold ({globalThreshold})
+                </button>
+              </div>
+            </div>
+
+            {/* Low stock search and filters */}
+            <div className="px-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search low stock items by name, SKU, or category..."
+                  value={lowStockSearch}
+                  onChange={(e) => setLowStockSearch(e.target.value)}
+                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded text-xs font-medium focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="flex items-center bg-slate-100 p-1 rounded border border-slate-200">
+                {[
+                  { id: 'all', label: 'All Low Stock' },
+                  { id: 'out_of_stock', label: 'Out of Stock' },
+                  { id: 'critical', label: 'Critical' }
+                ].map(f => (
+                  <button
+                    key={f.id}
+                    onClick={() => setLowStockFilter(f.id as any)}
+                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition-all ${
+                      lowStockFilter === f.id ? 'bg-white text-amber-800 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Low stock table */}
+            <div className="overflow-x-auto border-t border-slate-100">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
+                  <tr>
+                    <th className="px-4 py-2.5">SKU</th>
+                    <th className="px-4 py-2.5">Product Name</th>
+                    <th className="px-4 py-2.5">Category</th>
+                    <th className="px-4 py-2.5 text-center">Current Stock</th>
+                    <th className="px-4 py-2.5 text-center">Alert Limit</th>
+                    <th className="px-4 py-2.5 text-right">Selling Price</th>
+                    <th className="px-4 py-2.5 text-center">Action</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {filteredLowStock.length === 0 ? (
+                    <tr>
+                      <td colSpan={7} className="p-8 text-center text-slate-400">
+                        <CheckCircle2 size={24} className="mx-auto mb-1 text-emerald-500 opacity-60" />
+                        No low stock alerts matching filter. All inventory healthy!
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLowStock.map((prod: any) => (
+                      <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="px-4 py-2.5 font-mono font-bold text-slate-600">
+                          {prod.sku}
+                        </td>
+                        <td className="px-4 py-2.5 font-bold text-slate-900">
+                          {prod.name}
+                        </td>
+                        <td className="px-4 py-2.5 text-slate-600">
+                          {prod.category}
+                        </td>
+                        <td className="px-4 py-2.5 text-center font-black">
+                          <span className={`px-2 py-0.5 rounded text-[11px] ${
+                            prod.stock_quantity === 0
+                              ? 'bg-rose-100 text-rose-800 border border-rose-200 font-black'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}>
+                            {prod.stock_quantity} units
+                          </span>
+                        </td>
+                        <td className="px-4 py-2.5 text-center font-bold text-slate-500">
+                          {prod.threshold || globalThreshold}
+                        </td>
+                        <td className="px-4 py-2.5 text-right font-black text-slate-900">
+                          {formatGHS(prod.selling_price)}
+                        </td>
+                        <td className="px-4 py-2.5 text-center">
+                          <button
+                            onClick={() => {
+                              setSelectedProductForRestock(prod);
+                              setRestockQty(10);
+                              setShowRestockModal(true);
+                            }}
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[10px] uppercase tracking-wider transition shadow-2xs"
+                          >
+                            + Quick Restock
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* MONTHLY P&L FINANCIAL PERFORMANCE LEDGER */}
+          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <DollarSign size={16} className="text-emerald-600" />
+                  Monthly Financial P&L Statement
+                </h2>
+                <p className="text-[11px] text-slate-500 font-medium">Income statement breakdown of revenues, COGS, operating expenses, and net margins.</p>
+              </div>
+
               <div className="flex items-center gap-2">
-                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Select Month:</span>
+                <span className="text-xs font-bold text-slate-500">Select Month:</span>
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="bg-slate-50 border border-slate-300 rounded-sm px-3 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+                  className="px-3 py-1.5 border border-slate-300 rounded text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500"
                 >
-                  {getMonthOptions().map(opt => (
-                    <option key={opt.val} value={opt.val}>{opt.label}</option>
+                  {getMonthOptions().map(m => (
+                    <option key={m.val} value={m.val}>{m.label}</option>
                   ))}
                 </select>
               </div>
             </div>
 
-            {/* Monthly KPI Matrix */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div className="bg-slate-50 p-4 rounded-sm border border-slate-200">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Monthly Gross Revenue</div>
-                <div className="text-xl font-black text-slate-900">{formatGHS(monthlySummaryData?.revenue || 0)}</div>
-                <div className="flex items-center gap-1.5 mt-1.5">
-                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                    parseFloat(monthlySummaryData?.revenueGrowthMoM || '0') >= 0 
-                      ? 'bg-emerald-100 text-emerald-800' 
-                      : 'bg-red-100 text-red-800'
-                  }`}>
-                    {parseFloat(monthlySummaryData?.revenueGrowthMoM || '0') >= 0 ? '+' : ''}{monthlySummaryData?.revenueGrowthMoM}% MoM
-                  </span>
-                  <span className="text-[10px] text-slate-400">vs prev month</span>
-                </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-sm border border-slate-200">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Monthly Operating Expenses</div>
-                <div className="text-xl font-black text-slate-900">{formatGHS(monthlySummaryData?.expenses || 0)}</div>
-                <div className="text-[10px] text-slate-500 font-medium mt-1.5">
-                  {monthlySummaryData?.expensesCount || 0} recorded expense vouchers
-                </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-sm border border-slate-200">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Monthly Net Profit</div>
-                <div className={`text-xl font-black ${(monthlySummaryData?.netProfit || 0) >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                  {formatGHS(monthlySummaryData?.netProfit || 0)}
-                </div>
-                <div className="text-[10px] text-slate-500 font-medium mt-1.5">
-                  Gross Margin: {formatGHS(monthlySummaryData?.grossProfit || 0)}
-                </div>
-              </div>
-
-              <div className="bg-slate-50 p-4 rounded-sm border border-slate-200">
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-1">Transaction Volume</div>
-                <div className="text-xl font-black text-slate-900">{monthlySummaryData?.salesCount || 0} Sales</div>
-                <div className="text-[10px] text-slate-500 font-medium mt-1.5">
-                  Avg Order: {monthlySummaryData?.salesCount > 0 ? formatGHS((monthlySummaryData?.revenue || 0) / monthlySummaryData.salesCount) : 'GHS 0.00'}
-                </div>
-              </div>
-            </div>
-
-            {/* Monthly Daily Revenue vs Expense Chart */}
-            <div className="space-y-3 pt-2">
-              <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center justify-between">
-                <span>Daily Revenue vs Expenses ({selectedMonth})</span>
-                <span className="text-[10px] font-normal text-slate-400 uppercase">Blue = Revenue | Red = Expense</span>
-              </h3>
-              <div className="h-64 bg-slate-50/50 p-4 rounded-sm border border-slate-100">
-                {monthlySummaryData?.dailySeries && monthlySummaryData.dailySeries.length > 0 ? (
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={monthlySummaryData.dailySeries}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" />
-                      <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontStyle: 'bold', fill: '#64748b' }} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontStyle: 'bold', fill: '#64748b' }} tickFormatter={(val) => `₵${val}`} />
-                      <Tooltip contentStyle={{ borderRadius: '2px', border: '1px solid #e2e8f0', fontSize: '11px' }} formatter={(val: number) => [formatGHS(val)]} />
-                      <Bar dataKey="sales_total" name="Sales Revenue" fill="#3b82f6" radius={[2, 2, 0, 0]} />
-                      <Bar dataKey="expense_total" name="Operating Expenses" fill="#ef4444" radius={[2, 2, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
-                ) : (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-400 font-medium">
-                    No transaction data recorded for {selectedMonth} yet.
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Monthly Staff Performance Leaderboard Table */}
-            <div className="space-y-3 pt-2">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <Users size={16} className="text-blue-600" />
-                  Staff Monthly Sales Performance Leaderboard ({selectedMonth})
-                </h3>
-                <span className="text-[10px] font-bold text-slate-400 uppercase">2% Est. Incentive Commission</span>
-              </div>
-
-              <div className="overflow-x-auto border border-slate-200 rounded-sm">
-                <table className="min-w-full divide-y divide-slate-200 text-xs">
-                  <thead className="bg-slate-50">
-                    <tr>
-                      <th className="px-4 py-3 text-left font-black text-slate-400 uppercase tracking-wider">Staff Member</th>
-                      <th className="px-4 py-3 text-center font-black text-slate-400 uppercase tracking-wider">Role</th>
-                      <th className="px-4 py-3 text-center font-black text-slate-400 uppercase tracking-wider">Sales Count</th>
-                      <th className="px-4 py-3 text-right font-black text-slate-400 uppercase tracking-wider">Total Revenue</th>
-                      <th className="px-4 py-3 text-right font-black text-slate-400 uppercase tracking-wider">Avg Order</th>
-                      <th className="px-4 py-3 text-right font-black text-slate-400 uppercase tracking-wider">Est. Commission (2%)</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {monthlySummaryData?.staffLeaderboard && monthlySummaryData.staffLeaderboard.length > 0 ? (
-                      monthlySummaryData.staffLeaderboard.map((staff: any, idx: number) => (
-                        <tr key={staff.user_id} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-4 py-3 font-bold text-slate-900 flex items-center gap-2">
-                            <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-black ${
-                              idx === 0 ? 'bg-amber-100 text-amber-800 border border-amber-300' : 'bg-slate-100 text-slate-600'
-                            }`}>
-                              #{idx + 1}
-                            </span>
-                            <div>
-                              <div>{staff.user_name}</div>
-                              <div className="text-[10px] text-slate-400 font-normal">{staff.email}</div>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-center font-semibold text-slate-600">
-                            <span className="px-2 py-0.5 bg-slate-100 rounded-full text-[10px] font-bold uppercase">
-                              {staff.role}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-center font-bold text-slate-800">{staff.total_sales_count}</td>
-                          <td className="px-4 py-3 text-right font-black text-emerald-600">{formatGHS(staff.total_revenue)}</td>
-                          <td className="px-4 py-3 text-right font-medium text-slate-600">{formatGHS(staff.avg_order_value)}</td>
-                          <td className="px-4 py-3 text-right font-black text-purple-700">{formatGHS(staff.estimated_commission)}</td>
-                        </tr>
-                      ))
-                    ) : (
-                      <tr>
-                        <td colSpan={6} className="px-4 py-6 text-center text-slate-400 text-xs">
-                          No staff sales activity recorded for this month.
-                        </td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </div>
-
-      {/* Dedicated Low Stock Alert Center */}
-      <div id="low-stock-section" className="bg-white border border-slate-200 rounded-sm shadow-sm overflow-hidden">
-        <div className="p-6 border-b border-slate-100 bg-slate-50/50 flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <div className="p-2 bg-red-100 text-red-600 rounded-sm">
-              <AlertCircle size={20} />
-            </div>
-            <div>
-              <h2 className="text-[15px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                Low Stock Alert Center
-                <span className="text-[11px] font-bold px-2 py-0.5 bg-red-50 text-red-600 border border-red-200 rounded-full">
-                  {lowStockProducts.length} Items Below Threshold
-                </span>
-              </h2>
-              <p className="text-[11px] text-slate-500 font-medium">
-                Monitors products whose current quantity is at or below defined minimum reorder thresholds.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            <button
-              onClick={handleExportLowStockCSV}
-              disabled={lowStockProducts.length === 0}
-              className="px-3 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-sm text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors disabled:opacity-50"
-            >
-              <Download size={14} /> Export Reorder Sheet
-            </button>
-
-            {user?.role === 'admin' && (
-              <button
-                onClick={() => setShowThresholdModal(true)}
-                className="px-3 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 rounded-sm text-[11px] font-bold uppercase tracking-wider flex items-center gap-2 transition-colors"
-              >
-                <Settings size={14} /> Global Threshold ({globalThreshold})
-              </button>
-            )}
-          </div>
-        </div>
-
-        {/* Filter and Search Bar */}
-        <div className="p-4 bg-white border-b border-slate-100 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-4">
-          <div className="relative flex-1 max-w-md">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <input 
-              type="text" 
-              placeholder="Search low stock items by name, SKU, or category..." 
-              value={lowStockSearch}
-              onChange={e => setLowStockSearch(e.target.value)}
-              className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-sm text-xs focus:outline-none focus:border-blue-500 transition-colors"
-            />
-          </div>
-
-          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-sm text-xs font-bold uppercase tracking-wider">
-            <button 
-              onClick={() => setLowStockFilter('all')}
-              className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${lowStockFilter === 'all' ? 'bg-white text-slate-900 shadow-sm font-black' : 'text-slate-500 hover:text-slate-800'}`}
-            >
-              All Low ({lowStockProducts.length})
-            </button>
-            <button 
-              onClick={() => setLowStockFilter('out_of_stock')}
-              className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${lowStockFilter === 'out_of_stock' ? 'bg-red-600 text-white shadow-sm font-black' : 'text-red-600 hover:bg-red-50'}`}
-            >
-              Out of Stock ({outOfStockCount})
-            </button>
-            <button 
-              onClick={() => setLowStockFilter('critical')}
-              className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${lowStockFilter === 'critical' ? 'bg-amber-600 text-white shadow-sm font-black' : 'text-amber-700 hover:bg-amber-50'}`}
-            >
-              Critical ({criticalCount})
-            </button>
-          </div>
-        </div>
-
-        {/* Low Stock Table */}
-        <div className="overflow-x-auto">
-          <table className="min-w-full divide-y divide-slate-100">
-            <thead className="bg-slate-50">
-              <tr>
-                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Item Details</th>
-                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-widest">Category</th>
-                <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Current Stock / Threshold</th>
-                <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Shortage Gap</th>
-                <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-widest">Stock Health</th>
-                <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-widest">Quick Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100 bg-white">
-              {filteredLowStock.map((p) => {
-                const threshold = p.threshold || globalThreshold || 10;
-                const gap = Math.max(0, threshold - p.stock_quantity);
-                const isZero = p.stock_quantity === 0;
-                const isCritical = p.stock_quantity > 0 && p.stock_quantity <= Math.ceil(threshold / 2);
-
-                return (
-                  <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                    <td className="px-5 py-4">
-                      <div className="flex items-center gap-3">
-                        {p.image_url ? (
-                          <img src={p.image_url} alt={p.name} className="w-9 h-9 object-cover rounded-sm border border-slate-200 shrink-0" />
-                        ) : (
-                          <div className="w-9 h-9 bg-slate-100 text-slate-400 rounded-sm flex items-center justify-center font-black text-[11px] shrink-0">
-                            {p.name.substring(0, 2).toUpperCase()}
-                          </div>
-                        )}
-                        <div>
-                          <Link to={`/products/${p.id}`} className="font-bold text-slate-900 text-xs hover:text-blue-600 transition-colors flex items-center gap-1">
-                            {p.name}
-                          </Link>
-                          <div className="text-[10px] font-mono text-slate-400 mt-0.5">SKU: {p.sku}</div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-5 py-4 text-xs font-medium text-slate-600">
-                      <span className="px-2 py-1 bg-slate-100 text-slate-600 rounded-sm text-[10px] font-bold uppercase tracking-wider">
-                        {p.category || 'General'}
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-4 text-center">
-                      <div className="inline-flex flex-col items-center">
-                        <div className="flex items-baseline gap-1">
-                          <span className={`text-sm font-black ${isZero ? 'text-red-600' : isCritical ? 'text-amber-600' : 'text-orange-600'}`}>
-                            {p.stock_quantity}
-                          </span>
-                          <span className="text-[11px] font-bold text-slate-400">/ {threshold} {p.unit_of_measure || 'pcs'}</span>
-                        </div>
-                        {/* Stock visual meter */}
-                        <div className="w-24 bg-slate-100 h-1.5 rounded-full overflow-hidden mt-1.5">
-                          <div 
-                            className={`h-full transition-all duration-300 ${isZero ? 'bg-red-600 w-0' : isCritical ? 'bg-amber-500' : 'bg-orange-400'}`}
-                            style={{ width: `${Math.min(100, Math.max(5, (p.stock_quantity / threshold) * 100))}%` }}
-                          ></div>
-                        </div>
-                      </div>
-                    </td>
-
-                    <td className="px-5 py-4 text-center">
-                      <span className="text-xs font-bold text-red-600 bg-red-50 px-2 py-1 rounded-sm border border-red-100">
-                        +{gap} needed
-                      </span>
-                    </td>
-
-                    <td className="px-5 py-4 text-center">
-                      {isZero ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-red-100 text-red-700 text-[10px] font-black uppercase tracking-wider rounded-full border border-red-200 animate-pulse">
-                          <span className="w-1.5 h-1.5 rounded-full bg-red-600"></span> Out Of Stock
-                        </span>
-                      ) : isCritical ? (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-amber-100 text-amber-800 text-[10px] font-black uppercase tracking-wider rounded-full border border-amber-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-amber-600"></span> Critical Low
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-orange-100 text-orange-800 text-[10px] font-black uppercase tracking-wider rounded-full border border-orange-200">
-                          <span className="w-1.5 h-1.5 rounded-full bg-orange-500"></span> Low Stock
-                        </span>
-                      )}
-                    </td>
-
-                    <td className="px-5 py-4 text-right">
-                      <div className="flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => {
-                            setSelectedProductForRestock(p);
-                            setRestockQty(gap > 0 ? gap : 10);
-                            setShowRestockModal(true);
-                          }}
-                          className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-sm text-[10px] font-black uppercase tracking-wider flex items-center gap-1 transition-colors shadow-sm"
-                          title="Quick restock item"
-                        >
-                          <PlusCircle size={12} /> Restock
-                        </button>
-                        <Link 
-                          to={`/products/${p.id}`}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-sm text-[10px] font-bold uppercase tracking-wider transition-colors"
-                        >
-                          View
-                        </Link>
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-
-              {filteredLowStock.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-12 text-center">
-                    <div className="flex flex-col items-center justify-center space-y-2">
-                      <div className="p-3 bg-emerald-50 text-emerald-600 rounded-full">
-                        <CheckCircle2 size={24} />
-                      </div>
-                      <p className="text-xs font-bold text-slate-700 uppercase tracking-wider">No Low Stock Items Found</p>
-                      <p className="text-[11px] text-slate-400">
-                        {lowStockSearch ? `No products match "${lowStockSearch}".` : 'All product inventory levels are currently above reorder thresholds.'}
-                      </p>
-                    </div>
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      {/* Main Charts & Analytics Grid */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-        {/* Sales Performance Trends */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-             <div>
-                <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                  <TrendingUp size={16} className="text-blue-600" />
-                  Daily Revenue Trends ({trendTimeframe === '30days' ? 'Last 30 Days' : trendTimeframe === 'weekly' ? 'Last 7 Days' : trendTimeframe === 'monthly' ? 'Last 12 Months' : 'Last 5 Years'})
-                </h2>
-                <p className="text-[10px] text-slate-400 font-bold uppercase">Daily sales trajectory & financial trend analysis powered by Recharts</p>
-             </div>
-             
-             <div className="flex flex-wrap items-center gap-2">
-                {/* Chart Type Toggle */}
-                <div className="flex bg-slate-100 p-0.5 rounded-sm gap-0.5 border border-slate-200">
-                  <button
-                    onClick={() => setChartType('area')}
-                    className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${chartType === 'area' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
-                    title="Area Chart View"
-                  >
-                    Area
-                  </button>
-                  <button
-                    onClick={() => setChartType('line')}
-                    className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${chartType === 'line' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
-                    title="Line Chart View"
-                  >
-                    Line
-                  </button>
-                  <button
-                    onClick={() => setChartType('bar')}
-                    className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${chartType === 'bar' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'}`}
-                    title="Bar Chart View"
-                  >
-                    Bar
-                  </button>
+            {monthlyLoading ? (
+              <div className="py-8 text-center text-slate-400">Loading P&L breakdown...</div>
+            ) : monthlySummaryData ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
+                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Gross Sales Revenue</div>
+                  <div className="text-lg font-black text-slate-900 mt-1">{formatGHS(monthlySummaryData.totalSales || 0)}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{monthlySummaryData.salesCount || 0} sales orders</div>
                 </div>
 
-                {/* Timeframe Selector */}
-                <div className="flex bg-slate-100 p-0.5 rounded-sm gap-0.5 border border-slate-200">
-                   {[
-                     { id: '30days', label: '30 Days' },
-                     { id: 'weekly', label: '7 Days' },
-                     { id: 'monthly', label: 'Monthly' },
-                     { id: 'yearly', label: 'Yearly' }
-                   ].map(tf => (
-                     <button 
-                       key={tf.id}
-                       onClick={() => setTrendTimeframe(tf.id as any)}
-                       className={`px-2.5 py-1 text-[10px] font-black uppercase tracking-widest rounded-xs transition-all ${trendTimeframe === tf.id ? 'bg-white text-blue-600 shadow-2xs' : 'text-slate-500 hover:text-slate-700'}`}
-                     >
-                       {tf.label}
-                     </button>
-                   ))}
-                </div>
-             </div>
-          </div>
-
-          <div className="bg-white border border-slate-200 rounded-sm p-5 shadow-sm min-w-0 space-y-4">
-            {/* Metric Summary Bar */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50 p-3 rounded-sm border border-slate-100">
-              <div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  {trendTimeframe === '30days' ? '30-Day Revenue' : trendTimeframe === 'weekly' ? '7-Day Revenue' : 'Total Revenue'}
-                </div>
-                <div className="text-sm font-black text-slate-900">{formatGHS(totalTrendRevenue)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Daily Average</div>
-                <div className="text-sm font-black text-blue-600">{formatGHS(avgTrendRevenue)}</div>
-              </div>
-              <div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Peak Sales Day</div>
-                <div className="text-sm font-black text-emerald-600 truncate">
-                  {peakTrendDay && peakTrendDay.total > 0 ? `${peakTrendDay.label} (${formatGHS(peakTrendDay.total)})` : 'N/A'}
-                </div>
-              </div>
-              <div>
-                <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Active Days</div>
-                <div className="text-sm font-black text-purple-600">
-                  {activeSalesDaysCount} / {salesTrends.length} Days
-                </div>
-              </div>
-            </div>
-
-            {/* Recharts Canvas */}
-            <div className="h-[280px]">
-              {salesTrends.length > 0 ? (
-                <ResponsiveContainer width="100%" height="100%">
-                  {chartType === 'area' ? (
-                    <AreaChart data={salesTrends} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorTrendRevenue" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.35}/>
-                          <stop offset="95%" stopColor="#3b82f6" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} dy={5} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} tickFormatter={(val) => `₵${val}`} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '4px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', background: '#0f172a', color: '#fff', fontSize: '11px' }}
-                        itemStyle={{ color: '#fff', fontWeight: 'bold' }}
-                        labelStyle={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}
-                        formatter={(val: number, name: string, item: any) => [
-                          formatGHS(val), 
-                          item?.payload?.sales_count !== undefined ? `Revenue (${item.payload.sales_count} sales)` : 'Revenue'
-                        ]}
-                      />
-                      {avgTrendRevenue > 0 && (
-                        <ReferenceLine y={avgTrendRevenue} stroke="#94a3b8" strokeDasharray="3 3" label={{ value: `Avg: ₵${avgTrendRevenue.toFixed(0)}`, fill: '#64748b', fontSize: 9, position: 'insideTopRight' }} />
-                      )}
-                      <Area type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorTrendRevenue)" dot={{ fill: '#2563eb', r: 3 }} activeDot={{ r: 6, stroke: '#1d4ed8', strokeWidth: 2 }} />
-                    </AreaChart>
-                  ) : chartType === 'bar' ? (
-                    <BarChart data={salesTrends} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} dy={5} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} tickFormatter={(val) => `₵${val}`} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '4px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', background: '#0f172a', color: '#fff', fontSize: '11px' }}
-                        itemStyle={{ color: '#fff', fontWeight: 'bold' }}
-                        labelStyle={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}
-                        formatter={(val: number, name: string, item: any) => [
-                          formatGHS(val), 
-                          item?.payload?.sales_count !== undefined ? `Revenue (${item.payload.sales_count} sales)` : 'Revenue'
-                        ]}
-                      />
-                      <Bar dataKey="total" fill="#3b82f6" radius={[3, 3, 0, 0]} />
-                    </BarChart>
-                  ) : (
-                    <LineChart data={salesTrends} margin={{ top: 10, right: 10, left: -15, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="label" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} dy={5} />
-                      <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} tickFormatter={(val) => `₵${val}`} />
-                      <Tooltip 
-                        contentStyle={{ borderRadius: '4px', border: 'none', boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1)', background: '#0f172a', color: '#fff', fontSize: '11px' }}
-                        itemStyle={{ color: '#fff', fontWeight: 'bold' }}
-                        labelStyle={{ color: '#94a3b8', fontSize: '10px', textTransform: 'uppercase', marginBottom: '2px' }}
-                        formatter={(val: number, name: string, item: any) => [
-                          formatGHS(val), 
-                          item?.payload?.sales_count !== undefined ? `Revenue (${item.payload.sales_count} sales)` : 'Revenue'
-                        ]}
-                      />
-                      {avgTrendRevenue > 0 && (
-                        <ReferenceLine y={avgTrendRevenue} stroke="#94a3b8" strokeDasharray="3 3" label={{ value: `Avg: ₵${avgTrendRevenue.toFixed(0)}`, fill: '#64748b', fontSize: 9, position: 'insideTopRight' }} />
-                      )}
-                      <Line type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} dot={{ fill: '#2563eb', r: 3 }} activeDot={{ r: 6 }} />
-                    </LineChart>
-                  )}
-                </ResponsiveContainer>
-              ) : (
-                 <EmptyState />
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Best Sellers */}
-        <div className="space-y-4">
-           <div className="flex items-center justify-between">
-             <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">Top Performing Products</h2>
-             <div className="flex bg-slate-100 p-0.5 rounded-sm border border-slate-200">
-               <button
-                 onClick={() => setBestSellerChartType('bar')}
-                 className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${
-                   bestSellerChartType === 'bar' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'
-                 }`}
-               >
-                 Bar Chart
-               </button>
-               <button
-                 onClick={() => setBestSellerChartType('pie')}
-                 className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${
-                   bestSellerChartType === 'pie' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'
-                 }`}
-               >
-                 Pie Chart
-               </button>
-             </div>
-           </div>
-
-           <div className="bg-white border border-slate-200 rounded-sm p-5 shadow-sm min-w-0 space-y-4">
-              {bestSellers.length > 0 ? (
-                <>
-                   <div className="h-[220px]">
-                     <ResponsiveContainer width="100%" height="100%">
-                        {bestSellerChartType === 'bar' ? (
-                          <BarChart data={bestSellers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
-                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
-                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} />
-                            <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#334155' }} width={110} />
-                            <Tooltip 
-                              contentStyle={{ borderRadius: '4px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '11px' }}
-                              formatter={(value: number) => [`${value} units`, 'Total Sold']} 
-                            />
-                            <Bar dataKey="total_sold" fill="#3b82f6" radius={[0, 4, 4, 0]}>
-                              {bestSellers.map((_, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Bar>
-                          </BarChart>
-                        ) : (
-                          <PieChart>
-                            <Pie data={bestSellers} dataKey="total_sold" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5}>
-                              {bestSellers.map((_, index) => (
-                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                              ))}
-                            </Pie>
-                            <Tooltip formatter={(value: number) => [`${value} units`, 'Sales Volume']} />
-                          </PieChart>
-                        )}
-                     </ResponsiveContainer>
-                   </div>
-                   <div className="space-y-1.5 pt-2 border-t border-slate-100 max-h-[100px] overflow-y-auto">
-                      {bestSellers.map((p, index) => (
-                        <div key={p.name} className="flex items-center justify-between text-[11px]">
-                           <div className="flex items-center gap-2 min-w-0">
-                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
-                              <span className="font-bold text-slate-700 truncate max-w-[130px]">{p.name}</span>
-                           </div>
-                           <span className="font-black text-slate-900 shrink-0">{p.total_sold} units</span>
-                        </div>
-                      ))}
-                   </div>
-                </>
-              ) : <EmptyState />}
-           </div>
-        </div>
-      </div>
-
-      {/* Weekly Sales Volume Chart */}
-      <div className="bg-white border border-slate-200 rounded-sm p-6 shadow-sm">
-         <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-widest mb-4">Weekly Sales Volume</h2>
-         <div className="h-64 min-w-0">
-            <ResponsiveContainer width="100%" height="100%">
-               <BarChart data={weeklyData}>
-                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E2E8F0" />
-                  <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748B' }} />
-                  <YAxis hide />
-                  <Tooltip contentStyle={{ borderRadius: '2px', border: '1px solid #E2E8F0', fontSize: '11px' }} formatter={(val: number) => [formatGHS(val), 'Volume']} />
-                  <Bar dataKey="total" fill="#94a3b8" radius={[2, 2, 0, 0]} />
-               </BarChart>
-            </ResponsiveContainer>
-         </div>
-      </div>
-      </>
-      )}
-
-      {/* Quick Restock Modal */}
-      {showRestockModal && selectedProductForRestock && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-sm max-w-sm w-full p-6 border border-slate-200 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-widest">
-                Quick Restock
-              </h2>
-              <button 
-                onClick={() => setShowRestockModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleQuickRestockSubmit} className="space-y-4">
-              <div className="bg-slate-50 p-3 rounded-sm border border-slate-200">
-                <div className="text-[11px] font-black text-slate-900 uppercase">{selectedProductForRestock.name}</div>
-                <div className="text-[10px] font-mono text-slate-500 mt-0.5">SKU: {selectedProductForRestock.sku}</div>
-                <div className="flex justify-between items-center mt-2 pt-2 border-t border-slate-200 text-xs">
-                  <span className="text-slate-500 font-medium">Current Stock:</span>
-                  <span className="font-bold text-red-600">{selectedProductForRestock.stock_quantity}</span>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Add Quantity</label>
-                <input 
-                  type="number" 
-                  min="1" 
-                  required
-                  value={restockQty}
-                  onChange={e => setRestockQty(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-full border border-slate-300 rounded-sm px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Reason / Note</label>
-                <select 
-                  value={restockReason} 
-                  onChange={e => setRestockReason(e.target.value)}
-                  className="w-full border border-slate-300 rounded-sm px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
-                >
-                  <option value="Restock / New Shipment">Restock / New Shipment</option>
-                  <option value="Supplier Delivery">Supplier Delivery</option>
-                  <option value="Inventory Discrepancy Correction">Inventory Discrepancy Correction</option>
-                </select>
-              </div>
-
-              <div className="pt-3 flex justify-end gap-3 border-t border-slate-100">
-                <button 
-                  type="button" 
-                  onClick={() => setShowRestockModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-sm"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={isSubmittingRestock}
-                  className="px-4 py-2 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-sm disabled:opacity-50"
-                >
-                  {isSubmittingRestock ? 'Updating...' : 'Confirm Restock'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Global Threshold Modal */}
-      {showThresholdModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-sm max-w-sm w-full p-6 border border-slate-200 shadow-2xl">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-100 mb-4">
-              <h2 className="text-[14px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                <Settings size={16} /> Global Low Stock Threshold
-              </h2>
-              <button 
-                onClick={() => setShowThresholdModal(false)}
-                className="text-slate-400 hover:text-slate-600 text-sm font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            <form onSubmit={handleSaveThreshold} className="space-y-4">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Set the default minimum inventory level. Products with stock levels at or below this number will trigger low stock alerts across the system.
-              </p>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1">Global Minimum Threshold</label>
-                <input 
-                  type="number" 
-                  min="1" 
-                  required
-                  value={globalThreshold}
-                  onChange={e => setGlobalThreshold(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                  className="w-full border border-slate-300 rounded-sm px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="pt-3 flex justify-end gap-3 border-t border-slate-100">
-                <button 
-                  type="button" 
-                  onClick={() => setShowThresholdModal(false)}
-                  className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-sm"
-                >
-                  Cancel
-                </button>
-                <button 
-                  type="submit" 
-                  disabled={isSavingThreshold}
-                  className="px-4 py-2 text-xs font-black uppercase tracking-wider text-white bg-blue-600 hover:bg-blue-700 rounded-sm disabled:opacity-50"
-                >
-                  {isSavingThreshold ? 'Saving...' : 'Save Settings'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Daily Summary Modal */}
-      {showDailySummaryModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-sm max-w-4xl w-full p-6 border border-slate-200 shadow-2xl max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between pb-4 border-b border-slate-100 mb-6">
-              <div className="flex items-center gap-3">
-                <div className="p-2.5 bg-emerald-100 text-emerald-700 rounded-sm">
-                  <Calendar size={22} />
-                </div>
-                <div>
-                  <h2 className="text-[16px] font-black text-slate-900 uppercase tracking-widest flex items-center gap-2">
-                    Daily Financial Summary
-                    <span className="text-[10px] font-bold px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full">
-                      {dailySummary?.date || new Date().toISOString().split('T')[0]}
-                    </span>
-                  </h2>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    Comprehensive ledger of total revenue, operating expenses, and net profit performance for today.
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center gap-2">
-                <button 
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[11px] font-bold uppercase tracking-wider rounded-sm flex items-center gap-1 transition-colors"
-                  title="Print Summary"
-                >
-                  <Printer size={14} /> Print
-                </button>
-                <button 
-                  onClick={() => setShowDailySummaryModal(false)}
-                  className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-full transition-colors"
-                >
-                  ✕
-                </button>
-              </div>
-            </div>
-
-            {dailySummaryLoading ? (
-              <div className="py-16 text-center space-y-3">
-                <RefreshCw size={28} className="animate-spin text-emerald-600 mx-auto" />
-                <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Calculating today's financial metrics...</p>
-              </div>
-            ) : dailySummary ? (
-              <div className="space-y-6">
-                {/* 3 Core Metric Cards */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Revenue Card */}
-                  <div className="bg-emerald-50/60 border border-emerald-200 p-5 rounded-sm relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest flex items-center gap-1">
-                        <ArrowUpRight size={14} className="text-emerald-600" /> Total Revenue
-                      </span>
-                      <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
-                        {dailySummary.salesCount} Sales
-                      </span>
-                    </div>
-                    <div className="text-2xl font-black text-emerald-900 tracking-tight">
-                      {formatGHS(dailySummary.totalRevenue)}
-                    </div>
-                    <p className="text-[10px] text-emerald-700 font-medium mt-1">
-                      Gross revenue generated from today's completed transactions.
-                    </p>
-                  </div>
-
-                  {/* Expenses Card */}
-                  <div className="bg-red-50/60 border border-red-200 p-5 rounded-sm relative">
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-[10px] font-black text-red-800 uppercase tracking-widest flex items-center gap-1">
-                        <ArrowDownRight size={14} className="text-red-600" /> Total Expenses
-                      </span>
-                      <span className="text-[10px] font-bold bg-red-100 text-red-800 px-2 py-0.5 rounded-full">
-                        {dailySummary.expensesCount} Entries
-                      </span>
-                    </div>
-                    <div className="text-2xl font-black text-red-900 tracking-tight">
-                      {formatGHS(dailySummary.totalExpenses)}
-                    </div>
-                    <p className="text-[10px] text-red-700 font-medium mt-1">
-                      Operational & store expense costs logged today.
-                    </p>
-                  </div>
-
-                  {/* Net Profit Card */}
-                  <div className={`border p-5 rounded-sm relative ${
-                    dailySummary.netProfit >= 0 ? 'bg-blue-50/60 border-blue-200' : 'bg-amber-50/60 border-amber-200'
-                  }`}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className={`text-[10px] font-black uppercase tracking-widest flex items-center gap-1 ${
-                        dailySummary.netProfit >= 0 ? 'text-blue-800' : 'text-amber-800'
-                      }`}>
-                        <Wallet size={14} className={dailySummary.netProfit >= 0 ? 'text-blue-600' : 'text-amber-600'} /> Net Profit
-                      </span>
-                      <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase ${
-                        dailySummary.netProfit >= 0 ? 'bg-blue-100 text-blue-800' : 'bg-amber-100 text-amber-800'
-                      }`}>
-                        {dailySummary.netProfit >= 0 ? 'Profitable' : 'Deficit'}
-                      </span>
-                    </div>
-                    <div className={`text-2xl font-black tracking-tight ${
-                      dailySummary.netProfit >= 0 ? 'text-blue-900' : 'text-amber-900'
-                    }`}>
-                      {formatGHS(dailySummary.netProfit)}
-                    </div>
-                    <p className={`text-[10px] font-medium mt-1 ${
-                      dailySummary.netProfit >= 0 ? 'text-blue-700' : 'text-amber-700'
-                    }`}>
-                      Net cash position (Revenue minus Expenses).
-                    </p>
-                  </div>
+                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Cost of Goods Sold (COGS)</div>
+                  <div className="text-lg font-black text-rose-700 mt-1">{formatGHS(monthlySummaryData.cogs || 0)}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Inventory cost value</div>
                 </div>
 
-                {/* Gross Sales Margin & COGS Breakdown */}
-                <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm flex flex-col sm:flex-row items-center justify-between gap-4">
-                  <div className="flex items-center gap-3">
-                    <Receipt size={20} className="text-slate-500 shrink-0" />
-                    <div>
-                      <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider block">
-                        Sales Cost & Operating Profit Breakdown
-                      </span>
-                      <span className="text-[10px] text-slate-500 font-medium">
-                        Gross Profit from product sales margin before operational expenses: <strong className="text-slate-800">{formatGHS(dailySummary.grossProfit)}</strong>
-                      </span>
-                    </div>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">Net Operating Profit</span>
-                    <span className={`text-sm font-black ${dailySummary.operatingNetProfit >= 0 ? 'text-emerald-600' : 'text-red-600'}`}>
-                      {formatGHS(dailySummary.operatingNetProfit)}
-                    </span>
-                  </div>
+                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Gross Profit</div>
+                  <div className="text-lg font-black text-emerald-700 mt-1">{formatGHS(monthlySummaryData.grossProfit || 0)}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">Sales minus COGS</div>
                 </div>
 
-                {/* Tabbed Breakdown Tables */}
-                <div className="border border-slate-200 rounded-sm overflow-hidden">
-                  <div className="bg-slate-100 p-2 flex items-center justify-between border-b border-slate-200">
-                    <div className="flex items-center gap-1 text-xs font-bold uppercase tracking-wider">
-                      <button 
-                        onClick={() => setDailySummaryTab('all')}
-                        className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${
-                          dailySummaryTab === 'all' ? 'bg-white text-slate-900 shadow-sm font-black' : 'text-slate-500 hover:text-slate-800'
-                        }`}
-                      >
-                        All Transactions
-                      </button>
-                      <button 
-                        onClick={() => setDailySummaryTab('sales')}
-                        className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${
-                          dailySummaryTab === 'sales' ? 'bg-emerald-600 text-white shadow-sm font-black' : 'text-emerald-700 hover:bg-emerald-50'
-                        }`}
-                      >
-                        Today's Revenue ({dailySummary.salesCount})
-                      </button>
-                      <button 
-                        onClick={() => setDailySummaryTab('expenses')}
-                        className={`px-3 py-1.5 rounded-sm transition-all text-[10px] ${
-                          dailySummaryTab === 'expenses' ? 'bg-red-600 text-white shadow-sm font-black' : 'text-red-700 hover:bg-red-50'
-                        }`}
-                      >
-                        Today's Expenses ({dailySummary.expensesCount})
-                      </button>
-                    </div>
-                  </div>
+                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                  <div className="text-[10px] font-black uppercase text-slate-400">Operating Expenses</div>
+                  <div className="text-lg font-black text-amber-700 mt-1">{formatGHS(monthlySummaryData.totalExpenses || 0)}</div>
+                  <div className="text-[10px] text-slate-500 mt-0.5">{monthlySummaryData.expenseCount || 0} expense voucher(s)</div>
+                </div>
 
-                  <div className="max-h-64 overflow-y-auto">
-                    {(dailySummaryTab === 'all' || dailySummaryTab === 'sales') && (
-                      <div className="p-4 border-b border-slate-100 last:border-b-0">
-                        <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest mb-2 flex items-center justify-between">
-                          <span>Sales Transactions Today</span>
-                          <span className="text-emerald-600">{formatGHS(dailySummary.totalRevenue)}</span>
-                        </h4>
-                        {dailySummary.salesList.length > 0 ? (
-                          <table className="min-w-full divide-y divide-slate-100 text-xs">
-                            <thead className="bg-slate-50">
-                              <tr>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Sale ID</th>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Cashier</th>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Payment</th>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Time</th>
-                                <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                              {dailySummary.salesList.map((s: any) => (
-                                <tr key={s.id} className="hover:bg-slate-50">
-                                  <td className="px-3 py-2 font-mono font-bold text-slate-800">#SALE-{s.id}</td>
-                                  <td className="px-3 py-2 text-slate-600">{s.cashier_name}</td>
-                                  <td className="px-3 py-2 text-slate-500 font-medium">{s.payment_method}</td>
-                                  <td className="px-3 py-2 text-slate-400">{new Date(s.created_at + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                                  <td className="px-3 py-2 text-right font-black text-emerald-600">+{formatGHS(s.total_amount)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic py-2">No sales transactions logged today yet.</p>
-                        )}
-                      </div>
-                    )}
-
-                    {(dailySummaryTab === 'all' || dailySummaryTab === 'expenses') && (
-                      <div className="p-4">
-                        <h4 className="text-[11px] font-black text-slate-700 uppercase tracking-widest mb-2 flex items-center justify-between">
-                          <span>Expenses Logged Today</span>
-                          <span className="text-red-600">{formatGHS(dailySummary.totalExpenses)}</span>
-                        </h4>
-                        {dailySummary.expensesList.length > 0 ? (
-                          <table className="min-w-full divide-y divide-slate-100 text-xs">
-                            <thead className="bg-slate-50">
-                              <tr>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Description</th>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Logged By</th>
-                                <th className="px-3 py-2 text-left text-[10px] font-bold text-slate-400 uppercase">Time</th>
-                                <th className="px-3 py-2 text-right text-[10px] font-bold text-slate-400 uppercase">Amount</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100 bg-white">
-                              {dailySummary.expensesList.map((e: any) => (
-                                <tr key={e.id} className="hover:bg-slate-50">
-                                  <td className="px-3 py-2 font-bold text-slate-800">{e.description}</td>
-                                  <td className="px-3 py-2 text-slate-600">{e.user_name || 'System'}</td>
-                                  <td className="px-3 py-2 text-slate-400">{new Date(e.expense_date + 'Z').toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</td>
-                                  <td className="px-3 py-2 text-right font-black text-red-600">-{formatGHS(e.amount)}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        ) : (
-                          <p className="text-xs text-slate-400 italic py-2">No operational expenses logged today.</p>
-                        )}
-                      </div>
-                    )}
+                <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
+                  <div className="text-[10px] font-black uppercase text-emerald-800">Net Profit Margin</div>
+                  <div className="text-lg font-black text-emerald-900 mt-1">{formatGHS(monthlySummaryData.netProfit || 0)}</div>
+                  <div className="text-[10px] text-emerald-700 mt-0.5">
+                    {monthlySummaryData.totalSales > 0 ? ((monthlySummaryData.netProfit / monthlySummaryData.totalSales) * 100).toFixed(1) : 0}% Net Margin
                   </div>
                 </div>
               </div>
             ) : null}
+          </div>
+        </>
+      ) : (
+        /* STAFF TERMINAL VIEW */
+        <div className="space-y-6">
+          {/* Staff Counter KPI Strip */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">My Counter Sales Today</div>
+              <div className="text-2xl font-black text-blue-700">{formatGHS(staffSummary?.myTodaySales || 0)}</div>
+              <div className="text-xs text-slate-500 mt-1">{staffSummary?.myTodayCount || 0} transactions processed</div>
+            </div>
 
-            <div className="pt-4 mt-6 flex justify-end border-t border-slate-100">
-              <button 
-                onClick={() => setShowDailySummaryModal(false)}
-                className="px-5 py-2 text-xs font-black uppercase tracking-wider text-white bg-slate-800 hover:bg-slate-900 rounded-sm shadow-sm"
-              >
-                Close Summary
-              </button>
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">My Month Volume</div>
+              <div className="text-2xl font-black text-slate-900">{formatGHS(staffSummary?.myMonthSales || 0)}</div>
+              <div className="text-xs text-slate-500 mt-1">{staffSummary?.myMonthCount || 0} total sales order(s)</div>
+            </div>
+
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">Sales Goal Progress</div>
+              <div className="text-2xl font-black text-emerald-700">{staffSummary?.targetPercent || 0}%</div>
+              <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-2">
+                <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${Math.min(100, staffSummary?.targetPercent || 0)}%` }} />
+              </div>
+            </div>
+
+            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
+              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">Estimated Sales Commission</div>
+              <div className="text-2xl font-black text-indigo-700">{formatGHS(staffSummary?.myCommission || 0)}</div>
+              <div className="text-xs text-slate-500 mt-1">Based on monthly performance</div>
+            </div>
+          </div>
+
+          {/* Staff Sales Ledger */}
+          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                  My Counter Transactions Ledger
+                </h2>
+                <p className="text-[11px] text-slate-500 font-medium">Reconcile cash and digital payments processed during your shift.</p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <select
+                  value={staffReportPeriod}
+                  onChange={(e) => setStaffReportPeriod(e.target.value as any)}
+                  className="px-3 py-1.5 border border-slate-300 rounded text-xs font-bold text-slate-800"
+                >
+                  <option value="today">Today</option>
+                  <option value="7days">Past 7 Days</option>
+                  <option value="30days">Past 30 Days</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
+                  <tr>
+                    <th className="px-4 py-3">Sale ID</th>
+                    <th className="px-4 py-3">Date & Time</th>
+                    <th className="px-4 py-3">Customer</th>
+                    <th className="px-4 py-3">Payment</th>
+                    <th className="px-4 py-3 text-right">Amount</th>
+                    <th className="px-4 py-3 text-center">Receipt</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {staffReportLoading ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400">Loading staff ledger...</td>
+                    </tr>
+                  ) : !staffReportData?.transactions || staffReportData.transactions.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} className="p-8 text-center text-slate-400">No sales recorded for selected timeframe.</td>
+                    </tr>
+                  ) : (
+                    staffReportData.transactions.map((st: any) => (
+                      <tr key={st.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-mono font-bold text-blue-600">#SALE-{st.id}</td>
+                        <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">{new Date(st.created_at).toLocaleString()}</td>
+                        <td className="px-4 py-3 font-medium text-slate-800">{st.customer_name || 'Walk-in Customer'}</td>
+                        <td className="px-4 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">{st.payment_method}</span></td>
+                        <td className="px-4 py-3 text-right font-black text-slate-900">{formatGHS(st.total_amount)}</td>
+                        <td className="px-4 py-3 text-center">
+                          <button
+                            onClick={() => handleViewInvoice(st.id)}
+                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[10px] uppercase tracking-wider transition"
+                          >
+                            Receipt
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>
       )}
 
+      {/* --- ALL MODALS --- */}
+
+      {/* Invoice Viewer Modal */}
       {selectedInvoiceSale && (
         <InvoiceModal
           saleData={selectedInvoiceSale}
@@ -2093,50 +965,208 @@ export default function Dashboard() {
         />
       )}
 
-      {/* Return Modal */}
-      {showDashboardReturnModal && (
-        <ReturnModal
-          onClose={() => setShowDashboardReturnModal(false)}
-          onReturnProcessed={(returnData) => {
-            setShowDashboardReturnModal(false);
-            setDashboardReturnCreditNote(returnData);
-            loadReturnsSummary();
-            loadDashboardData();
-            loadStaffSummary();
-          }}
-        />
+      {/* Quick Restock Modal */}
+      {showRestockModal && selectedProductForRestock && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-md border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
+                <Package size={16} /> Quick Restock Stock Entry
+              </h3>
+              <button onClick={() => setShowRestockModal(false)} className="text-slate-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickRestockSubmit} className="p-5 space-y-4">
+              <div className="bg-slate-50 p-3 rounded border border-slate-200 text-xs">
+                <div className="font-bold text-slate-900">{selectedProductForRestock.name}</div>
+                <div className="text-slate-500 font-mono text-[11px]">SKU: {selectedProductForRestock.sku}</div>
+                <div className="mt-1 flex items-center justify-between font-bold text-slate-700">
+                  <span>Current Stock: <strong className="text-rose-600">{selectedProductForRestock.stock_quantity} units</strong></span>
+                  <span>Alert Limit: <strong>{selectedProductForRestock.threshold || globalThreshold}</strong></span>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Quantity to Add:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={restockQty}
+                  onChange={(e) => setRestockQty(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Restock Reason / Shipment Ref:
+                </label>
+                <input
+                  type="text"
+                  value={restockReason}
+                  onChange={(e) => setRestockReason(e.target.value)}
+                  className="w-full px-3 py-2 border border-slate-300 rounded text-xs focus:outline-none focus:border-blue-600"
+                />
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowRestockModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmittingRestock}
+                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-xs font-black uppercase tracking-wider transition"
+                >
+                  {isSubmittingRestock ? 'Submitting...' : 'Confirm Restock'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
 
-      {/* Return Credit Note Modal */}
-      {dashboardReturnCreditNote && (
-        <ReturnInvoiceModal
-          returnData={dashboardReturnCreditNote}
-          onClose={() => setDashboardReturnCreditNote(null)}
-        />
+      {/* Global Alert Threshold Settings Modal */}
+      {showThresholdModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
+                <Settings size={16} /> Low Stock Alert Threshold
+              </h3>
+              <button onClick={() => setShowThresholdModal(false)} className="text-slate-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveThreshold} className="p-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
+                  Global Minimum Stock Level Limit:
+                </label>
+                <input
+                  type="number"
+                  min="1"
+                  max="1000"
+                  required
+                  value={globalThreshold}
+                  onChange={(e) => setGlobalThreshold(Number(e.target.value))}
+                  className="w-full px-3 py-2 border border-slate-300 rounded font-bold text-sm focus:outline-none focus:border-blue-600"
+                />
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Products with stock falling at or below this value will trigger low stock alert notifications.
+                </p>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowThresholdModal(false)}
+                  className="px-4 py-2 bg-slate-100 text-slate-700 rounded text-xs font-bold uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingThreshold}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-black uppercase tracking-wider transition"
+                >
+                  {isSavingThreshold ? 'Saving...' : 'Save Setting'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
       )}
-    </div>
-  );
-}
 
-function StatCard({ title, value, icon, subtitle, color = 'text-slate-900' }: { title: string, value: string | number, icon: any, subtitle: string, color?: string }) {
-  return (
-    <div className="bg-white border border-slate-200 p-6 rounded-sm shadow-sm relative overflow-hidden group">
-      <div className="absolute right-4 top-4 opacity-10 group-hover:opacity-20 transition-opacity">{icon}</div>
-      <div className="space-y-4">
-         <div className="text-[10px] font-black uppercase tracking-widest text-slate-400">{title}</div>
-         <div>
-            <div className={`text-2xl font-black tracking-tight ${color}`}>{value}</div>
-            <div className="text-[10px] font-bold text-slate-400 uppercase mt-1">{subtitle}</div>
-         </div>
-      </div>
-    </div>
-  );
-}
+      {/* EOD Daily Summary Modal */}
+      {showDailySummaryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
+              <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
+                <FileText size={16} /> End-of-Day (EOD) Executive Report
+              </h3>
+              <button onClick={() => setShowDailySummaryModal(false)} className="text-slate-400 hover:text-white">
+                <X size={18} />
+              </button>
+            </div>
 
-function EmptyState() {
-  return (
-    <div className="h-full flex items-center justify-center text-slate-300 text-[11px] font-black uppercase tracking-widest">
-       No Data Detected
+            <div className="p-5 overflow-y-auto space-y-4 flex-1">
+              {dailySummaryLoading ? (
+                <div className="py-12 text-center text-slate-400">Loading daily executive breakdown...</div>
+              ) : dailySummary ? (
+                <>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+                    <div className="bg-blue-50 p-3 rounded border border-blue-200">
+                      <div className="text-[10px] font-black uppercase text-blue-700">Gross Sales</div>
+                      <div className="text-lg font-black text-blue-900 mt-1">{formatGHS(dailySummary.totalSales || 0)}</div>
+                      <div className="text-[10px] text-blue-700 mt-0.5">{dailySummary.salesCount || 0} transaction(s)</div>
+                    </div>
+
+                    <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
+                      <div className="text-[10px] font-black uppercase text-emerald-700">Gross Profit</div>
+                      <div className="text-lg font-black text-emerald-900 mt-1">{formatGHS(dailySummary.grossProfit || 0)}</div>
+                      <div className="text-[10px] text-emerald-700 mt-0.5">Estimated gross gain</div>
+                    </div>
+
+                    <div className="bg-rose-50 p-3 rounded border border-rose-200">
+                      <div className="text-[10px] font-black uppercase text-rose-700">Expenses Logged</div>
+                      <div className="text-lg font-black text-rose-900 mt-1">{formatGHS(dailySummary.totalExpenses || 0)}</div>
+                      <div className="text-[10px] text-rose-700 mt-0.5">{dailySummary.expenseCount || 0} payout(s)</div>
+                    </div>
+
+                    <div className="bg-slate-100 p-3 rounded border border-slate-200">
+                      <div className="text-[10px] font-black uppercase text-slate-700">Net Cash Collection</div>
+                      <div className="text-lg font-black text-slate-900 mt-1">{formatGHS(dailySummary.netCash || 0)}</div>
+                      <div className="text-[10px] text-slate-500 mt-0.5">Physical cash in till</div>
+                    </div>
+                  </div>
+
+                  {/* Payment Methods Breakdown */}
+                  {dailySummary.paymentBreakdown && (
+                    <div className="border border-slate-200 rounded p-4 space-y-2">
+                      <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Payment Method Channels</h4>
+                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                          <div className="text-[10px] text-slate-500 font-bold uppercase">Cash</div>
+                          <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown.Cash || 0)}</div>
+                        </div>
+                        <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                          <div className="text-[10px] text-slate-500 font-bold uppercase">Mobile Money</div>
+                          <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown['Mobile Money'] || 0)}</div>
+                        </div>
+                        <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                          <div className="text-[10px] text-slate-500 font-bold uppercase">Card</div>
+                          <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown.Card || 0)}</div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </>
+              ) : null}
+            </div>
+
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+              <button
+                onClick={() => setShowDailySummaryModal(false)}
+                className="px-5 py-2 bg-slate-900 text-white rounded text-xs font-black uppercase tracking-wider"
+              >
+                Close Report
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -9,8 +9,6 @@ import { useAuth } from '../context/AuthContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
 import BarcodeScannerModal from '../components/BarcodeScannerModal';
-import ReturnModal from '../components/ReturnModal';
-import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
 
 export default function Sales() {
   const { user } = useAuth();
@@ -26,11 +24,6 @@ export default function Sales() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [invoiceSaleData, setInvoiceSaleData] = useState<any | null>(null);
   const [showCameraScanner, setShowCameraScanner] = useState(false);
-
-  // Return Feature States
-  const [showReturnModal, setShowReturnModal] = useState(false);
-  const [selectedReturnSaleId, setSelectedReturnSaleId] = useState<number | null>(null);
-  const [returnCreditNoteData, setReturnCreditNoteData] = useState<any | null>(null);
 
   // Cart & POS filters
   const [cart, setCart] = useState<{product_id: number, quantity: number, unit_price: number, notes?: string}[]>([]);
@@ -230,17 +223,6 @@ export default function Sales() {
     }
   };
 
-  const handleOpenReturnModal = (saleId?: number) => {
-    setSelectedReturnSaleId(saleId || null);
-    setShowReturnModal(true);
-  };
-
-  const handleReturnProcessed = (returnData: any) => {
-    setShowReturnModal(false);
-    setReturnCreditNoteData(returnData);
-    loadData();
-  };
-
   const handleExportCSV = () => {
     if (sales.length === 0) return;
     const headers = ['Sale ID', 'Date', 'Cashier', 'Customer', 'Payment Method', 'Status', 'Total Amount', 'Transaction Profit'];
@@ -321,13 +303,6 @@ export default function Sales() {
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             <FileText size={15} /> Export CSV
-          </button>
-
-          <button 
-            onClick={() => handleOpenReturnModal()}
-            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-1.5"
-          >
-            <RotateCcw size={15} /> Process Return
           </button>
 
           <button 
@@ -532,16 +507,6 @@ export default function Sales() {
                       >
                         <Printer size={13} /> Invoice
                       </button>
-
-                      {s.status !== 'refunded' && (
-                        <button 
-                          onClick={() => handleOpenReturnModal(s.id)} 
-                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] rounded border border-rose-200 transition-colors flex items-center gap-1"
-                          title="Process Return / Refund for this Sale"
-                        >
-                          <RotateCcw size={13} /> Return
-                        </button>
-                      )}
                     </div>
                   </td>
                 </tr>
@@ -1010,22 +975,6 @@ export default function Sales() {
         title="POS Camera QR & Barcode Scanner"
       />
 
-      {/* Return & Refund Modal */}
-      {showReturnModal && (
-        <ReturnModal
-          initialSaleId={selectedReturnSaleId}
-          onClose={() => setShowReturnModal(false)}
-          onReturnProcessed={handleReturnProcessed}
-        />
-      )}
-
-      {/* Return Invoice Credit Note Modal */}
-      {returnCreditNoteData && (
-        <ReturnInvoiceModal
-          returnData={returnCreditNoteData}
-          onClose={() => setReturnCreditNoteData(null)}
-        />
-      )}
     </div>
   );
 }
