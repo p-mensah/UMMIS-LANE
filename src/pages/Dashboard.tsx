@@ -2,11 +2,13 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import InvoiceModal from '../components/InvoiceModal';
+import ReturnModal from '../components/ReturnModal';
+import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
 import { 
   Package, AlertCircle, AlertTriangle, DollarSign, TrendingUp, Info, 
   Search, Download, Settings, PlusCircle, ArrowRight, RefreshCw, CheckCircle2,
   Calendar, FileText, Printer, ArrowUpRight, ArrowDownRight, Wallet, Receipt,
-  UserCheck, Shield, Award, Target, Clock, ShoppingCart, UserPlus, BarChart3, Users, ChevronRight
+  UserCheck, Shield, Award, Target, Clock, ShoppingCart, UserPlus, BarChart3, Users, ChevronRight, RotateCcw
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { AreaChart, Area, ReferenceLine, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Cell, PieChart, Pie } from 'recharts';
@@ -26,6 +28,7 @@ export default function Dashboard() {
   const [trendTimeframe, setTrendTimeframe] = useState<'30days' | 'weekly' | 'monthly' | 'yearly'>('30days');
   const [chartType, setChartType] = useState<'area' | 'line' | 'bar'>('area');
   const [bestSellers, setBestSellers] = useState<any[]>([]);
+  const [bestSellerChartType, setBestSellerChartType] = useState<'bar' | 'pie'>('bar');
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
   const [selectedInvoiceSale, setSelectedInvoiceSale] = useState<any>(null);
   const [loadingInvoiceId, setLoadingInvoiceId] = useState<number | null>(null);
@@ -34,6 +37,15 @@ export default function Dashboard() {
   // Staff specific states
   const [staffSummary, setStaffSummary] = useState<any>(null);
   const [staffLoading, setStaffLoading] = useState(false);
+
+  // Staff Transactions Report states
+  const [staffReportPeriod, setStaffReportPeriod] = useState<'today' | 'week' | 'month' | 'custom'>('today');
+  const [staffReportPaymentMethod, setStaffReportPaymentMethod] = useState<string>('all');
+  const [staffReportStartDate, setStaffReportStartDate] = useState<string>('');
+  const [staffReportEndDate, setStaffReportEndDate] = useState<string>('');
+  const [staffReportSearch, setStaffReportSearch] = useState<string>('');
+  const [staffReportData, setStaffReportData] = useState<any>(null);
+  const [staffReportLoading, setStaffReportLoading] = useState<boolean>(false);
 
   // Monthly breakdown states
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
@@ -62,6 +74,11 @@ export default function Dashboard() {
   const [dailySummaryLoading, setDailySummaryLoading] = useState(false);
   const [dailySummaryTab, setDailySummaryTab] = useState<'all' | 'sales' | 'expenses'>('all');
 
+  // Returns Analytics State
+  const [returnsSummary, setReturnsSummary] = useState<any>(null);
+  const [showDashboardReturnModal, setShowDashboardReturnModal] = useState(false);
+  const [dashboardReturnCreditNote, setDashboardReturnCreditNote] = useState<any | null>(null);
+
   // Trend derived analytics
   const totalTrendRevenue = salesTrends.reduce((acc, curr) => acc + (curr.total || 0), 0);
   const avgTrendRevenue = salesTrends.length > 0 ? totalTrendRevenue / salesTrends.length : 0;
@@ -71,7 +88,18 @@ export default function Dashboard() {
   useEffect(() => {
     loadDashboardData();
     loadStaffSummary();
+    loadReturnsSummary();
   }, [user]);
+
+  const loadReturnsSummary = () => {
+    fetchApi('/returns/summary')
+      .then(data => setReturnsSummary(data))
+      .catch(console.error);
+  };
+
+  useEffect(() => {
+    loadStaffTransactionsReport();
+  }, [staffReportPeriod, staffReportPaymentMethod, staffReportStartDate, staffReportEndDate, user]);
 
   useEffect(() => {
     loadMonthlySummary(selectedMonth);
@@ -83,6 +111,44 @@ export default function Dashboard() {
       .then(data => setStaffSummary(data))
       .catch(console.error)
       .finally(() => setStaffLoading(false));
+  };
+
+  const loadStaffTransactionsReport = () => {
+    setStaffReportLoading(true);
+    const query = new URLSearchParams();
+    query.append('period', staffReportPeriod);
+    if (staffReportPaymentMethod !== 'all') query.append('payment_method', staffReportPaymentMethod);
+    if (staffReportPeriod === 'custom' && staffReportStartDate && staffReportEndDate) {
+      query.append('startDate', staffReportStartDate);
+      query.append('endDate', staffReportEndDate);
+    }
+    fetchApi(`/reports/staff-transactions-report?${query.toString()}`)
+      .then(data => setStaffReportData(data))
+      .catch(console.error)
+      .finally(() => setStaffReportLoading(false));
+  };
+
+  const handleExportStaffReportCSV = () => {
+    if (!staffReportData || !staffReportData.transactions || staffReportData.transactions.length === 0) return;
+    const headers = ['Sale ID', 'Date & Time', 'Customer', 'Items Sold', 'Payment Method', 'Status', 'Total Amount (GHS)'];
+    const rows = staffReportData.transactions.map((s: any) => [
+      `"#SALE-${s.id}"`,
+      `"${new Date(s.created_at).toLocaleString()}"`,
+      `"${(s.customer_name || 'Walk-in Customer').replace(/"/g, '""')}"`,
+      s.total_items_sold || s.item_count || 1,
+      `"${s.payment_method}"`,
+      `"${s.status}"`,
+      s.total_amount
+    ]);
+    const csvContent = [headers.join(','), ...rows.map((r: any) => r.join(','))].join('\n');
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', `Staff_Transactions_Report_${user?.name?.replace(/\s+/g, '_')}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
   };
 
   const loadMonthlySummary = (monthStr: string) => {
@@ -503,6 +569,296 @@ export default function Dashboard() {
               )}
             </div>
           </div>
+
+          {/* Staff Transactions Report Module */}
+          <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
+            <div className="p-5 border-b border-slate-100 bg-slate-50/80 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-100 text-blue-700 rounded-sm">
+                    <FileText size={18} />
+                  </div>
+                  <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                    Staff Sales Transactions & Ledger Report
+                  </h3>
+                </div>
+                <p className="text-[11px] text-slate-500 font-medium mt-1">
+                  Comprehensive audit report of your personal counter transactions, payment channels, and shift reconciliation.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 w-full md:w-auto">
+                <button
+                  onClick={handleExportStaffReportCSV}
+                  disabled={!staffReportData || !staffReportData.transactions || staffReportData.transactions.length === 0}
+                  className="px-3.5 py-2 bg-slate-800 hover:bg-slate-900 text-white rounded-sm text-xs font-bold uppercase tracking-wider transition-all disabled:opacity-50 flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Download size={14} /> Export CSV Report
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-sm text-xs font-bold uppercase tracking-wider transition-all flex items-center gap-1.5"
+                >
+                  <Printer size={14} /> Print Ledger
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Bar */}
+            <div className="p-4 bg-slate-50 border-b border-slate-100 space-y-3">
+              <div className="flex flex-col lg:flex-row justify-between items-start lg:items-center gap-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mr-1">Period:</span>
+                  <button
+                    onClick={() => setStaffReportPeriod('today')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
+                      staffReportPeriod === 'today' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Today
+                  </button>
+                  <button
+                    onClick={() => setStaffReportPeriod('week')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
+                      staffReportPeriod === 'week' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Last 7 Days
+                  </button>
+                  <button
+                    onClick={() => setStaffReportPeriod('month')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
+                      staffReportPeriod === 'month' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    This Month
+                  </button>
+                  <button
+                    onClick={() => setStaffReportPeriod('custom')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-sm transition-all ${
+                      staffReportPeriod === 'custom' ? 'bg-blue-600 text-white shadow-xs' : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                    }`}
+                  >
+                    Custom Dates
+                  </button>
+
+                  {staffReportPeriod === 'custom' && (
+                    <div className="flex items-center gap-1.5 bg-white border border-slate-200 px-2 py-1 rounded-sm ml-2">
+                      <input 
+                        type="date" 
+                        value={staffReportStartDate} 
+                        onChange={e => setStaffReportStartDate(e.target.value)} 
+                        className="text-xs bg-transparent focus:outline-none" 
+                      />
+                      <span className="text-slate-400 text-xs">-</span>
+                      <input 
+                        type="date" 
+                        value={staffReportEndDate} 
+                        onChange={e => setStaffReportEndDate(e.target.value)} 
+                        className="text-xs bg-transparent focus:outline-none" 
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap items-center gap-2 w-full lg:w-auto">
+                  <select
+                    value={staffReportPaymentMethod}
+                    onChange={e => setStaffReportPaymentMethod(e.target.value)}
+                    className="border border-slate-200 bg-white px-3 py-1.5 rounded-sm text-xs text-slate-700 font-bold focus:outline-none focus:border-blue-500"
+                  >
+                    <option value="all">All Payment Channels</option>
+                    <option value="Cash">Cash Only</option>
+                    <option value="Mobile Money">Mobile Money (MoMo) Only</option>
+                    <option value="Card">Card Only</option>
+                  </select>
+
+                  <div className="relative flex-1 lg:w-48">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Search my ledger..."
+                      value={staffReportSearch}
+                      onChange={e => setStaffReportSearch(e.target.value)}
+                      className="w-full border border-slate-200 bg-white rounded-sm pl-8 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Metrics Breakdown Grid */}
+            <div className="p-5 border-b border-slate-100 bg-white">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+                <div className="p-4 bg-emerald-50/70 border border-emerald-200/80 rounded-sm">
+                  <span className="text-[10px] font-black text-emerald-800 uppercase tracking-widest block mb-1">
+                    Total Revenue
+                  </span>
+                  <div className="text-xl font-black text-emerald-950">
+                    {formatGHS(staffReportData?.totalVolume || 0)}
+                  </div>
+                  <span className="text-[10px] text-emerald-700 font-medium mt-1 block">
+                    Total sales value logged by you
+                  </span>
+                </div>
+
+                <div className="p-4 bg-blue-50/70 border border-blue-200/80 rounded-sm">
+                  <span className="text-[10px] font-black text-blue-800 uppercase tracking-widest block mb-1">
+                    Total Transactions
+                  </span>
+                  <div className="text-xl font-black text-blue-950">
+                    {staffReportData?.transactionCount || 0}
+                  </div>
+                  <span className="text-[10px] text-blue-700 font-medium mt-1 block">
+                    Completed customer sales
+                  </span>
+                </div>
+
+                <div className="p-4 bg-purple-50/70 border border-purple-200/80 rounded-sm">
+                  <span className="text-[10px] font-black text-purple-800 uppercase tracking-widest block mb-1">
+                    Avg Transaction Value
+                  </span>
+                  <div className="text-xl font-black text-purple-950">
+                    {formatGHS(staffReportData?.avgOrderValue || 0)}
+                  </div>
+                  <span className="text-[10px] text-purple-700 font-medium mt-1 block">
+                    Average size per receipt
+                  </span>
+                </div>
+
+                <div className="p-4 bg-rose-50/70 border border-rose-200/80 rounded-sm flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest flex items-center justify-between">
+                      My Returns Today
+                      <RotateCcw size={13} className="text-rose-600" />
+                    </span>
+                    <div className="text-xl font-black text-rose-950 mt-1">
+                      {formatGHS(returnsSummary?.myTodayRefundValue || 0)}
+                    </div>
+                    <span className="text-[10px] text-rose-700 font-medium mt-0.5 block">
+                      {returnsSummary?.myTodayReturnCount || 0} return(s) processed today
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => setShowDashboardReturnModal(true)}
+                    className="mt-2 text-[10px] font-black uppercase tracking-wider text-white bg-rose-600 hover:bg-rose-700 py-1.5 px-2 rounded flex items-center justify-center gap-1 transition shadow-2xs"
+                  >
+                    <RotateCcw size={12} /> Process Sale Return
+                  </button>
+                </div>
+
+                <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm space-y-1.5">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest block mb-1">
+                    Payment Channel Breakdown
+                  </span>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-600">Cash:</span>
+                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.cash || 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-600">MoMo:</span>
+                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.mobileMoney || 0)}</span>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px]">
+                    <span className="font-bold text-slate-600">Card:</span>
+                    <span className="font-black text-slate-900">{formatGHS(staffReportData?.paymentBreakdown?.card || 0)}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Transactions Ledger Table */}
+            <div className="overflow-x-auto">
+              {staffReportLoading ? (
+                <div className="p-12 text-center space-y-2">
+                  <RefreshCw size={24} className="animate-spin text-blue-600 mx-auto" />
+                  <p className="text-xs font-bold text-slate-500 uppercase tracking-widest">Loading transactions report...</p>
+                </div>
+              ) : staffReportData && staffReportData.transactions && staffReportData.transactions.length > 0 ? (
+                <table className="min-w-full divide-y divide-slate-200">
+                  <thead className="bg-slate-50">
+                    <tr>
+                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Sale Ref</th>
+                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
+                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Customer</th>
+                      <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">Items</th>
+                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Payment Channel</th>
+                      <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Status</th>
+                      <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Amount</th>
+                      <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="bg-white divide-y divide-slate-100 text-xs">
+                    {staffReportData.transactions
+                      .filter((s: any) => {
+                        if (!staffReportSearch) return true;
+                        const q = staffReportSearch.toLowerCase();
+                        return (
+                          `SALE-${s.id}`.toLowerCase().includes(q) ||
+                          (s.customer_name && s.customer_name.toLowerCase().includes(q)) ||
+                          (s.payment_method && s.payment_method.toLowerCase().includes(q)) ||
+                          s.total_amount.toString().includes(q)
+                        );
+                      })
+                      .map((s: any) => (
+                        <tr key={s.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="px-5 py-3 font-mono font-bold text-slate-900">
+                            #SALE-{s.id}
+                          </td>
+                          <td className="px-5 py-3 text-slate-500 whitespace-nowrap">
+                            {new Date(s.created_at).toLocaleString()}
+                          </td>
+                          <td className="px-5 py-3 text-slate-800 font-medium">
+                            {s.customer_name || 'Walk-in Customer'}
+                          </td>
+                          <td className="px-5 py-3 text-center font-bold text-slate-700">
+                            {s.total_items_sold || s.item_count || 1}
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              s.payment_method === 'Cash' ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' :
+                              s.payment_method === 'Mobile Money' ? 'bg-amber-50 text-amber-700 border border-amber-200' :
+                              'bg-blue-50 text-blue-700 border border-blue-200'
+                            }`}>
+                              {s.payment_method}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 whitespace-nowrap">
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                              s.status === 'completed' ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                            }`}>
+                              {s.status}
+                            </span>
+                          </td>
+                          <td className="px-5 py-3 text-right font-black text-slate-900 whitespace-nowrap">
+                            {formatGHS(s.total_amount)}
+                          </td>
+                          <td className="px-5 py-3 text-right whitespace-nowrap">
+                            <button
+                              onClick={() => handleViewInvoice(s.id)}
+                              disabled={loadingInvoiceId === s.id}
+                              className="px-2.5 py-1 bg-slate-800 hover:bg-blue-600 text-white rounded text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 transition-colors shadow-2xs ml-auto"
+                            >
+                              {loadingInvoiceId === s.id ? (
+                                <RefreshCw size={12} className="animate-spin" />
+                              ) : (
+                                <FileText size={12} />
+                              )}
+                              Invoice
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                  </tbody>
+                </table>
+              ) : (
+                <div className="p-12 text-center text-slate-400 text-xs">
+                  <FileText className="mx-auto mb-2 opacity-30" size={32} />
+                  No transactions recorded for the selected period or filters.
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 
@@ -551,6 +907,126 @@ export default function Dashboard() {
             </a>
             <StatCard title="Lifetime Revenue" value={formatGHS(summary?.totalSalesValue || 0)} icon={<DollarSign size={18} className="text-emerald-500" />} subtitle="Across all transactions" />
             <StatCard title="Today's Velocity" value={formatGHS(summary?.todaySalesValue || 0)} icon={<TrendingUp size={18} className="text-blue-600" />} subtitle="Daily performance" />
+          </div>
+
+          {/* Sales Returns & Refund Loss Prevention Section */}
+          <div className="bg-white border border-rose-200/80 rounded-sm shadow-2xs overflow-hidden">
+            <div className="p-4 border-b border-rose-100 bg-rose-50/50 flex flex-wrap items-center justify-between gap-2">
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 bg-rose-600 rounded flex items-center justify-center text-white shrink-0">
+                  <RotateCcw size={15} />
+                </div>
+                <div>
+                  <h3 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+                    Sales Returns & Loss Prevention Analytics
+                  </h3>
+                  <p className="text-[10px] text-slate-500 font-medium">Monthly returned items, refund volume, and damaged stock tracking</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowDashboardReturnModal(true)}
+                className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded font-bold text-xs transition flex items-center gap-1.5 shadow-xs"
+              >
+                <RotateCcw size={14} /> Process New Return
+              </button>
+            </div>
+
+            <div className="p-5 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 bg-white">
+              {/* Card 1: Today Refunds */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  Today's Refunded Volume
+                </span>
+                <div className="text-2xl font-black text-rose-700">
+                  {formatGHS(returnsSummary?.todayRefundValue || 0)}
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
+                  {returnsSummary?.todayReturnCount || 0} return receipt(s) today
+                </span>
+              </div>
+
+              {/* Card 2: Month Refunds */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  This Month Total Refunds
+                </span>
+                <div className="text-2xl font-black text-rose-800">
+                  {formatGHS(returnsSummary?.monthRefundValue || 0)}
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
+                  Cumulative monthly returns value
+                </span>
+              </div>
+
+              {/* Card 3: Damaged Stock Write-off */}
+              <div className="p-4 bg-amber-50/60 border border-amber-200 rounded-sm">
+                <span className="text-[10px] font-black text-amber-900 uppercase tracking-wider block mb-1">
+                  Damaged Stock Loss
+                </span>
+                <div className="text-2xl font-black text-amber-800">
+                  {formatGHS(returnsSummary?.damagedStockLoss || 0)}
+                </div>
+                <span className="text-[10px] text-amber-700 font-medium mt-1 block">
+                  Non-restocked inventory loss this month
+                </span>
+              </div>
+
+              {/* Card 4: Top Reason */}
+              <div className="p-4 bg-slate-50 border border-slate-200 rounded-sm">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider block mb-1">
+                  Primary Return Reason
+                </span>
+                <div className="text-sm font-black text-slate-900 truncate">
+                  {returnsSummary?.reasonsBreakdown?.[0]?.reason || 'None Logged'}
+                </div>
+                <span className="text-[10px] text-slate-500 font-medium mt-1 block">
+                  {returnsSummary?.reasonsBreakdown?.[0]?.count || 0} case(s) recorded
+                </span>
+              </div>
+            </div>
+
+            {/* Sub-grid for Top Returned Products and Reasons Breakdown */}
+            {returnsSummary && (returnsSummary.topReturnedProducts?.length > 0 || returnsSummary.reasonsBreakdown?.length > 0) && (
+              <div className="border-t border-slate-200 bg-slate-50/50 p-5 grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+                {/* Top Returned Items */}
+                <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3">
+                  <h4 className="font-black text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <Package size={14} className="text-rose-600" />
+                    Top Returned Products
+                  </h4>
+                  <div className="divide-y divide-slate-100">
+                    {returnsSummary.topReturnedProducts?.map((item: any, idx: number) => (
+                      <div key={idx} className="py-2 flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-slate-900">{item.product_name}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{item.total_qty} unit(s) returned</div>
+                        </div>
+                        <div className="font-black text-rose-700">{formatGHS(item.total_refund)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Return Reasons Breakdown */}
+                <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3">
+                  <h4 className="font-black text-slate-800 uppercase tracking-wider text-[11px] flex items-center gap-1.5">
+                    <AlertCircle size={14} className="text-amber-600" />
+                    Return Reasons Breakdown
+                  </h4>
+                  <div className="divide-y divide-slate-100">
+                    {returnsSummary.reasonsBreakdown?.map((reasonObj: any, idx: number) => (
+                      <div key={idx} className="py-2 flex items-center justify-between">
+                        <div>
+                          <div className="font-bold text-slate-900">{reasonObj.reason}</div>
+                          <div className="text-[10px] text-slate-400 font-medium">{reasonObj.count} incidence(s)</div>
+                        </div>
+                        <div className="font-black text-slate-800">{formatGHS(reasonObj.total)}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Recent Sales Widget */}
@@ -1146,28 +1622,68 @@ export default function Dashboard() {
 
         {/* Best Sellers */}
         <div className="space-y-4">
-           <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">Velocity Leaders</h2>
-           <div className="bg-white border border-slate-200 rounded-sm p-6 shadow-sm h-[320px] min-w-0 flex flex-col justify-center">
+           <div className="flex items-center justify-between">
+             <h2 className="text-[13px] font-black text-slate-900 uppercase tracking-widest">Top Performing Products</h2>
+             <div className="flex bg-slate-100 p-0.5 rounded-sm border border-slate-200">
+               <button
+                 onClick={() => setBestSellerChartType('bar')}
+                 className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${
+                   bestSellerChartType === 'bar' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'
+                 }`}
+               >
+                 Bar Chart
+               </button>
+               <button
+                 onClick={() => setBestSellerChartType('pie')}
+                 className={`px-2 py-1 text-[10px] font-black uppercase tracking-wider rounded-xs transition-all ${
+                   bestSellerChartType === 'pie' ? 'bg-white text-blue-600 shadow-2xs font-extrabold' : 'text-slate-500 hover:text-slate-800'
+                 }`}
+               >
+                 Pie Chart
+               </button>
+             </div>
+           </div>
+
+           <div className="bg-white border border-slate-200 rounded-sm p-5 shadow-sm min-w-0 space-y-4">
               {bestSellers.length > 0 ? (
                 <>
-                   <div className="h-48 mb-6">
-                      <ResponsiveContainer width="100%" height="100%">
-                         <PieChart>
-                            <Pie data={bestSellers} dataKey="total_sold" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={60} paddingAngle={5}>
-                               {bestSellers.map((_, index) => <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />)}
+                   <div className="h-[220px]">
+                     <ResponsiveContainer width="100%" height="100%">
+                        {bestSellerChartType === 'bar' ? (
+                          <BarChart data={bestSellers} layout="vertical" margin={{ top: 5, right: 20, left: 20, bottom: 5 }}>
+                            <CartesianGrid strokeDasharray="3 3" horizontal={false} stroke="#f1f5f9" />
+                            <XAxis type="number" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#64748b' }} />
+                            <YAxis type="category" dataKey="name" axisLine={false} tickLine={false} tick={{ fontSize: 9, fontWeight: 'bold', fill: '#334155' }} width={110} />
+                            <Tooltip 
+                              contentStyle={{ borderRadius: '4px', border: 'none', background: '#0f172a', color: '#fff', fontSize: '11px' }}
+                              formatter={(value: number) => [`${value} units`, 'Total Sold']} 
+                            />
+                            <Bar dataKey="total_sold" fill="#3b82f6" radius={[0, 4, 4, 0]}>
+                              {bestSellers.map((_, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
+                            </Bar>
+                          </BarChart>
+                        ) : (
+                          <PieChart>
+                            <Pie data={bestSellers} dataKey="total_sold" nameKey="name" cx="50%" cy="50%" innerRadius={40} outerRadius={70} paddingAngle={5}>
+                              {bestSellers.map((_, index) => (
+                                <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                              ))}
                             </Pie>
-                            <Tooltip formatter={(value: number) => [`${value} units`, 'Sales']} />
-                         </PieChart>
-                      </ResponsiveContainer>
+                            <Tooltip formatter={(value: number) => [`${value} units`, 'Sales Volume']} />
+                          </PieChart>
+                        )}
+                     </ResponsiveContainer>
                    </div>
-                   <div className="space-y-2">
+                   <div className="space-y-1.5 pt-2 border-t border-slate-100 max-h-[100px] overflow-y-auto">
                       {bestSellers.map((p, index) => (
                         <div key={p.name} className="flex items-center justify-between text-[11px]">
-                           <div className="flex items-center gap-2">
-                              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
-                              <span className="font-bold text-slate-600 truncate max-w-[120px]">{p.name}</span>
+                           <div className="flex items-center gap-2 min-w-0">
+                              <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: COLORS[index % COLORS.length] }}></span>
+                              <span className="font-bold text-slate-700 truncate max-w-[130px]">{p.name}</span>
                            </div>
-                           <span className="font-black text-slate-900">{p.total_sold} Sold</span>
+                           <span className="font-black text-slate-900 shrink-0">{p.total_sold} units</span>
                         </div>
                       ))}
                    </div>
@@ -1574,6 +2090,28 @@ export default function Dashboard() {
         <InvoiceModal
           saleData={selectedInvoiceSale}
           onClose={() => setSelectedInvoiceSale(null)}
+        />
+      )}
+
+      {/* Return Modal */}
+      {showDashboardReturnModal && (
+        <ReturnModal
+          onClose={() => setShowDashboardReturnModal(false)}
+          onReturnProcessed={(returnData) => {
+            setShowDashboardReturnModal(false);
+            setDashboardReturnCreditNote(returnData);
+            loadReturnsSummary();
+            loadDashboardData();
+            loadStaffSummary();
+          }}
+        />
+      )}
+
+      {/* Return Credit Note Modal */}
+      {dashboardReturnCreditNote && (
+        <ReturnInvoiceModal
+          returnData={dashboardReturnCreditNote}
+          onClose={() => setDashboardReturnCreditNote(null)}
         />
       )}
     </div>

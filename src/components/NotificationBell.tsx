@@ -1,44 +1,18 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { 
-  Bell, CheckCircle2, AlertTriangle, Info, AlertCircle, Trash2, Check, ExternalLink, RefreshCw 
+  Bell, CheckCircle2, AlertTriangle, Info, AlertCircle, Trash2, ExternalLink, RefreshCw 
 } from 'lucide-react';
-
-interface NotificationItem {
-  id: number;
-  title: string;
-  message: string;
-  type: 'info' | 'warning' | 'danger' | 'success';
-  link?: string;
-  is_read: number;
-  created_at: string;
-}
+import { useNotifications } from '../context/NotificationContext';
 
 export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
-  const [notifications, setNotifications] = useState<NotificationItem[]>([]);
-  const [unreadCount, setUnreadCount] = useState(0);
   const [filter, setFilter] = useState<'all' | 'unread' | 'alerts'>('all');
-  const [loading, setLoading] = useState(false);
   const dropdownRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
 
-  const loadNotifications = async () => {
-    try {
-      const data = await fetchApi('/notifications');
-      setNotifications(data.notifications || []);
-      setUnreadCount(data.unread_count || 0);
-    } catch (err) {
-      console.error('Failed to load notifications', err);
-    }
-  };
-
-  useEffect(() => {
-    loadNotifications();
-    const interval = setInterval(loadNotifications, 15000);
-    return () => clearInterval(interval);
-  }, []);
+  const { notifications, unreadCount, refreshNotifications } = useNotifications();
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -53,8 +27,7 @@ export default function NotificationBell() {
   const handleMarkAsRead = async (id: number) => {
     try {
       await fetchApi(`/notifications/${id}/read`, { method: 'PUT' });
-      setNotifications(prev => prev.map(n => n.id === id ? { ...n, is_read: 1 } : n));
-      setUnreadCount(prev => Math.max(0, prev - 1));
+      refreshNotifications();
     } catch (err) {
       console.error(err);
     }
@@ -63,8 +36,7 @@ export default function NotificationBell() {
   const handleMarkAllRead = async () => {
     try {
       await fetchApi('/notifications/read-all', { method: 'PUT' });
-      setNotifications(prev => prev.map(n => ({ ...n, is_read: 1 })));
-      setUnreadCount(0);
+      refreshNotifications();
     } catch (err) {
       console.error(err);
     }
@@ -74,8 +46,7 @@ export default function NotificationBell() {
     e.stopPropagation();
     try {
       await fetchApi(`/notifications/${id}`, { method: 'DELETE' });
-      setNotifications(prev => prev.filter(n => n.id !== id));
-      loadNotifications();
+      refreshNotifications();
     } catch (err) {
       console.error(err);
     }
@@ -84,13 +55,13 @@ export default function NotificationBell() {
   const handleClearRead = async () => {
     try {
       await fetchApi('/notifications/clear-all', { method: 'DELETE' });
-      setNotifications(prev => prev.filter(n => n.is_read === 0));
+      refreshNotifications();
     } catch (err) {
       console.error(err);
     }
   };
 
-  const handleNotificationClick = (item: NotificationItem) => {
+  const handleNotificationClick = (item: any) => {
     if (item.is_read === 0) {
       handleMarkAsRead(item.id);
     }
@@ -175,7 +146,7 @@ export default function NotificationBell() {
 
             <div className="flex items-center gap-1">
               <button
-                onClick={loadNotifications}
+                onClick={refreshNotifications}
                 className="p-1 hover:bg-slate-800 text-slate-400 hover:text-white rounded transition-colors"
                 title="Refresh"
               >
@@ -257,7 +228,7 @@ export default function NotificationBell() {
 
                   <button
                     onClick={(e) => handleDelete(item.id, e)}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-300 hover:text-red-600 rounded transition-opacity"
+                    className="opacity-80 hover:opacity-100 p-1 text-slate-300 hover:text-red-600 rounded transition-opacity"
                     title="Delete notification"
                   >
                     <Trash2 size={12} />

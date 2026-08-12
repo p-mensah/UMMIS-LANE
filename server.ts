@@ -169,6 +169,38 @@ function initDb() {
       is_read INTEGER DEFAULT 0,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS sales_returns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sale_id INTEGER NOT NULL,
+      user_id INTEGER NOT NULL,
+      customer_id INTEGER,
+      refund_amount REAL NOT NULL,
+      refund_method TEXT NOT NULL DEFAULT 'Cash',
+      return_reason TEXT NOT NULL,
+      status TEXT DEFAULT 'approved',
+      approved_by INTEGER,
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sale_id) REFERENCES sales(id),
+      FOREIGN KEY (user_id) REFERENCES users(id),
+      FOREIGN KEY (customer_id) REFERENCES customers(id),
+      FOREIGN KEY (approved_by) REFERENCES users(id)
+    );
+
+    CREATE TABLE IF NOT EXISTS sales_return_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      return_id INTEGER NOT NULL,
+      sale_item_id INTEGER NOT NULL,
+      product_id INTEGER NOT NULL,
+      quantity INTEGER NOT NULL,
+      unit_price REAL NOT NULL,
+      restock_to_inventory INTEGER DEFAULT 1,
+      reason TEXT,
+      FOREIGN KEY (return_id) REFERENCES sales_returns(id),
+      FOREIGN KEY (sale_item_id) REFERENCES sale_items(id),
+      FOREIGN KEY (product_id) REFERENCES products(id)
+    );
   `);
 
   addColumnOrIgnore('categories', 'parent_id', 'INTEGER');
@@ -180,8 +212,12 @@ function initDb() {
   addColumnOrIgnore('sale_items', 'status', "TEXT DEFAULT 'sold'");
   addColumnOrIgnore('sale_items', 'cost_price', "REAL DEFAULT 0");
   addColumnOrIgnore('sale_items', 'notes', 'TEXT');
+  addColumnOrIgnore('sale_items', 'returned_quantity', 'INTEGER DEFAULT 0');
   addColumnOrIgnore('sales', 'refund_reason', 'TEXT');
   addColumnOrIgnore('purchases', 'supplier_id', 'INTEGER');
+  addColumnOrIgnore('purchases', 'status', "TEXT DEFAULT 'ordered'");
+  addColumnOrIgnore('purchases', 'notes', 'TEXT');
+  addColumnOrIgnore('purchases', 'expected_date', 'DATETIME');
   addColumnOrIgnore('products', 'category_id', 'INTEGER');
   addColumnOrIgnore('products', 'unit_of_measure', 'TEXT');
   addColumnOrIgnore('products', 'brand', 'TEXT');
@@ -608,6 +644,208 @@ app.delete('/api/products/:id', authenticate, requireAdmin, (req, res) => {
   res.json({ success: true });
 });
 
+// Bulk Product Updates & Imports
+app.post('/api/products/bulk-update', authenticate, requireAdmin, (req: any, res) => {
+  const { updates } = req.body; // Array of product updates from CSV
+  if (!updates || !Array.isArray(updates) || updates.length === 0) {
+    return res.status(400).json({ error: 'No product update records provided.' });
+  }
+
+  let updatedCount = 0;
+  let priceChangeCount = 0;
+  let stockAdjustmentCount = 0;
+  const notFoundSkus: string[] = [];
+
+  const runBulkUpdate = db.transaction((records) => {
+    for (const record of records) {
+      const identifier = record.id || record.sku || record.barcode;
+      if (!identifier) continue;
+
+      let existingProduct: any = null;
+      if (record.id) {
+        existingProduct = db.prepare('SELECT * FROM products WHERE id = ?').get(record.id);
+      } else if (record.sku) {
+        existingProduct = db.prepare('SELECT * FROM products WHERE sku = ?').get(record.sku);
+      } else if (record.barcode) {
+        existingProduct = db.prepare('SELECT * FROM products WHERE barcode = ?').get(record.barcode);
+      }
+
+      if (!existingProduct && record.name) {
+        existingProduct = db.prepare('SELECT * FROM products WHERE LOWER(name) = LOWER(?)').get(record.name);
+      }
+
+      if (!existingProduct) {
+        if (record.sku) notFoundSkus.push(record.sku);
+        continue;
+      }
+
+      const prodId = existingProduct.id;
+      const oldSellingPrice = Number(existingProduct.selling_price);
+      const oldCostPrice = Number(existingProduct.cost_price);
+      const oldStock = Number(existingProduct.stock_quantity);
+
+      const newCostPrice = record.cost_price !== undefined && !isNaN(Number(record.cost_price)) && Number(record.cost_price) >= 0
+        ? Number(record.cost_price)
+        : oldCostPrice;
+
+      const newSellingPrice = record.selling_price !== undefined && !isNaN(Number(record.selling_price)) && Number(record.selling_price) >= 0
+        ? Number(record.selling_price)
+        : oldSellingPrice;
+
+      let newStock = oldStock;
+      if (record.stock_quantity !== undefined && !isNaN(Number(record.stock_quantity))) {
+        newStock = Number(record.stock_quantity);
+      } else if (record.stock_change !== undefined && !isNaN(Number(record.stock_change))) {
+        newStock = oldStock + Number(record.stock_change);
+      } else if (record.quantity_change !== undefined && !isNaN(Number(record.quantity_change))) {
+        newStock = oldStock + Number(record.quantity_change);
+      }
+
+      const nameToSet = record.name && record.name.trim() !== '' ? record.name : existingProduct.name;
+      const categoryToSet = record.category && record.category.trim() !== '' ? record.category : existingProduct.category;
+      const barcodeToSet = record.barcode && record.barcode.trim() !== '' ? record.barcode : existingProduct.barcode;
+      const brandToSet = record.brand && record.brand.trim() !== '' ? record.brand : existingProduct.brand;
+      const uomToSet = record.unit_of_measure && record.unit_of_measure.trim() !== '' ? record.unit_of_measure : existingProduct.unit_of_measure;
+      const minStockToSet = record.min_stock_level !== undefined && !isNaN(Number(record.min_stock_level)) ? Number(record.min_stock_level) : existingProduct.min_stock_level;
+
+      if (oldSellingPrice !== newSellingPrice) {
+        db.prepare('INSERT INTO price_history (product_id, old_selling_price, new_selling_price) VALUES (?, ?, ?)').run(
+          prodId, oldSellingPrice, newSellingPrice
+        );
+        priceChangeCount++;
+      }
+
+      if (oldStock !== newStock) {
+        const delta = newStock - oldStock;
+        db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
+          prodId, req.user.id, 'Bulk CSV Inventory & Price Update', delta
+        );
+        stockAdjustmentCount++;
+      }
+
+      db.prepare(`
+        UPDATE products 
+        SET name = ?, category = ?, cost_price = ?, selling_price = ?, stock_quantity = ?, barcode = ?, brand = ?, unit_of_measure = ?, min_stock_level = ?
+        WHERE id = ?
+      `).run(
+        nameToSet, categoryToSet, newCostPrice, newSellingPrice, newStock, barcodeToSet, brandToSet, uomToSet, minStockToSet, prodId
+      );
+
+      updatedCount++;
+    }
+  });
+
+  try {
+    runBulkUpdate(updates);
+
+    if (updatedCount > 0) {
+      logAuditEvent(req.user.id, req.user.name, 'Bulk Product CSV Update', 'products', `Updated ${updatedCount} products (${priceChangeCount} price changes, ${stockAdjustmentCount} stock adjustments).`);
+      createNotification('Bulk Product Update', `Manager ${req.user.name} updated ${updatedCount} products in catalog via CSV.`, 'info', '/products');
+      checkStockAlerts();
+    }
+
+    res.json({
+      success: true,
+      updatedCount,
+      priceChangeCount,
+      stockAdjustmentCount,
+      notFoundSkus
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/products/bulk-import', authenticate, requireAdmin, (req: any, res) => {
+  const { products } = req.body;
+  if (!products || !Array.isArray(products) || products.length === 0) {
+    return res.status(400).json({ error: 'No product records provided for import.' });
+  }
+
+  let importedCount = 0;
+  let updatedCount = 0;
+
+  const runBulkImport = db.transaction((items) => {
+    for (let item of items) {
+      let existing: any = null;
+      if (item.sku) {
+        existing = db.prepare('SELECT * FROM products WHERE sku = ?').get(item.sku);
+      }
+      if (!existing && item.barcode) {
+        existing = db.prepare('SELECT * FROM products WHERE barcode = ?').get(item.barcode);
+      }
+
+      if (existing) {
+        const oldSellingPrice = Number(existing.selling_price);
+        const newSellingPrice = item.selling_price !== undefined ? Number(item.selling_price) : oldSellingPrice;
+        if (oldSellingPrice !== newSellingPrice) {
+          db.prepare('INSERT INTO price_history (product_id, old_selling_price, new_selling_price) VALUES (?, ?, ?)').run(
+            existing.id, oldSellingPrice, newSellingPrice
+          );
+        }
+
+        const newStock = (item.stock_quantity !== undefined ? Number(item.stock_quantity) : Number(existing.stock_quantity));
+        const delta = newStock - Number(existing.stock_quantity);
+        if (delta !== 0) {
+          db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
+            existing.id, req.user.id, 'Bulk CSV Product Import/Update', delta
+          );
+        }
+
+        db.prepare(`
+          UPDATE products 
+          SET name = COALESCE(?, name), category = COALESCE(?, category), cost_price = COALESCE(?, cost_price), 
+              selling_price = ?, stock_quantity = ?, barcode = COALESCE(?, barcode), brand = COALESCE(?, brand), 
+              unit_of_measure = COALESCE(?, unit_of_measure), min_stock_level = COALESCE(?, min_stock_level)
+          WHERE id = ?
+        `).run(
+          item.name, item.category, item.cost_price, newSellingPrice, newStock, item.barcode, item.brand, item.unit_of_measure, item.min_stock_level, existing.id
+        );
+        updatedCount++;
+      } else {
+        let skuToUse = item.sku;
+        if (!skuToUse || skuToUse.trim() === '') {
+          let isUnique = false;
+          while (!isUnique) {
+            skuToUse = 'SKU-' + Math.random().toString(36).substr(2, 6).toUpperCase();
+            const check = db.prepare('SELECT id FROM products WHERE sku = ?').get(skuToUse);
+            if (!check) isUnique = true;
+          }
+        }
+
+        db.prepare(`
+          INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, min_stock_level)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          item.name || 'Unnamed Product',
+          skuToUse,
+          item.category || 'General',
+          item.cost_price || 0,
+          item.selling_price || 0,
+          item.stock_quantity || 0,
+          item.barcode || null,
+          item.brand || null,
+          item.unit_of_measure || 'pcs',
+          item.min_stock_level !== undefined ? item.min_stock_level : 10
+        );
+        importedCount++;
+      }
+    }
+  });
+
+  try {
+    runBulkImport(products);
+
+    logAuditEvent(req.user.id, req.user.name, 'Bulk Product Import', 'products', `Imported ${importedCount} new products, updated ${updatedCount} existing products.`);
+    createNotification('Bulk Product Import', `Manager ${req.user.name} imported ${importedCount} new items & updated ${updatedCount} items.`, 'success', '/products');
+    checkStockAlerts();
+
+    res.json({ success: true, importedCount, updatedCount });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // Inventory adjustments
 app.post('/api/inventory/adjust', authenticate, (req: any, res) => {
   const { product_id, quantity_change, reason } = req.body;
@@ -700,13 +938,28 @@ app.post('/api/sales', authenticate, (req: any, res) => {
 
   try {
     const saleId = setupSale(items);
+
+    // Trigger real-time sale notification
+    createNotification(
+      'New Sale Completed',
+      `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'}) by ${(req as any).user.name || 'Cashier'}.`,
+      'success',
+      '/transactions'
+    );
+
+    // Audit log
+    logAuditEvent((req as any).user.id, (req as any).user.name, 'Completed POS Sale', 'sales', `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'})`);
+
+    // Check low stock levels
+    checkStockAlerts();
+
     res.json({ success: true, saleId });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.get('/api/sales', authenticate, (req, res) => {
+app.get('/api/sales', authenticate, (req: any, res) => {
   const { startDate, endDate, userId, customerId, category, payment_method, status } = req.query;
   let query = `
     SELECT 
@@ -721,13 +974,19 @@ app.get('/api/sales', authenticate, (req, res) => {
   const params: any[] = [];
   const conditions: string[] = [];
 
+  // Enforce role-based security: Non-admin staff ONLY see their own sales transactions.
+  // Admins can see all sales or filter by a specific staff member (userId).
+  if (req.user.role !== 'admin') {
+    conditions.push('sales.user_id = ?');
+    params.push(req.user.id);
+  } else if (userId) {
+    conditions.push('sales.user_id = ?');
+    params.push(userId);
+  }
+
   if (startDate && endDate) {
     conditions.push('date(sales.created_at) >= date(?) AND date(sales.created_at) <= date(?)');
     params.push(startDate, endDate);
-  }
-  if (userId) {
-    conditions.push('sales.user_id = ?');
-    params.push(userId);
   }
   if (customerId) {
     conditions.push('sales.customer_id = ?');
@@ -766,7 +1025,7 @@ app.get('/api/sales', authenticate, (req, res) => {
   }
 });
 
-app.get('/api/sales/:id', authenticate, (req, res) => {
+app.get('/api/sales/:id', authenticate, (req: any, res) => {
   try {
     const sale = db.prepare(`
       SELECT sales.*, users.name as user_name, customers.name as customer_name, customers.phone as customer_phone, customers.email as customer_email
@@ -777,6 +1036,10 @@ app.get('/api/sales/:id', authenticate, (req, res) => {
     `).get(req.params.id) as any;
 
     if (!sale) return res.status(404).json({ error: 'Sale not found' });
+
+    if (req.user.role !== 'admin' && sale.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied. Staff members can only view their own sales.' });
+    }
 
     const items = db.prepare(`
       SELECT si.*, p.name as product_name
@@ -791,16 +1054,17 @@ app.get('/api/sales/:id', authenticate, (req, res) => {
   }
 });
 
-// Purchases
+// Purchases & Purchase Orders
 app.post('/api/purchases', authenticate, (req: any, res) => {
-  const { supplier_name, supplier_contact, items } = req.body; // items: { product_id, quantity, unit_price }[]
-  if (!items || items.length === 0) return res.status(400).json({ error: 'No items' });
+  const { supplier_name, supplier_contact, items, status, notes, expected_date } = req.body; // items: { product_id, quantity, unit_price }[]
+  if (!items || items.length === 0) return res.status(400).json({ error: 'No items provided for purchase order' });
 
+  const poStatus = status || 'ordered';
   const total_amount = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
   
   const setupPurchase = db.transaction((purchaseItems) => {
-    const purchaseResult = db.prepare('INSERT INTO purchases (user_id, supplier_name, supplier_contact, total_amount) VALUES (?, ?, ?, ?)').run(
-      req.user.id, supplier_name, supplier_contact, total_amount
+    const purchaseResult = db.prepare('INSERT INTO purchases (user_id, supplier_name, supplier_contact, total_amount, status, notes, expected_date) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+      req.user.id, supplier_name, supplier_contact || null, total_amount, poStatus, notes || null, expected_date || null
     );
     const purchaseId = purchaseResult.lastInsertRowid;
 
@@ -808,14 +1072,33 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
       db.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)').run(
         purchaseId, item.product_id, item.quantity, item.unit_price
       );
-      // Add to inventory
-      db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+      // If initialized directly as received, increase inventory immediately
+      if (poStatus === 'received') {
+        db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+      }
     }
     return purchaseId;
   });
 
   try {
     const purchaseId = setupPurchase(items);
+
+    // Notify relevant managers & admins of new PO creation
+    createNotification(
+      'New Purchase Order Created',
+      `PO #PO-${purchaseId} for "${supplier_name}" created with status "${poStatus.toUpperCase()}" (Total: GHS ${total_amount.toFixed(2)}).`,
+      poStatus === 'received' ? 'success' : 'info',
+      '/purchases'
+    );
+
+    logAuditEvent(
+      req.user.id, 
+      req.user.name, 
+      'Created Purchase Order', 
+      'stock', 
+      `Created PO #PO-${purchaseId} for ${supplier_name} [Status: ${poStatus}, Total: GHS ${total_amount.toFixed(2)}]`
+    );
+
     res.json({ success: true, purchaseId });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -823,33 +1106,159 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
 });
 
 app.get('/api/purchases', authenticate, (req, res) => {
-  const purchases = db.prepare('SELECT * FROM purchases ORDER BY created_at DESC').all();
-  res.json(purchases);
+  try {
+    const purchases = db.prepare(`
+      SELECT 
+        p.*, 
+        u.name as user_name,
+        (SELECT COUNT(*) FROM purchase_items WHERE purchase_id = p.id) as item_count,
+        (SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id) as total_units
+      FROM purchases p 
+      LEFT JOIN users u ON p.user_id = u.id 
+      ORDER BY p.created_at DESC
+    `).all();
+    res.json(purchases);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/purchases/:id', authenticate, (req, res) => {
+  try {
+    const purchase = db.prepare(`
+      SELECT p.*, u.name as user_name 
+      FROM purchases p 
+      LEFT JOIN users u ON p.user_id = u.id 
+      WHERE p.id = ?
+    `).get(req.params.id) as any;
+
+    if (!purchase) return res.status(404).json({ error: 'Purchase Order not found' });
+
+    const items = db.prepare(`
+      SELECT pi.*, prod.name as product_name, prod.sku, prod.category
+      FROM purchase_items pi
+      JOIN products prod ON pi.product_id = prod.id
+      WHERE pi.purchase_id = ?
+    `).all(req.params.id);
+
+    res.json({ ...purchase, items });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/purchases/:id/status', authenticate, (req: any, res) => {
+  const { status } = req.body;
+  const validStatuses = ['draft', 'submitted', 'ordered', 'received', 'cancelled'];
+  if (!status || !validStatuses.includes(status)) {
+    return res.status(400).json({ error: 'Invalid purchase order status' });
+  }
+
+  try {
+    const po: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+
+    const oldStatus = po.status || 'ordered';
+    if (oldStatus === status) {
+      return res.json({ success: true, message: 'Status unchanged' });
+    }
+
+    const items = db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all() as any[];
+
+    db.transaction(() => {
+      // Update status
+      db.prepare('UPDATE purchases SET status = ? WHERE id = ?').run(status, req.params.id);
+
+      // Handle inventory fulfillment on transition to received
+      if (status === 'received' && oldStatus !== 'received') {
+        for (const item of items) {
+          db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+        }
+      } 
+      // Handle reverting inventory if received PO is cancelled
+      else if (oldStatus === 'received' && status === 'cancelled') {
+        for (const item of items) {
+          db.prepare('UPDATE products SET stock_quantity = MAX(0, stock_quantity - ?) WHERE id = ?').run(item.quantity, item.product_id);
+        }
+      }
+    })();
+
+    // Notify Managers & Admins
+    const notifyType = status === 'received' ? 'success' : status === 'cancelled' ? 'danger' : 'info';
+    createNotification(
+      'Purchase Order Status Updated',
+      `PO #PO-${po.id} for "${po.supplier_name}" status changed from "${oldStatus.toUpperCase()}" to "${status.toUpperCase()}" by ${req.user.name}.`,
+      notifyType,
+      '/purchases'
+    );
+
+    // Audit log
+    logAuditEvent(
+      req.user.id, 
+      req.user.name, 
+      'Updated PO Status', 
+      'stock', 
+      `Updated PO #PO-${po.id} status from ${oldStatus} to ${status}`
+    );
+
+    // Check stock levels in case of inventory changes
+    checkStockAlerts();
+
+    res.json({ success: true, oldStatus, newStatus: status });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Reports Overview
 // Reports
-app.get('/api/reports/transactions', authenticate, requireAdmin, (req, res) => {
+app.get('/api/reports/transactions', authenticate, (req: any, res) => {
   try {
-    const sales = db.prepare(`
-      SELECT 'sale' as type, sales.id, total_amount as amount, sales.created_at, 'Sale' as description, users.name as user_name
+    let salesQuery = `
+      SELECT 'sale' as type, sales.id, total_amount as amount, sales.created_at, 'Sale #' || sales.id as description, users.name as user_name, sales.payment_method
       FROM sales
       JOIN users ON sales.user_id = users.id
-    `).all() as any[];
+    `;
+    const salesParams: any[] = [];
 
-    const purchases = db.prepare(`
-      SELECT 'purchase' as type, purchases.id, -total_amount as amount, purchases.created_at, 'Purchase: ' || supplier_name as description, users.name as user_name
-      FROM purchases
-      JOIN users ON purchases.user_id = users.id
-    `).all() as any[];
+    // If staff user (non-admin), restrict to their own sales
+    if (req.user.role !== 'admin') {
+      salesQuery += ' WHERE sales.user_id = ?';
+      salesParams.push(req.user.id);
+    }
 
-    const expenses = db.prepare(`
-      SELECT 'expense' as type, expenses.id, -amount as amount, expense_date as created_at, 'Expense: ' || description as description, users.name as user_name
-      FROM expenses
-      LEFT JOIN users ON expenses.user_id = users.id
-    `).all() as any[];
+    const sales = db.prepare(salesQuery).all(...salesParams) as any[];
 
-    const transactions = [...sales, ...purchases, ...expenses].sort((a, b) => 
+    let returnsQuery = `
+      SELECT 'return' as type, sr.id, -sr.refund_amount as amount, sr.created_at, 'Return #' || sr.id || ' (Sale #' || sr.sale_id || ')' as description, u.name as user_name, sr.refund_method as payment_method
+      FROM sales_returns sr
+      JOIN users u ON sr.user_id = u.id
+    `;
+    const returnsParams: any[] = [];
+    if (req.user.role !== 'admin') {
+      returnsQuery += ' WHERE sr.user_id = ?';
+      returnsParams.push(req.user.id);
+    }
+    const returns = db.prepare(returnsQuery).all(...returnsParams) as any[];
+
+    let purchases: any[] = [];
+    let expenses: any[] = [];
+
+    if (req.user.role === 'admin') {
+      purchases = db.prepare(`
+        SELECT 'purchase' as type, purchases.id, -total_amount as amount, purchases.created_at, 'Purchase: ' || supplier_name as description, users.name as user_name, 'Bank' as payment_method
+        FROM purchases
+        JOIN users ON purchases.user_id = users.id
+      `).all() as any[];
+
+      expenses = db.prepare(`
+        SELECT 'expense' as type, expenses.id, -amount as amount, expense_date as created_at, 'Expense: ' || description as description, users.name as user_name, 'Cash' as payment_method
+        FROM expenses
+        LEFT JOIN users ON expenses.user_id = users.id
+      `).all() as any[];
+    }
+
+    const transactions = [...sales, ...returns, ...purchases, ...expenses].sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
     );
 
@@ -1279,6 +1688,79 @@ app.get('/api/reports/staff-my-summary', authenticate, (req: any, res) => {
   }
 });
 
+app.get('/api/reports/staff-transactions-report', authenticate, (req: any, res) => {
+  try {
+    const { startDate, endDate, payment_method, period } = req.query;
+    // Non-admins can only query their own ID; admins can query any staff member or default to themselves
+    const targetUserId = req.user.role === 'admin' && req.query.userId ? req.query.userId : req.user.id;
+
+    let dateCondition = '';
+    const params: any[] = [targetUserId];
+
+    if (startDate && endDate) {
+      dateCondition = 'AND date(s.created_at) >= date(?) AND date(s.created_at) <= date(?)';
+      params.push(startDate, endDate);
+    } else if (period === 'today') {
+      dateCondition = "AND date(s.created_at) = date('now')";
+    } else if (period === 'week') {
+      dateCondition = "AND s.created_at >= date('now', '-7 days')";
+    } else if (period === 'month') {
+      dateCondition = "AND strftime('%Y-%m', s.created_at) = strftime('%Y-%m', 'now')";
+    } else {
+      // default: today
+      dateCondition = "AND date(s.created_at) = date('now')";
+    }
+
+    if (payment_method && payment_method !== 'all') {
+      dateCondition += ' AND s.payment_method = ?';
+      params.push(payment_method);
+    }
+
+    const salesList = db.prepare(`
+      SELECT 
+        s.id, 
+        s.total_amount, 
+        s.payment_method, 
+        s.status, 
+        s.created_at, 
+        u.name as user_name,
+        c.name as customer_name,
+        (SELECT COUNT(*) FROM sale_items WHERE sale_id = s.id) as item_count,
+        (SELECT SUM(quantity) FROM sale_items WHERE sale_id = s.id) as total_items_sold
+      FROM sales s
+      JOIN users u ON s.user_id = u.id
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE s.user_id = ? ${dateCondition}
+      ORDER BY s.created_at DESC
+    `).all(...params) as any[];
+
+    const totalVolume = salesList.reduce((sum, s) => sum + (s.status === 'completed' ? s.total_amount : 0), 0);
+    const transactionCount = salesList.filter(s => s.status === 'completed').length;
+    const avgOrderValue = transactionCount > 0 ? totalVolume / transactionCount : 0;
+
+    const cashVolume = salesList.filter(s => s.status === 'completed' && s.payment_method === 'Cash').reduce((sum, s) => sum + s.total_amount, 0);
+    const momoVolume = salesList.filter(s => s.status === 'completed' && s.payment_method === 'Mobile Money').reduce((sum, s) => sum + s.total_amount, 0);
+    const cardVolume = salesList.filter(s => s.status === 'completed' && s.payment_method === 'Card').reduce((sum, s) => sum + s.total_amount, 0);
+
+    const targetUser = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetUserId);
+
+    res.json({
+      staffMember: targetUser,
+      totalVolume,
+      transactionCount,
+      avgOrderValue,
+      paymentBreakdown: {
+        cash: cashVolume,
+        mobileMoney: momoVolume,
+        card: cardVolume
+      },
+      transactions: salesList
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/api/users', authenticate, (req, res) => {
   try {
     const usersList = db.prepare('SELECT id, name, email, role FROM users ORDER BY name ASC').all();
@@ -1459,8 +1941,170 @@ app.post('/api/shifts/close', authenticate, (req: any, res) => {
   }
 });
 
-// Sales Refund
-app.post('/api/sales/:id/refund', authenticate, (req, res) => {
+// Sales Itemized Return & Refund System
+app.post('/api/sales/:id/return', authenticate, (req: any, res) => {
+  const saleId = req.params.id;
+  const { items, refund_method, return_reason, notes } = req.body;
+  // items: [{ sale_item_id, product_id, quantity, unit_price, restock_to_inventory, reason }]
+
+  if (!items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'No items selected for return.' });
+  }
+
+  try {
+    const sale: any = db.prepare('SELECT * FROM sales WHERE id = ?').get(saleId);
+    if (!sale) return res.status(404).json({ error: 'Sale record not found' });
+
+    let totalRefundAmount = 0;
+
+    const returnTx = db.transaction(() => {
+      // 1. Create sales_returns entry
+      const insertReturn = db.prepare(`
+        INSERT INTO sales_returns (sale_id, user_id, customer_id, refund_amount, refund_method, return_reason, status, notes)
+        VALUES (?, ?, ?, ?, ?, ?, 'approved', ?)
+      `).run(
+        saleId,
+        req.user.id,
+        sale.customer_id || null,
+        0, // placeholder, updated below
+        refund_method || 'Cash',
+        return_reason || 'Customer Return',
+        notes || null
+      );
+
+      const returnId = insertReturn.lastInsertRowid;
+
+      for (const item of items) {
+        const lineItem: any = db.prepare('SELECT * FROM sale_items WHERE id = ? AND sale_id = ?').get(item.sale_item_id, saleId);
+        if (!lineItem) {
+          throw new Error(`Sale item #${item.sale_item_id} not found on Sale #${saleId}`);
+        }
+
+        const currentReturned = lineItem.returned_quantity || 0;
+        const availableToReturn = lineItem.quantity - currentReturned;
+
+        if (item.quantity > availableToReturn) {
+          throw new Error(`Cannot return ${item.quantity} units for item #${item.sale_item_id}. Max available: ${availableToReturn}`);
+        }
+
+        const itemUnitPrice = lineItem.unit_price;
+        const itemRefund = item.quantity * itemUnitPrice;
+        totalRefundAmount += itemRefund;
+
+        // Insert return line item
+        db.prepare(`
+          INSERT INTO sales_return_items (return_id, sale_item_id, product_id, quantity, unit_price, restock_to_inventory, reason)
+          VALUES (?, ?, ?, ?, ?, ?, ?)
+        `).run(
+          returnId,
+          item.sale_item_id,
+          item.product_id,
+          item.quantity,
+          itemUnitPrice,
+          item.restock_to_inventory ? 1 : 0,
+          item.reason || return_reason
+        );
+
+        // Update returned quantity in sale_items
+        db.prepare(`
+          UPDATE sale_items 
+          SET returned_quantity = COALESCE(returned_quantity, 0) + ?,
+              status = CASE WHEN (COALESCE(returned_quantity, 0) + ?) >= quantity THEN 'refunded' ELSE 'partially_returned' END
+          WHERE id = ?
+        `).run(item.quantity, item.quantity, item.sale_item_id);
+
+        // If restock to inventory, increase stock & log adjustment
+        if (item.restock_to_inventory) {
+          db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+          db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
+            item.product_id,
+            req.user.id,
+            `Customer Return Restock (Return #${returnId}, Sale #${saleId})`,
+            item.quantity
+          );
+        } else {
+          // Log waste/damaged writeoff
+          db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
+            item.product_id,
+            req.user.id,
+            `Damaged Customer Return Write-off (Return #${returnId}, Sale #${saleId})`,
+            0
+          );
+        }
+      }
+
+      // Update total refund amount on sales_returns
+      db.prepare('UPDATE sales_returns SET refund_amount = ? WHERE id = ?').run(totalRefundAmount, returnId);
+
+      // Check if all items in sale are fully returned
+      const remainingItemsCount: any = db.prepare(`
+        SELECT COUNT(*) as count FROM sale_items 
+        WHERE sale_id = ? AND (quantity - COALESCE(returned_quantity, 0)) > 0
+      `).get(saleId);
+
+      const newSaleStatus = (remainingItemsCount?.count === 0) ? 'refunded' : 'partially_returned';
+      db.prepare('UPDATE sales SET status = ?, refund_reason = ? WHERE id = ?').run(newSaleStatus, return_reason, saleId);
+
+      // Deduct loyalty points if applicable
+      if (sale.customer_id) {
+        const pointsToDeduct = Math.floor(totalRefundAmount / 10);
+        if (pointsToDeduct > 0) {
+          db.prepare('UPDATE customers SET loyalty_points = MAX(0, loyalty_points - ?) WHERE id = ?').run(pointsToDeduct, sale.customer_id);
+        }
+      }
+
+      return returnId;
+    });
+
+    const returnId = returnTx();
+
+    // Audit log & Notifications
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Processed Sales Return',
+      'sales',
+      `Processed Return #${returnId} for Sale #${saleId} (Total Refund: GHS ${totalRefundAmount.toFixed(2)}, Method: ${refund_method})`
+    );
+
+    createNotification(
+      'Sales Return Processed',
+      `Return #${returnId} processed for Sale #${saleId} by ${req.user.name}. Refunded GHS ${totalRefundAmount.toFixed(2)} (${refund_method}).`,
+      'info',
+      '/transactions'
+    );
+
+    // Fetch full return view data for receipt printing
+    const returnRecord: any = db.prepare(`
+      SELECT sr.*, u.name as user_name, c.name as customer_name, c.phone as customer_phone
+      FROM sales_returns sr
+      JOIN users u ON sr.user_id = u.id
+      LEFT JOIN customers c ON sr.customer_id = c.id
+      WHERE sr.id = ?
+    `).get(returnId);
+
+    const returnItemsList = db.prepare(`
+      SELECT sri.*, p.name as product_name
+      FROM sales_return_items sri
+      JOIN products p ON sri.product_id = p.id
+      WHERE sri.return_id = ?
+    `).all(returnId);
+
+    res.json({
+      success: true,
+      returnData: {
+        ...returnRecord,
+        items: returnItemsList
+      }
+    });
+
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Legacy Quick Refund Endpoint
+app.post('/api/sales/:id/refund', authenticate, (req: any, res) => {
   const saleId = req.params.id;
   const { reason } = req.body;
   
@@ -1472,14 +2116,164 @@ app.post('/api/sales/:id/refund', authenticate, (req, res) => {
     const items = db.prepare('SELECT * FROM sale_items WHERE sale_id = ?').all() as any[];
     
     db.transaction(() => {
-      db.prepare('UPDATE sales SET status = ?, refund_reason = ? WHERE id = ?').run('refunded', reason || 'No reason specified', saleId);
-      db.prepare('UPDATE sale_items SET status = ? WHERE sale_id = ?').run('refunded', saleId);
+      // 1. Create full return record
+      const totalRefund = sale.total_amount;
+      const insertReturn = db.prepare(`
+        INSERT INTO sales_returns (sale_id, user_id, customer_id, refund_amount, refund_method, return_reason, status)
+        VALUES (?, ?, ?, ?, ?, ?, 'approved')
+      `).run(saleId, req.user.id, sale.customer_id || null, totalRefund, sale.payment_method || 'Cash', reason || 'Full Sale Refund');
+
+      const returnId = insertReturn.lastInsertRowid;
+
       for (const item of items) {
+        db.prepare(`
+          INSERT INTO sales_return_items (return_id, sale_item_id, product_id, quantity, unit_price, restock_to_inventory, reason)
+          VALUES (?, ?, ?, ?, ?, 1, ?)
+        `).run(returnId, item.id, item.product_id, item.quantity, item.unit_price, reason || 'Full Sale Refund');
+
+        db.prepare('UPDATE sale_items SET status = ?, returned_quantity = quantity WHERE id = ?').run('refunded', item.id);
         db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
       }
+
+      db.prepare('UPDATE sales SET status = ?, refund_reason = ? WHERE id = ?').run('refunded', reason || 'Full Sale Refund', saleId);
     })();
+
+    logAuditEvent(req.user.id, req.user.name, 'Full Sale Refund', 'sales', `Refunded Sale #${saleId} for GHS ${sale.total_amount}`);
+    createNotification('Sale Refunded', `Sale #${saleId} fully refunded by ${req.user.name}.`, 'warning', '/transactions');
     
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// List Sales Returns
+app.get('/api/returns', authenticate, (req: any, res) => {
+  const { startDate, endDate, userId, search } = req.query;
+  let query = `
+    SELECT 
+      sr.*, 
+      u.name as user_name,
+      c.name as customer_name,
+      s.payment_method as original_payment_method,
+      (SELECT COUNT(*) FROM sales_return_items WHERE return_id = sr.id) as item_count,
+      (SELECT SUM(quantity) FROM sales_return_items WHERE return_id = sr.id) as total_units_returned
+    FROM sales_returns sr
+    JOIN users u ON sr.user_id = u.id
+    LEFT JOIN customers c ON sr.customer_id = c.id
+    JOIN sales s ON sr.sale_id = s.id
+  `;
+  const params: any[] = [];
+  const conditions: string[] = [];
+
+  if (req.user.role !== 'admin') {
+    conditions.push('sr.user_id = ?');
+    params.push(req.user.id);
+  } else if (userId) {
+    conditions.push('sr.user_id = ?');
+    params.push(userId);
+  }
+
+  if (startDate && endDate) {
+    conditions.push('date(sr.created_at) >= date(?) AND date(sr.created_at) <= date(?)');
+    params.push(startDate, endDate);
+  }
+
+  if (search) {
+    conditions.push('(sr.id LIKE ? OR sr.sale_id LIKE ? OR c.name LIKE ? OR sr.return_reason LIKE ?)');
+    const term = `%${search}%`;
+    params.push(term, term, term, term);
+  }
+
+  if (conditions.length > 0) {
+    query += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  query += ' ORDER BY sr.created_at DESC';
+
+  try {
+    const returns = db.prepare(query).all(...params);
+    res.json(returns);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Sales Returns Summary Analytics
+app.get('/api/returns/summary', authenticate, (req: any, res) => {
+  try {
+    const todayReturnCount: any = db.prepare("SELECT COUNT(*) as count, COALESCE(SUM(refund_amount), 0) as total FROM sales_returns WHERE date(created_at) = date('now')").get();
+    const monthRefundValue: any = db.prepare("SELECT COALESCE(SUM(refund_amount), 0) as total FROM sales_returns WHERE strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')").get();
+    
+    // Staff member specific returns today
+    const myTodayReturns: any = db.prepare("SELECT COUNT(*) as count, COALESCE(SUM(refund_amount), 0) as total FROM sales_returns WHERE user_id = ? AND date(created_at) = date('now')").get(req.user.id);
+
+    // Damaged return loss
+    const damagedLoss: any = db.prepare(`
+      SELECT COALESCE(SUM(sri.quantity * sri.unit_price), 0) as total
+      FROM sales_return_items sri
+      JOIN sales_returns sr ON sri.return_id = sr.id
+      WHERE sri.restock_to_inventory = 0 AND strftime('%Y-%m', sr.created_at) = strftime('%Y-%m', 'now')
+    `).get();
+
+    // Top returned products
+    const topReturnedProducts = db.prepare(`
+      SELECT p.name as product_name, SUM(sri.quantity) as total_qty, SUM(sri.quantity * sri.unit_price) as total_refund
+      FROM sales_return_items sri
+      JOIN products p ON sri.product_id = p.id
+      GROUP BY sri.product_id
+      ORDER BY total_qty DESC
+      LIMIT 5
+    `).all();
+
+    // Return reasons breakdown
+    const reasonsBreakdown = db.prepare(`
+      SELECT return_reason as reason, COUNT(*) as count, SUM(refund_amount) as total
+      FROM sales_returns
+      GROUP BY return_reason
+      ORDER BY count DESC
+    `).all();
+
+    res.json({
+      todayReturnCount: todayReturnCount?.count || 0,
+      todayRefundValue: todayReturnCount?.total || 0,
+      monthRefundValue: monthRefundValue?.total || 0,
+      damagedStockLoss: damagedLoss?.total || 0,
+      myTodayReturnCount: myTodayReturns?.count || 0,
+      myTodayRefundValue: myTodayReturns?.total || 0,
+      topReturnedProducts,
+      reasonsBreakdown
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Single Return Detail
+app.get('/api/returns/:id', authenticate, (req: any, res) => {
+  try {
+    const returnRecord: any = db.prepare(`
+      SELECT sr.*, u.name as user_name, c.name as customer_name, c.phone as customer_phone
+      FROM sales_returns sr
+      JOIN users u ON sr.user_id = u.id
+      LEFT JOIN customers c ON sr.customer_id = c.id
+      WHERE sr.id = ?
+    `).get(req.params.id);
+
+    if (!returnRecord) return res.status(404).json({ error: 'Return record not found' });
+
+    if (req.user.role !== 'admin' && returnRecord.user_id !== req.user.id) {
+      return res.status(403).json({ error: 'Access denied.' });
+    }
+
+    const items = db.prepare(`
+      SELECT sri.*, p.name as product_name
+      FROM sales_return_items sri
+      JOIN products p ON sri.product_id = p.id
+      WHERE sri.return_id = ?
+    `).all(req.params.id);
+
+    res.json({ ...returnRecord, items });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -1803,6 +2597,15 @@ async function startServer() {
   } catch (e) {
     console.error('Startup automated maintenance error:', e);
   }
+
+  // Background service: Continuously monitor product stock levels every 15s
+  setInterval(() => {
+    try {
+      checkStockAlerts();
+    } catch (e) {
+      console.error('Background low stock check error:', e);
+    }
+  }, 15000);
 
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({

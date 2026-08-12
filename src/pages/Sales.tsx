@@ -8,6 +8,9 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import ReturnModal from '../components/ReturnModal';
+import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
 
 export default function Sales() {
   const { user } = useAuth();
@@ -22,6 +25,12 @@ export default function Sales() {
   const [showPOSModal, setShowPOSModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [invoiceSaleData, setInvoiceSaleData] = useState<any | null>(null);
+  const [showCameraScanner, setShowCameraScanner] = useState(false);
+
+  // Return Feature States
+  const [showReturnModal, setShowReturnModal] = useState(false);
+  const [selectedReturnSaleId, setSelectedReturnSaleId] = useState<number | null>(null);
+  const [returnCreditNoteData, setReturnCreditNoteData] = useState<any | null>(null);
 
   // Cart & POS filters
   const [cart, setCart] = useState<{product_id: number, quantity: number, unit_price: number, notes?: string}[]>([]);
@@ -37,6 +46,7 @@ export default function Sales() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [paymentFilter, setPaymentFilter] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [cashierFilter, setCashierFilter] = useState('');
 
   // Barcode Scanner states
   const [barcodeInput, setBarcodeInput] = useState('');
@@ -47,7 +57,7 @@ export default function Sales() {
 
   useEffect(() => {
     loadData();
-  }, [startDate, endDate, categoryFilter, paymentFilter, statusFilter]);
+  }, [startDate, endDate, categoryFilter, paymentFilter, statusFilter, cashierFilter]);
 
   const loadData = async () => {
     try {
@@ -57,6 +67,7 @@ export default function Sales() {
       if (categoryFilter) query.append('category', categoryFilter);
       if (paymentFilter) query.append('payment_method', paymentFilter);
       if (statusFilter) query.append('status', statusFilter);
+      if (user?.role === 'admin' && cashierFilter) query.append('userId', cashierFilter);
 
       const [salesRes, prodRes, usersRes, customersRes, categoriesRes] = await Promise.all([
         fetchApi(`/sales?${query.toString()}`),
@@ -219,17 +230,15 @@ export default function Sales() {
     }
   };
 
-  const handleRefund = async (saleId: number) => {
-    const reason = prompt("Enter reason for refund:");
-    if (reason !== null && confirm("Are you sure you want to refund this sale? Items will be restored to inventory.")) {
-      try {
-        await fetchApi(`/sales/${saleId}/refund`, { 
-          method: 'POST',
-          body: JSON.stringify({ reason })
-        });
-        loadData();
-      } catch (err: any) { alert(err.message); }
-    }
+  const handleOpenReturnModal = (saleId?: number) => {
+    setSelectedReturnSaleId(saleId || null);
+    setShowReturnModal(true);
+  };
+
+  const handleReturnProcessed = (returnData: any) => {
+    setShowReturnModal(false);
+    setReturnCreditNoteData(returnData);
+    loadData();
   };
 
   const handleExportCSV = () => {
@@ -300,11 +309,25 @@ export default function Sales() {
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <button 
+            onClick={() => setShowCameraScanner(true)}
+            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-1.5"
+          >
+            <Scan size={16} /> Camera Scanner
+          </button>
+
+          <button 
             onClick={handleExportCSV} 
             disabled={sales.length === 0} 
             className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5"
           >
             <FileText size={15} /> Export CSV
+          </button>
+
+          <button 
+            onClick={() => handleOpenReturnModal()}
+            className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-1.5"
+          >
+            <RotateCcw size={15} /> Process Return
           </button>
 
           <button 
@@ -338,6 +361,24 @@ export default function Sales() {
 
           {/* Filters Row */}
           <div className="flex flex-wrap items-center gap-2 text-xs">
+            {user?.role === 'admin' ? (
+              <select 
+                value={cashierFilter} 
+                onChange={e => setCashierFilter(e.target.value)} 
+                className="border border-purple-200 bg-purple-50/50 px-2.5 py-1.5 rounded text-xs font-bold text-purple-900 focus:outline-none focus:border-purple-500"
+              >
+                <option value="">All Cashiers & Staff</option>
+                {users.map((u: any) => (
+                  <option key={u.id} value={u.id}>{u.name} ({u.role})</option>
+                ))}
+              </select>
+            ) : (
+              <span className="px-2.5 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 text-xs font-bold rounded flex items-center gap-1.5">
+                <User size={13} />
+                My Sales Only ({user?.name})
+              </span>
+            )}
+
             <select 
               value={categoryFilter} 
               onChange={e => setCategoryFilter(e.target.value)} 
@@ -376,7 +417,7 @@ export default function Sales() {
               <input type="date" value={endDate} onChange={e => setEndDate(e.target.value)} className="bg-transparent text-xs focus:outline-none" />
             </div>
 
-            {(startDate || endDate || categoryFilter || paymentFilter || statusFilter || tableSearchQuery) && (
+            {(startDate || endDate || categoryFilter || paymentFilter || statusFilter || cashierFilter || tableSearchQuery) && (
               <button 
                 onClick={() => {
                   setStartDate('');
@@ -384,6 +425,7 @@ export default function Sales() {
                   setCategoryFilter('');
                   setPaymentFilter('');
                   setStatusFilter('');
+                  setCashierFilter('');
                   setTableSearchQuery('');
                 }}
                 className="text-[10px] font-bold text-blue-600 hover:text-blue-800 uppercase tracking-wider px-2 py-1 bg-blue-50 rounded"
@@ -399,17 +441,30 @@ export default function Sales() {
       <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-2xs">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/50">
            <div className="p-4">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Sales Count</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                {user?.role === 'admin' ? 'Total Sales Count (Store)' : 'My Sales Count'}
+              </span>
               <span className="text-xl font-black text-slate-900">{filteredSalesTable.length}</span>
            </div>
            <div className="p-4">
-              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Sales Revenue</span>
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
+                {user?.role === 'admin' ? 'Total Sales Revenue (Store)' : 'My Sales Revenue'}
+              </span>
               <span className="text-xl font-black text-emerald-600">{formatGHS(filteredSalesTable.reduce((sum, s) => sum + s.total_amount, 0))}</span>
            </div>
-           {user?.role === 'admin' && (
+           {user?.role === 'admin' ? (
              <div className="p-4">
                 <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Total Gross Profit</span>
                 <span className="text-xl font-black text-blue-600">{formatGHS(filteredSalesTable.reduce((sum, s) => sum + (s.profit || 0), 0))}</span>
+             </div>
+           ) : (
+             <div className="p-4">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Average Order Value</span>
+                <span className="text-xl font-black text-blue-600">
+                  {filteredSalesTable.length > 0 
+                    ? formatGHS(filteredSalesTable.reduce((sum, s) => sum + s.total_amount, 0) / filteredSalesTable.length)
+                    : formatGHS(0)}
+                </span>
              </div>
            )}
         </div>
@@ -480,11 +535,11 @@ export default function Sales() {
 
                       {s.status !== 'refunded' && (
                         <button 
-                          onClick={() => handleRefund(s.id)} 
-                          className="p-1 text-slate-400 hover:text-red-600 transition-colors"
-                          title="Refund Transaction"
+                          onClick={() => handleOpenReturnModal(s.id)} 
+                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[11px] rounded border border-rose-200 transition-colors flex items-center gap-1"
+                          title="Process Return / Refund for this Sale"
                         >
-                          <RotateCcw size={14} />
+                          <RotateCcw size={13} /> Return
                         </button>
                       )}
                     </div>
@@ -505,50 +560,50 @@ export default function Sales() {
         </div>
       </div>
 
-      {/* ================= REDESIGNED NEW SALES SESSION (POS MODAL) ================= */}
+      {/* ================= COMPACT POINT OF SALE (POS MODAL) ================= */}
       {showPOSModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-hidden">
-          <div className="bg-white rounded-md max-w-6xl w-full h-[90vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-3 z-50 overflow-hidden">
+          <div className="bg-white rounded-md max-w-4xl w-full h-[80vh] max-h-[660px] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
             {/* POS Header */}
-            <div className="bg-slate-900 text-white p-3 sm:p-4 flex items-center justify-between border-b border-slate-800 shrink-0">
-              <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-600 rounded flex items-center justify-center text-white shrink-0">
-                   <ShoppingCart size={18} />
+            <div className="bg-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-7 h-7 bg-blue-600 rounded flex items-center justify-center text-white shrink-0">
+                   <ShoppingCart size={15} />
                 </div>
                 <div>
-                  <h2 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
+                  <h2 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
                     Point of Sale (POS) Session
                     <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
                   </h2>
-                  <p className="text-[11px] text-slate-400 font-medium">Cashier: {user?.name || 'Staff'}</p>
+                  <p className="text-[10px] text-slate-400 font-medium">Cashier: {user?.name || 'Staff'}</p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setScannerDrawerOpen(!scannerDrawerOpen)}
-                  className={`px-3 py-1.5 rounded text-xs font-bold transition-all flex items-center gap-1.5 border ${
+                  className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 border ${
                     scannerDrawerOpen 
                       ? 'bg-blue-600 text-white border-blue-500 shadow-xs' 
                       : 'bg-slate-800 text-slate-300 border-slate-700 hover:bg-slate-700'
                   }`}
                 >
-                  <Scan size={14} /> Barcode Scanner {scannerDrawerOpen ? 'Active' : 'Mode'}
+                  <Scan size={13} /> Barcode Scanner {scannerDrawerOpen ? 'Active' : ''}
                 </button>
 
                 <button 
                   onClick={() => setShowPOSModal(false)} 
-                  className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
+                  className="w-7 h-7 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors"
                 >
-                  <X size={18} />
+                  <X size={16} />
                 </button>
               </div>
             </div>
 
             {/* Optional Collapsible Barcode Scanner Drawer */}
             {scannerDrawerOpen && (
-              <div className="bg-slate-800 text-white p-3 border-b border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-3 animate-fadeIn shrink-0">
+              <div className="bg-slate-800 text-white p-2 px-3 border-b border-slate-700 flex flex-col sm:flex-row items-center justify-between gap-2 animate-fadeIn shrink-0">
                 <form 
                   onSubmit={(e) => {
                     e.preventDefault();
@@ -564,12 +619,12 @@ export default function Sales() {
                       value={barcodeInput}
                       onChange={(e) => setBarcodeInput(e.target.value)}
                       placeholder="Point barcode scanner or enter SKU & press Enter..."
-                      className="w-full bg-slate-900 border border-slate-700 text-white rounded pl-9 pr-20 py-2 text-xs font-mono font-bold focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+                      className="w-full bg-slate-900 border border-slate-700 text-white rounded pl-8 pr-16 py-1.5 text-xs font-mono font-bold focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
                     />
-                    <Scan size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-blue-400" />
+                    <Scan size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-blue-400" />
                     <button 
                       type="submit"
-                      className="absolute right-1 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 text-white text-[10px] font-bold uppercase px-2.5 py-1 rounded"
+                      className="absolute right-1 top-1/2 -translate-y-1/2 bg-blue-600 hover:bg-blue-500 text-white text-[9px] font-bold uppercase px-2 py-0.5 rounded"
                     >
                       Scan
                     </button>
@@ -578,21 +633,21 @@ export default function Sales() {
                   <button 
                     type="button" 
                     onClick={() => setSoundEnabled(!soundEnabled)}
-                    className="text-[10px] font-bold text-slate-400 hover:text-white flex items-center gap-1 bg-slate-900 border border-slate-700 px-2.5 py-1.5 rounded shrink-0"
+                    className="text-[10px] font-bold text-slate-400 hover:text-white flex items-center gap-1 bg-slate-900 border border-slate-700 px-2 py-1 rounded shrink-0"
                   >
-                    {soundEnabled ? <Volume2 size={12} className="text-emerald-400" /> : <VolumeX size={12} className="text-slate-500" />}
+                    {soundEnabled ? <Volume2 size={11} className="text-emerald-400" /> : <VolumeX size={11} className="text-slate-500" />}
                     {soundEnabled ? 'Beep On' : 'Muted'}
                   </button>
                 </form>
 
                 {/* Scan Toast */}
                 {scanFeedback && (
-                  <div className={`px-3 py-1.5 rounded text-xs font-bold flex items-center gap-2 border ${
+                  <div className={`px-2.5 py-1 rounded text-[11px] font-bold flex items-center gap-1.5 border ${
                     scanFeedback.type === 'success' 
                       ? 'bg-emerald-950/80 text-emerald-300 border-emerald-800' 
                       : 'bg-red-950/80 text-red-300 border-red-800'
                   }`}>
-                    {scanFeedback.type === 'success' ? <CheckCircle2 size={14} className="text-emerald-400" /> : <AlertCircle size={14} className="text-red-400" />}
+                    {scanFeedback.type === 'success' ? <CheckCircle2 size={13} className="text-emerald-400" /> : <AlertCircle size={13} className="text-red-400" />}
                     <span className="truncate max-w-xs">{scanFeedback.message}</span>
                   </div>
                 )}
@@ -600,35 +655,35 @@ export default function Sales() {
             )}
 
             {/* POS 2-Column Body */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200">
+            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 overflow-hidden">
               {/* LEFT COLUMN: Product Catalog & Search (7 Cols) */}
-              <div className="lg:col-span-7 p-4 flex flex-col min-h-0 bg-slate-50/50 space-y-3">
+              <div className="lg:col-span-7 p-3 flex flex-col min-h-0 bg-slate-50/50 space-y-2">
                 {/* Search Bar & Category Chips */}
-                <div className="space-y-2 shrink-0">
+                <div className="space-y-1.5 shrink-0">
                   <div className="relative">
-                    <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
                     <input 
                       type="text"
                       value={posSearchQuery}
                       onChange={(e) => setPosSearchQuery(e.target.value)}
-                      placeholder="Search product by name, SKU, barcode, category..."
-                      className="w-full bg-white border border-slate-200 rounded pl-9 pr-9 py-2 text-xs font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
+                      placeholder="Search product by name, SKU, barcode..."
+                      className="w-full bg-white border border-slate-200 rounded pl-8 pr-8 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500 shadow-2xs"
                     />
                     {posSearchQuery && (
                       <button 
                         onClick={() => setPosSearchQuery('')}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
                       >
-                        <X size={14} />
+                        <X size={13} />
                       </button>
                     )}
                   </div>
 
                   {/* Category Filter Pills */}
-                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar text-xs">
+                  <div className="flex items-center gap-1 overflow-x-auto pb-0.5 no-scrollbar text-xs">
                     <button
                       onClick={() => setPosCategoryFilter('')}
-                      className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                      className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
                         posCategoryFilter === '' 
                           ? 'bg-slate-900 text-white shadow-2xs' 
                           : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -642,7 +697,7 @@ export default function Sales() {
                         <button
                           key={c.id}
                           onClick={() => setPosCategoryFilter(posCategoryFilter === c.name ? '' : c.name)}
-                          className={`px-3 py-1 rounded-full text-[11px] font-bold whitespace-nowrap transition-all ${
+                          className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold whitespace-nowrap transition-all ${
                             posCategoryFilter === c.name 
                               ? 'bg-blue-600 text-white shadow-2xs' 
                               : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -656,16 +711,16 @@ export default function Sales() {
                 </div>
 
                 {/* Product Catalog Table List */}
-                <div className="flex-1 overflow-y-auto border border-slate-200 rounded bg-white shadow-2xs">
+                <div className="flex-1 overflow-y-auto border border-slate-200 rounded bg-white shadow-2xs min-h-0">
                   {filteredPOSProducts.length > 0 ? (
                     <table className="min-w-full divide-y divide-slate-200 text-xs">
                       <thead className="bg-slate-50 sticky top-0 z-10 shadow-2xs">
                         <tr>
-                          <th className="px-3 py-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Product Name</th>
-                          <th className="px-3 py-2 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">SKU / Barcode</th>
-                          <th className="px-3 py-2 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Price</th>
-                          <th className="px-3 py-2 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">Stock</th>
-                          <th className="px-3 py-2 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Action</th>
+                          <th className="px-2.5 py-1.5 text-left text-[9px] font-black text-slate-400 uppercase tracking-wider">Product</th>
+                          <th className="px-2.5 py-1.5 text-left text-[9px] font-black text-slate-400 uppercase tracking-wider">SKU</th>
+                          <th className="px-2.5 py-1.5 text-right text-[9px] font-black text-slate-400 uppercase tracking-wider">Price</th>
+                          <th className="px-2.5 py-1.5 text-center text-[9px] font-black text-slate-400 uppercase tracking-wider">Stock</th>
+                          <th className="px-2.5 py-1.5 text-right text-[9px] font-black text-slate-400 uppercase tracking-wider">Action</th>
                         </tr>
                       </thead>
                       <tbody className="bg-white divide-y divide-slate-100">
@@ -685,37 +740,36 @@ export default function Sales() {
                                     : ''
                               }`}
                             >
-                              <td className="px-3 py-2">
-                                <div className="font-bold text-slate-900 line-clamp-1">{p.name}</div>
-                                <div className="text-[10px] text-slate-400 font-medium">{p.category_name || 'General'}</div>
+                              <td className="px-2.5 py-1.5">
+                                <div className="font-bold text-slate-900 line-clamp-1 text-[11px]">{p.name}</div>
+                                <div className="text-[9px] text-slate-400 font-medium">{p.category_name || 'General'}</div>
                               </td>
 
-                              <td className="px-3 py-2 font-mono text-[11px] text-slate-500 whitespace-nowrap">
+                              <td className="px-2.5 py-1.5 font-mono text-[10px] text-slate-500 whitespace-nowrap">
                                 <div>{p.sku || `#${p.id}`}</div>
-                                {p.barcode && <div className="text-slate-400 text-[10px] font-mono">{p.barcode}</div>}
                               </td>
 
-                              <td className="px-3 py-2 text-right font-black text-slate-900 whitespace-nowrap">
+                              <td className="px-2.5 py-1.5 text-right font-black text-slate-900 whitespace-nowrap text-[11px]">
                                 {formatGHS(p.selling_price)}
                               </td>
 
-                              <td className="px-3 py-2 text-center whitespace-nowrap">
+                              <td className="px-2.5 py-1.5 text-center whitespace-nowrap">
                                 {isOutOfStock ? (
-                                  <span className="text-[9px] font-bold text-red-600 bg-red-50 px-1.5 py-0.5 rounded border border-red-100">
+                                  <span className="text-[8px] font-bold text-red-600 bg-red-50 px-1 py-0.5 rounded border border-red-100">
                                     Out
                                   </span>
                                 ) : (
-                                  <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  <span className={`text-[9px] font-bold px-1 py-0.5 rounded ${
                                     p.stock_quantity <= 5 
                                       ? 'bg-amber-50 text-amber-700 border border-amber-200' 
                                       : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                                   }`}>
-                                    {p.stock_quantity} left
+                                    {p.stock_quantity}
                                   </span>
                                 )}
                               </td>
 
-                              <td className="px-3 py-2 text-right whitespace-nowrap">
+                              <td className="px-2.5 py-1.5 text-right whitespace-nowrap">
                                 <button
                                   type="button"
                                   disabled={isOutOfStock}
@@ -723,7 +777,7 @@ export default function Sales() {
                                     e.stopPropagation();
                                     if (!isOutOfStock) addToCart(p.id, p.selling_price);
                                   }}
-                                  className={`px-2.5 py-1 rounded text-[11px] font-bold transition flex items-center gap-1 ml-auto ${
+                                  className={`px-2 py-0.5 rounded text-[10px] font-bold transition flex items-center gap-1 ml-auto ${
                                     isOutOfStock
                                       ? 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                                       : inCart
@@ -731,8 +785,8 @@ export default function Sales() {
                                         : 'bg-slate-100 text-slate-700 hover:bg-blue-600 hover:text-white border border-slate-200'
                                   }`}
                                 >
-                                  <Plus size={12} />
-                                  {inCart ? `In Cart (${inCart.quantity})` : 'Add'}
+                                  <Plus size={11} />
+                                  {inCart ? `(${inCart.quantity})` : 'Add'}
                                 </button>
                               </td>
                             </tr>
@@ -741,14 +795,14 @@ export default function Sales() {
                       </tbody>
                     </table>
                   ) : (
-                    <div className="h-full flex flex-col items-center justify-center text-slate-400 py-12">
-                      <Search size={32} className="mb-2 opacity-30" />
-                      <p className="text-xs font-bold">No products match your search query "{posSearchQuery}".</p>
+                    <div className="h-full flex flex-col items-center justify-center text-slate-400 py-8">
+                      <Search size={24} className="mb-1 opacity-30" />
+                      <p className="text-[11px] font-bold">No products found for "{posSearchQuery}".</p>
                       <button 
                         onClick={() => { setPosSearchQuery(''); setPosCategoryFilter(''); }}
-                        className="mt-2 text-[11px] font-bold text-blue-600 hover:underline"
+                        className="mt-1 text-[10px] font-bold text-blue-600 hover:underline"
                       >
-                        Clear Search Filters
+                        Clear Filters
                       </button>
                     </div>
                   )}
@@ -756,17 +810,17 @@ export default function Sales() {
               </div>
 
               {/* RIGHT COLUMN: Active Cart Ledger & Checkout (5 Cols) */}
-              <div className="lg:col-span-5 p-4 flex flex-col min-h-0 bg-white space-y-4">
+              <div className="lg:col-span-5 p-3 flex flex-col min-h-0 bg-white space-y-2.5">
                 {/* Customer & Payment Selectors */}
-                <div className="grid grid-cols-2 gap-2 shrink-0 bg-slate-50 p-2.5 rounded border border-slate-200 text-xs">
+                <div className="grid grid-cols-2 gap-2 shrink-0 bg-slate-50 p-2 rounded border border-slate-200 text-xs">
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                    <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-0.5">
                       Customer
                     </label>
                     <select 
                       value={selectedCustomer} 
                       onChange={e => setSelectedCustomer(e.target.value)} 
-                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-blue-500"
+                      className="w-full border border-slate-300 rounded px-1.5 py-1 text-[11px] bg-white focus:outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="">Walk-in Customer</option>
                       {customers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
@@ -774,13 +828,13 @@ export default function Sales() {
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                    <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-0.5">
                       Payment Mode
                     </label>
                     <select 
                       value={paymentMethod} 
                       onChange={e => setPaymentMethod(e.target.value as any)} 
-                      className="w-full border border-slate-300 rounded px-2 py-1.5 text-xs bg-white focus:outline-none focus:border-blue-500"
+                      className="w-full border border-slate-300 rounded px-1.5 py-1 text-[11px] bg-white focus:outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="Cash">Physical Cash</option>
                       <option value="Card">Bank Card</option>
@@ -791,38 +845,38 @@ export default function Sales() {
 
                 {/* Cart Item Table */}
                 <div className="flex-1 flex flex-col min-h-0 border border-slate-200 rounded overflow-hidden">
-                  <div className="bg-slate-900 text-white px-3 py-2 text-xs font-black uppercase tracking-wider flex justify-between items-center shrink-0">
+                  <div className="bg-slate-900 text-white px-2.5 py-1.5 text-[11px] font-black uppercase tracking-wider flex justify-between items-center shrink-0">
                     <span>Order Ledger</span>
-                    <span className="bg-slate-800 text-blue-400 px-2 py-0.5 rounded text-[10px]">
+                    <span className="bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded text-[9px]">
                       {cart.reduce((sum, i) => sum + i.quantity, 0)} Items
                     </span>
                   </div>
 
-                  <div className="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white">
+                  <div className="flex-1 overflow-y-auto divide-y divide-slate-100 bg-white min-h-0">
                     {cart.length === 0 ? (
-                      <div className="h-full flex flex-col items-center justify-center text-slate-300 p-8 text-center">
-                        <ShoppingCart size={36} strokeWidth={1.5} className="mb-2 opacity-30" />
-                        <p className="text-xs font-bold text-slate-400">Cart is empty</p>
-                        <p className="text-[10px] text-slate-400 mt-1">Search or scan products from the catalog to add items.</p>
+                      <div className="h-full flex flex-col items-center justify-center text-slate-300 p-6 text-center">
+                        <ShoppingCart size={28} strokeWidth={1.5} className="mb-1 opacity-30" />
+                        <p className="text-[11px] font-bold text-slate-400">Cart is empty</p>
+                        <p className="text-[9px] text-slate-400 mt-0.5">Select items from the catalog.</p>
                       </div>
                     ) : (
                       cart.map((item, idx) => {
                         const p = products.find(x => x.id === item.product_id);
                         return (
-                          <div key={idx} className="p-3 hover:bg-slate-50/80 transition-colors flex items-center justify-between gap-3 text-xs">
-                            <div className="flex-1 min-w-0 space-y-1">
-                              <div className="font-bold text-slate-900 truncate">{p?.name}</div>
-                              <div className="text-[10px] text-slate-500 flex items-center gap-2">
-                                <span>{formatGHS(item.unit_price)} each</span>
+                          <div key={idx} className="p-2 hover:bg-slate-50/80 transition-colors flex items-center justify-between gap-2 text-xs">
+                            <div className="flex-1 min-w-0 space-y-0.5">
+                              <div className="font-bold text-slate-900 truncate text-[11px]">{p?.name}</div>
+                              <div className="text-[9px] text-slate-500 flex items-center gap-1.5">
+                                <span>{formatGHS(item.unit_price)}</span>
                                 <span>•</span>
                                 <span className="font-mono text-slate-400">{p?.sku}</span>
                               </div>
                               <input 
                                 type="text" 
-                                placeholder="Add note / wrap..." 
+                                placeholder="Add note..." 
                                 value={item.notes || ''}
                                 onChange={(e) => setCart(prev => prev.map(it => it.product_id === item.product_id ? { ...it, notes: e.target.value } : it))}
-                                className="w-full bg-slate-100 border border-slate-200 rounded px-2 py-0.5 text-[10px] focus:outline-none focus:border-blue-500"
+                                className="w-full bg-slate-100 border border-slate-200 rounded px-1.5 py-0.5 text-[9px] focus:outline-none focus:border-blue-500"
                               />
                             </div>
 
@@ -832,34 +886,34 @@ export default function Sales() {
                                 onClick={() => {
                                   setCart(prev => prev.map(i => i.product_id === item.product_id ? { ...i, quantity: Math.max(0, i.quantity - 1) } : i).filter(i => i.quantity > 0));
                                 }} 
-                                className="w-6 h-6 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-red-600 hover:bg-red-50"
+                                className="w-5 h-5 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-red-600 hover:bg-red-50"
                               >
-                                <Minus size={12} />
+                                <Minus size={10} />
                               </button>
 
-                              <span className="w-6 text-center font-bold text-slate-900 text-xs">
+                              <span className="w-5 text-center font-bold text-slate-900 text-[11px]">
                                 {item.quantity}
                               </span>
 
                               <button 
                                 onClick={() => addToCart(item.product_id, item.unit_price)} 
-                                className="w-6 h-6 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50"
+                                className="w-5 h-5 flex items-center justify-center border border-slate-200 rounded text-slate-500 hover:text-blue-600 hover:bg-blue-50"
                               >
-                                <Plus size={12} />
+                                <Plus size={10} />
                               </button>
                             </div>
 
                             {/* Line Subtotal & Trash */}
                             <div className="text-right shrink-0">
-                              <div className="font-black text-slate-900">
+                              <div className="font-black text-slate-900 text-[11px]">
                                 {formatGHS(item.quantity * item.unit_price)}
                               </div>
                               <button 
                                 onClick={() => setCart(prev => prev.filter(i => i.product_id !== item.product_id))} 
-                                className="text-slate-300 hover:text-red-500 mt-1"
+                                className="text-slate-300 hover:text-red-500 mt-0.5"
                                 title="Remove item"
                               >
-                                <Trash2 size={13} />
+                                <Trash2 size={12} />
                               </button>
                             </div>
                           </div>
@@ -870,19 +924,19 @@ export default function Sales() {
                 </div>
 
                 {/* Checkout Summary Footer */}
-                <div className="shrink-0 pt-3 border-t border-slate-200 space-y-3">
+                <div className="shrink-0 pt-2 border-t border-slate-200 space-y-2">
                   <div className="flex justify-between items-baseline">
-                    <span className="text-xs font-black text-slate-500 uppercase tracking-wider">Total Due:</span>
-                    <span className="text-2xl font-black text-blue-600">{formatGHS(totalCart)}</span>
+                    <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Due:</span>
+                    <span className="text-xl font-black text-blue-600">{formatGHS(totalCart)}</span>
                   </div>
 
                   <button 
                     onClick={() => setShowConfirmModal(true)} 
                     disabled={cart.length === 0} 
-                    className="w-full py-3 bg-slate-900 hover:bg-blue-600 text-white rounded font-black text-xs uppercase tracking-widest shadow-md transition-all disabled:opacity-30 disabled:hover:bg-slate-900 flex items-center justify-center gap-2"
+                    className="w-full py-2 bg-slate-900 hover:bg-blue-600 text-white rounded font-black text-[11px] uppercase tracking-wider shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-slate-900 flex items-center justify-center gap-1.5"
                   >
                     <span>Checkout & Print Invoice</span>
-                    <ArrowRight size={16} />
+                    <ArrowRight size={14} />
                   </button>
                 </div>
               </div>
@@ -943,6 +997,33 @@ export default function Sales() {
           products={products}
           onClose={() => setInvoiceSaleData(null)}
           onNewSale={() => setShowPOSModal(true)}
+        />
+      )}
+
+      {/* Device Camera Barcode / QR Scanner Modal */}
+      <BarcodeScannerModal
+        isOpen={showCameraScanner}
+        onClose={() => setShowCameraScanner(false)}
+        onScanSuccess={(code) => {
+          handleBarcodeScan(code);
+        }}
+        title="POS Camera QR & Barcode Scanner"
+      />
+
+      {/* Return & Refund Modal */}
+      {showReturnModal && (
+        <ReturnModal
+          initialSaleId={selectedReturnSaleId}
+          onClose={() => setShowReturnModal(false)}
+          onReturnProcessed={handleReturnProcessed}
+        />
+      )}
+
+      {/* Return Invoice Credit Note Modal */}
+      {returnCreditNoteData && (
+        <ReturnInvoiceModal
+          returnData={returnCreditNoteData}
+          onClose={() => setReturnCreditNoteData(null)}
         />
       )}
     </div>

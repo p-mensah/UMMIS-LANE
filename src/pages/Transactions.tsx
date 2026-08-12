@@ -101,8 +101,9 @@ export default function Transactions() {
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
                     <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      t.type === 'sale' ? 'bg-emerald-50 text-emerald-600' : 
-                      t.type === 'purchase' ? 'bg-blue-50 text-blue-600' : 'bg-red-50 text-red-600'
+                      t.type === 'sale' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 
+                      t.type === 'return' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
+                      t.type === 'purchase' ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-red-50 text-red-600 border border-red-200'
                     }`}>
                       {t.type}
                     </span>

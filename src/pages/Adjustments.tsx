@@ -1,54 +1,403 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
+import { Plus, Scan, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
+import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function Adjustments() {
   const [adjustments, setAdjustments] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  // New Adjustment Modal state
+  const [showModal, setShowModal] = useState(false);
+  const [showScanner, setShowScanner] = useState(false);
+  const [selectedProductId, setSelectedProductId] = useState<string>('');
+  const [adjustmentType, setAdjustmentType] = useState<'add' | 'deduct'>('add');
+  const [quantity, setQuantity] = useState<number>(1);
+  const [reason, setReason] = useState<string>('Inventory Audit Discrepancy');
+  const [notes, setNotes] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
+  const [reasonFilter, setReasonFilter] = useState('');
+
+  // Toast feedback
+  const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
   useEffect(() => {
-    fetchApi('/inventory/adjustments')
-      .then(setAdjustments)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+    loadData();
   }, []);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const [adjData, prodData] = await Promise.all([
+        fetchApi('/inventory/adjustments'),
+        fetchApi('/products')
+      ]);
+      setAdjustments(adjData);
+      setProducts(prodData);
+    } catch (err) {
+      console.error('Failed to load adjustments data:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleScanSuccess = (scannedCode: string) => {
+    const code = scannedCode.trim().toLowerCase();
+    const matched = products.find(p => 
+      (p.barcode && p.barcode.trim().toLowerCase() === code) ||
+      (p.sku && p.sku.trim().toLowerCase() === code) ||
+      (p.id.toString() === code)
+    );
+
+    if (matched) {
+      setSelectedProductId(matched.id.toString());
+      setFeedback({ type: 'success', message: `Selected Product: "${matched.name}" (Current Stock: ${matched.stock_quantity})` });
+      setShowScanner(false);
+      if (!showModal) setShowModal(true);
+    } else {
+      setFeedback({ type: 'error', message: `No product found matching SKU/Barcode "${scannedCode}"` });
+    }
+  };
+
+  const handleSubmitAdjustment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedProductId) {
+      alert('Please select a product to adjust.');
+      return;
+    }
+
+    const prod = products.find(p => p.id.toString() === selectedProductId);
+    if (!prod) return;
+
+    const qtyChange = adjustmentType === 'add' ? Math.abs(quantity) : -Math.abs(quantity);
+
+    if (adjustmentType === 'deduct' && Math.abs(quantity) > prod.stock_quantity) {
+      if (!confirm(`Warning: Deducting ${quantity} items will result in negative stock (Current: ${prod.stock_quantity}). Do you want to proceed?`)) {
+        return;
+      }
+    }
+
+    setIsSubmitting(true);
+    try {
+      await fetchApi('/inventory/adjust', {
+        method: 'POST',
+        body: JSON.stringify({
+          product_id: parseInt(selectedProductId, 10),
+          quantity_change: qtyChange,
+          reason: `${reason}${notes ? ` - ${notes}` : ''}`
+        })
+      });
+
+      setFeedback({ 
+        type: 'success', 
+        message: `Successfully adjusted stock for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units)` 
+      });
+
+      setShowModal(false);
+      setSelectedProductId('');
+      setQuantity(1);
+      setNotes('');
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit stock adjustment');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const selectedProduct = products.find(p => p.id.toString() === selectedProductId);
+
+  const filteredAdjustments = adjustments.filter(adj => {
+    const q = searchFilter.toLowerCase();
+    const matchesQuery = 
+      (adj.product_name && adj.product_name.toLowerCase().includes(q)) ||
+      (adj.sku && adj.sku.toLowerCase().includes(q)) ||
+      (adj.user_name && adj.user_name.toLowerCase().includes(q)) ||
+      (adj.reason && adj.reason.toLowerCase().includes(q));
+    
+    const matchesReason = !reasonFilter || (adj.reason && adj.reason.toLowerCase().includes(reasonFilter.toLowerCase()));
+    return matchesQuery && matchesReason;
+  });
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center mb-6">
-        <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Stock Adjustments History</h1>
+      {/* Top Banner & Quick Controls */}
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded border border-slate-200 shadow-2xs">
+        <div>
+          <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
+            <RotateCcw size={22} className="text-blue-600" />
+            Stock Adjustments & Inventory Reconciliation
+          </h1>
+          <p className="text-xs text-slate-500 font-medium mt-0.5">
+            Record manual stock additions, spoilage, breakage, returns, and inventory count corrections.
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+          <button
+            onClick={() => setShowScanner(true)}
+            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+          >
+            <Scan size={16} /> Scan QR / Barcode
+          </button>
+
+          <button
+            onClick={() => {
+              setSelectedProductId('');
+              setShowModal(true);
+            }}
+            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+          >
+            <Plus size={16} /> New Stock Adjustment
+          </button>
+        </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
-        <table className="min-w-full divide-y divide-slate-200">
-          <thead className="bg-slate-50">
-            <tr>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Date</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">User</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Change</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Reason</th>
-            </tr>
-          </thead>
-          <tbody className="bg-white divide-y divide-slate-100">
-            {adjustments.map(adj => (
-              <tr key={adj.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{new Date(adj.created_at + 'Z').toLocaleString()}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] font-medium text-slate-900">{adj.product_name}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{adj.user_name}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px]">
-                  <span className={`font-bold ${adj.quantity_change > 0 ? 'text-green-500' : 'text-red-500'}`}>
-                    {adj.quantity_change > 0 ? '+' : ''}{adj.quantity_change}
-                  </span>
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{adj.reason}</td>
-              </tr>
-            ))}
-            {adjustments.length === 0 && !loading && (
-              <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-500 text-[13px]">No stock adjustments recorded.</td></tr>
-            )}
-          </tbody>
-        </table>
+      {/* Feedback Toast */}
+      {feedback && (
+        <div className={`p-4 rounded border flex items-center justify-between text-xs font-bold animate-fadeIn ${
+          feedback.type === 'success' ? 'bg-emerald-50 border-emerald-200 text-emerald-800' : 'bg-red-50 border-red-200 text-red-800'
+        }`}>
+          <div className="flex items-center gap-2">
+            {feedback.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-600" /> : <AlertTriangle size={18} className="text-red-600" />}
+            <span>{feedback.message}</span>
+          </div>
+          <button onClick={() => setFeedback(null)} className="text-xs text-slate-400 hover:text-slate-600 font-bold">✕</button>
+        </div>
+      )}
+
+      {/* Filters Bar */}
+      <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+        <div className="relative flex-1 max-w-md w-full">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            placeholder="Search adjustments by product, SKU, cashier, or reason..."
+            value={searchFilter}
+            onChange={(e) => setSearchFilter(e.target.value)}
+            className="w-full border border-slate-200 rounded pl-9 pr-3 py-1.5 text-xs focus:outline-none focus:border-blue-500"
+          />
+        </div>
+
+        <div className="flex items-center gap-2 w-full sm:w-auto">
+          <select
+            value={reasonFilter}
+            onChange={(e) => setReasonFilter(e.target.value)}
+            className="border border-slate-200 bg-slate-50 rounded px-3 py-1.5 text-xs font-medium text-slate-700 focus:outline-none focus:border-blue-500"
+          >
+            <option value="">All Reason Categories</option>
+            <option value="Audit">Audit Discrepancy</option>
+            <option value="Damage">Damage / Spoilage</option>
+            <option value="Restock">Restock / Shipment</option>
+            <option value="Return">Customer Return</option>
+          </select>
+        </div>
       </div>
+
+      {/* Adjustment Table */}
+      <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-2xs">
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-xs">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Product Name</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Cashier / Staff</th>
+                <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">Quantity Change</th>
+                <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Reason & Note</th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-slate-100">
+              {filteredAdjustments.map((adj) => {
+                const isPositive = adj.quantity_change > 0;
+                return (
+                  <tr key={adj.id} className="hover:bg-slate-50/80 transition-colors">
+                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-500 font-mono">
+                      {new Date(adj.created_at + 'Z').toLocaleString()}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap font-bold text-slate-900">
+                      <div>{adj.product_name}</div>
+                      {adj.sku && <div className="text-[10px] text-slate-400 font-mono">{adj.sku}</div>}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-slate-700 font-medium">
+                      {adj.user_name}
+                    </td>
+                    <td className="px-5 py-3.5 whitespace-nowrap text-center">
+                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-black ${
+                        isPositive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                      }`}>
+                        {isPositive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                        {isPositive ? `+${adj.quantity_change}` : adj.quantity_change}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-slate-600 font-medium max-w-xs truncate">
+                      {adj.reason}
+                    </td>
+                  </tr>
+                );
+              })}
+
+              {filteredAdjustments.length === 0 && !loading && (
+                <tr>
+                  <td colSpan={5} className="px-5 py-12 text-center text-slate-400">
+                    <FileText size={32} className="mx-auto mb-2 opacity-30" />
+                    <p className="font-bold text-xs">No stock adjustment records match your filters.</p>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* NEW ADJUSTMENT MODAL */}
+      {showModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-md max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+              <h3 className="text-sm font-black uppercase tracking-wider text-slate-900">Record Stock Adjustment</h3>
+              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600 font-bold">✕</button>
+            </div>
+
+            <form onSubmit={handleSubmitAdjustment} className="space-y-4">
+              {/* Product Picker & Camera Scan Button */}
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Select Product</label>
+                  <button
+                    type="button"
+                    onClick={() => setShowScanner(true)}
+                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
+                  >
+                    <Scan size={13} /> Camera Scan
+                  </button>
+                </div>
+
+                <select
+                  required
+                  value={selectedProductId}
+                  onChange={(e) => setSelectedProductId(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">-- Choose Product from Inventory --</option>
+                  {products.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name} ({p.sku}) — Current Stock: {p.stock_quantity}
+                    </option>
+                  ))}
+                </select>
+
+                {selectedProduct && (
+                  <div className="mt-2 p-2.5 bg-slate-50 border border-slate-200 rounded text-xs flex justify-between items-center">
+                    <span className="text-slate-500 font-medium">Available Quantity:</span>
+                    <span className="font-black text-slate-900">{selectedProduct.stock_quantity} {selectedProduct.unit_of_measure || 'units'}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Adjustment Type */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Adjustment Action</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setAdjustmentType('add')}
+                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider border flex items-center justify-center gap-1.5 transition-all ${
+                      adjustmentType === 'add'
+                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ArrowUpRight size={16} /> Add Stock (+)
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setAdjustmentType('deduct')}
+                    className={`py-2 px-3 rounded text-xs font-bold uppercase tracking-wider border flex items-center justify-center gap-1.5 transition-all ${
+                      adjustmentType === 'deduct'
+                        ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                        : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <ArrowDownRight size={16} /> Deduct Stock (-)
+                  </button>
+                </div>
+              </div>
+
+              {/* Quantity */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Quantity</label>
+                <input
+                  type="number"
+                  min="1"
+                  required
+                  value={quantity}
+                  onChange={(e) => setQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Reason */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Reason</label>
+                <select
+                  value={reason}
+                  onChange={(e) => setReason(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-medium focus:outline-none focus:border-blue-500"
+                >
+                  <option value="Inventory Audit Discrepancy">Inventory Audit Discrepancy</option>
+                  <option value="Damage / Spoilage">Damage / Spoilage</option>
+                  <option value="Restock / Shipment Arrival">Restock / Shipment Arrival</option>
+                  <option value="Customer Return">Customer Return</option>
+                  <option value="Internal Store Usage">Internal Store Usage</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Additional Note (Optional)</label>
+                <input
+                  type="text"
+                  placeholder="e.g., Damaged during shelf transport..."
+                  value={notes}
+                  onChange={(e) => setNotes(e.target.value)}
+                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              {/* Buttons */}
+              <div className="pt-3 flex justify-end gap-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowModal(false)}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-xs font-bold uppercase tracking-wider"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || !selectedProductId}
+                  className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-black uppercase tracking-wider disabled:opacity-50 transition-colors shadow-xs"
+                >
+                  {isSubmitting ? 'Saving...' : 'Confirm Adjustment'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Barcode / QR Scanner Modal */}
+      <BarcodeScannerModal
+        isOpen={showScanner}
+        onClose={() => setShowScanner(false)}
+        onScanSuccess={handleScanSuccess}
+        title="Inventory Barcode Scanner"
+      />
     </div>
   );
 }
