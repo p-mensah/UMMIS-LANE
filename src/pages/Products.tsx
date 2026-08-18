@@ -2,8 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import ProductImportModal from '../components/ProductImportModal';
 
 interface Product {
   id: number;
@@ -36,6 +37,7 @@ export default function Products() {
 
   const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
 
+  const [showImportModal, setShowImportModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkMode, setBulkMode] = useState<'update' | 'import'>('update');
   const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -421,6 +423,14 @@ export default function Products() {
 
           {user?.role === 'admin' && (
             <>
+              <button 
+                type="button"
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center justify-center px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300 rounded-sm font-bold text-[13px] transition shadow-xs w-full sm:w-auto"
+                title="Upload or paste structured product list to quickly populate catalog"
+              >
+                <Table size={15} className="mr-1.5 text-blue-600" /> Import Structured List
+              </button>
               <button 
                 type="button"
                 onClick={exportCatalogToCSV}
@@ -952,6 +962,16 @@ export default function Products() {
             </form>
           </div>
         </div>
+      )}
+
+      {/* Structured Product Import Modal */}
+      {showImportModal && (
+        <ProductImportModal
+          existingProducts={products}
+          categories={categories}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={loadProducts}
+        />
       )}
 
     </div>

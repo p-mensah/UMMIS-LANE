@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { Bell, RefreshCw, CheckCheck, X } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
@@ -7,6 +8,7 @@ export default function NotificationBell() {
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread' | 'warnings'>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
+  const navigate = useNavigate();
 
   const { notifications, unreadCount, refreshNotifications } = useNotifications();
 
@@ -60,6 +62,36 @@ export default function NotificationBell() {
   const handleNotificationClick = (item: any) => {
     if (item.is_read === 0) {
       handleMarkAsRead(item.id);
+    }
+    setIsOpen(false);
+
+    // Direct navigation to the target page
+    let target = item.link;
+    if (!target || target.trim() === '') {
+      const text = ((item.title || '') + ' ' + (item.message || '')).toLowerCase();
+      if (text.includes('stock') || text.includes('inventory') || text.includes('catalog') || text.includes('product')) {
+        target = '/products';
+      } else if (text.includes('purchase') || text.includes('restock') || text.includes('supplier') || text.includes('reorder')) {
+        target = '/purchases';
+      } else if (text.includes('sale') || text.includes('pos') || text.includes('terminal') || text.includes('receipt')) {
+        target = '/sales';
+      } else if (text.includes('shift') || text.includes('register') || text.includes('cash drawer')) {
+        target = '/shifts';
+      } else if (text.includes('return') || text.includes('refund') || text.includes('credit note')) {
+        target = '/returns';
+      } else if (text.includes('expense') || text.includes('payout')) {
+        target = '/expenses';
+      } else if (text.includes('user') || text.includes('staff') || text.includes('role')) {
+        target = '/users';
+      } else if (text.includes('audit') || text.includes('security') || text.includes('override')) {
+        target = '/audit-logs';
+      } else {
+        target = '/';
+      }
+    }
+
+    if (target) {
+      navigate(target);
     }
   };
 
@@ -223,7 +255,8 @@ export default function NotificationBell() {
                   <div
                     key={item.id}
                     onClick={() => handleNotificationClick(item)}
-                    className={`p-3 text-xs rounded border transition-all cursor-pointer hover:shadow-xs flex flex-col gap-1.5 ${itemClasses}`}
+                    className={`p-3 text-xs rounded border transition-all cursor-pointer hover:shadow-md hover:border-slate-400 flex flex-col gap-1.5 ${itemClasses}`}
+                    title="Click to view details directly"
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-1.5 flex-wrap">
@@ -267,7 +300,7 @@ export default function NotificationBell() {
 
           {/* Footer */}
           <div className="px-3 py-2 bg-slate-100 border-t border-slate-200 text-center text-[10px] text-slate-500 font-medium">
-            System Alerts & Operational Warnings
+            System Alerts & Operational Warnings • Click notice to navigate
           </div>
         </div>
       )}
