@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Printer, X, FileText, CheckCircle2, RotateCcw, Building2, User, Phone, Mail, Calendar, CreditCard, Sparkles } from 'lucide-react';
+import { Printer, X, FileText, CheckCircle2, RotateCcw, Building2, User, Phone, Mail, Calendar, CreditCard } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 
 interface InvoiceModalProps {

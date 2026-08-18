@@ -4,7 +4,7 @@ import { fetchApi } from '../lib/api';
 import { 
   Truck, Plus, Search, Filter, Calendar, Clock, CheckCircle2, 
   AlertCircle, ChevronRight, FileText, Download, X, Eye, ArrowUpRight,
-  PackageCheck, RefreshCw, AlertTriangle, Sparkles
+  PackageCheck, RefreshCw, AlertTriangle, Zap
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
@@ -509,8 +509,8 @@ export default function Purchases() {
                 {isAutoDraft && (
                   <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-bold flex items-center justify-between shadow-2xs">
                     <div className="flex items-center gap-2">
-                      <Sparkles className="text-amber-600 shrink-0" size={16} />
-                      <span>⚡ Auto-populated draft from low-stock notification! Review quantities and supplier before saving.</span>
+                      <Zap className="text-amber-600 shrink-0" size={16} />
+                      <span>Auto-populated draft from low-stock notification. Review quantities and supplier before saving.</span>
                     </div>
                     <button 
                       onClick={() => setIsAutoDraft(false)} 

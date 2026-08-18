@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { 
   AlertTriangle, AlertCircle, CheckCircle2, ShieldCheck, 
   ArrowRight, RefreshCw, ShoppingBag, Truck, SlidersHorizontal, 
-  Lock, Unlock, Eye, EyeOff, Settings, Sparkles, ChevronDown, ChevronUp
+  Lock, Unlock, Eye, EyeOff, Settings, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 

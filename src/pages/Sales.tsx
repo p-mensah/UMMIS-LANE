@@ -1,10 +1,15 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { fetchApi } from '../lib/api';
 import { 
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, Zap, FileText,
-  Filter, Check, ArrowRight, Store, User, Layers, Sparkles
+  Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
+  ChevronDown, ChevronUp, BarChart3
 } from 'lucide-react';
+import { 
+  ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
+  Tooltip, Legend
+} from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
@@ -12,11 +17,16 @@ import InvoiceModal from '../components/InvoiceModal';
 export default function Sales() {
   const { user } = useAuth();
   const [sales, setSales] = useState<any[]>([]);
+  const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [categories, setCategories] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Performance Chart View States
+  const [chartMetric, setChartMetric] = useState<'revenue' | 'orders' | 'dual'>('revenue');
+  const [showChart, setShowChart] = useState(true);
 
   // Modal & Cart States
   const [showPOSModal, setShowPOSModal] = useState(false);
@@ -60,18 +70,22 @@ export default function Sales() {
       if (statusFilter) query.append('status', statusFilter);
       if (user?.role === 'admin' && cashierFilter) query.append('userId', cashierFilter);
 
-      const [salesRes, prodRes, usersRes, customersRes, categoriesRes] = await Promise.all([
+      const [salesRes, prodRes, usersRes, customersRes, categoriesRes, trendsRes] = await Promise.all([
         fetchApi(`/sales?${query.toString()}`),
         fetchApi('/products'),
         fetchApi('/users'),
         fetchApi('/customers'),
-        fetchApi('/categories')
+        fetchApi('/categories'),
+        fetchApi('/reports/sales-trends?timeframe=weekly').catch(() => [])
       ]);
       setSales(salesRes);
       setProducts(prodRes);
       setUsers(usersRes);
       setCustomers(customersRes);
       setCategories(categoriesRes);
+      if (Array.isArray(trendsRes)) {
+        setWeeklyTrends(trendsRes);
+      }
     } catch (e) {
       console.error(e);
     } finally {
@@ -273,6 +287,79 @@ export default function Sales() {
     );
   });
 
+  // Calculate past week daily performance for Recharts line graph
+  const weeklyChartData = useMemo(() => {
+    const days: { 
+      date: string; 
+      label: string; 
+      shortLabel: string;
+      total: number; 
+      sales_count: number;
+      avg_order: number;
+    }[] = [];
+    
+    const now = new Date();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const weekday = d.toLocaleDateString('en-US', { weekday: 'short' });
+      const monthDay = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const label = `${weekday}, ${monthDay}`;
+      const shortLabel = weekday;
+
+      const daySales = sales.filter((s: any) => {
+        if (!s.created_at || s.status === 'refunded') return false;
+        const sDate = s.created_at.includes('T') ? s.created_at.split('T')[0] : s.created_at.split(' ')[0];
+        return sDate === dateStr;
+      });
+
+      const total = daySales.reduce((acc: number, s: any) => acc + (Number(s.total_amount) || 0), 0);
+      const count = daySales.length;
+
+      days.push({
+        date: dateStr,
+        label,
+        shortLabel,
+        total,
+        sales_count: count,
+        avg_order: count > 0 ? total / count : 0
+      });
+    }
+
+    // If active sales table filter has 0 entries but weekly trends is provided from server, use it
+    const hasAnySales = days.some(d => d.total > 0 || d.sales_count > 0);
+    if (!hasAnySales && weeklyTrends.length > 0) {
+      return weeklyTrends.map(item => {
+        const itemDate = new Date(item.date);
+        const weekday = !isNaN(itemDate.getTime()) ? itemDate.toLocaleDateString('en-US', { weekday: 'short' }) : '';
+        return {
+          date: item.date,
+          label: `${weekday ? weekday + ', ' : ''}${item.label || item.date}`,
+          shortLabel: weekday || item.label,
+          total: Number(item.total) || 0,
+          sales_count: Number(item.sales_count) || 0,
+          avg_order: (item.sales_count > 0) ? (Number(item.total) / Number(item.sales_count)) : 0
+        };
+      });
+    }
+
+    return days;
+  }, [sales, weeklyTrends]);
+
+  const weeklyKPIs = useMemo(() => {
+    const totalRev = weeklyChartData.reduce((acc, d) => acc + d.total, 0);
+    const totalOrders = weeklyChartData.reduce((acc, d) => acc + d.sales_count, 0);
+    const avgDaily = totalRev / 7;
+    const peakDay = weeklyChartData.reduce((prev, curr) => (curr.total > prev.total ? curr : prev), weeklyChartData[0] || { label: 'N/A', total: 0 });
+    return {
+      totalRev,
+      totalOrders,
+      avgDaily,
+      peakDay
+    };
+  }, [weeklyChartData]);
+
   return (
     <div className="space-y-6">
       {/* Top Banner & Quick Controls */}
@@ -303,6 +390,197 @@ export default function Sales() {
             <ShoppingCart size={16} /> New Sales Session
           </button>
         </div>
+      </div>
+
+      {/* Past Week Daily Sales Performance (Recharts Line Graph) */}
+      <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">
+        {/* Graph Header */}
+        <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-start gap-3">
+            <div className="w-10 h-10 rounded-lg bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 shrink-0 mt-0.5">
+              <TrendingUp size={20} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="text-base font-bold text-slate-900">
+                  Daily Sales Performance (Past Week)
+                </h2>
+                <span className="text-[10px] font-black uppercase tracking-wider px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full border border-blue-200">
+                  7-Day Trend
+                </span>
+              </div>
+              <p className="text-xs text-slate-500 font-medium mt-0.5">
+                Daily sales performance and transaction volumes across the last 7 calendar days.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start md:self-auto">
+            <div className="inline-flex bg-slate-100 p-0.5 rounded border border-slate-200 text-xs font-bold">
+              <button 
+                id="chart-mode-revenue-btn"
+                onClick={() => setChartMetric('revenue')}
+                className={`px-3 py-1 rounded transition-colors ${chartMetric === 'revenue' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                Revenue (GH₵)
+              </button>
+              <button 
+                id="chart-mode-orders-btn"
+                onClick={() => setChartMetric('orders')}
+                className={`px-3 py-1 rounded transition-colors ${chartMetric === 'orders' ? 'bg-white text-emerald-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                Orders Count
+              </button>
+              <button 
+                id="chart-mode-dual-btn"
+                onClick={() => setChartMetric('dual')}
+                className={`px-3 py-1 rounded transition-colors ${chartMetric === 'dual' ? 'bg-white text-indigo-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
+              >
+                Combined
+              </button>
+            </div>
+
+            <button
+              id="chart-toggle-collapse-btn"
+              onClick={() => setShowChart(!showChart)}
+              className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors"
+              title={showChart ? "Collapse chart" : "Expand chart"}
+            >
+              {showChart ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
+            </button>
+          </div>
+        </div>
+
+        {/* Graph Content & KPI Stats */}
+        {showChart && (
+          <div className="p-4 sm:p-5 space-y-5">
+            {/* KPI Summary Bar */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">7-Day Total</span>
+                <span className="text-base font-black text-slate-900 mt-0.5 block">{formatGHS(weeklyKPIs.totalRev)}</span>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Total Transactions</span>
+                <span className="text-base font-black text-slate-900 mt-0.5 block">{weeklyKPIs.totalOrders} sales</span>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Daily Average</span>
+                <span className="text-base font-black text-slate-900 mt-0.5 block">{formatGHS(weeklyKPIs.avgDaily)}</span>
+              </div>
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded">
+                <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider block">Peak Day</span>
+                <span className="text-base font-black text-blue-600 mt-0.5 block truncate">
+                  {weeklyKPIs.peakDay?.label || '-'}: {formatGHS(weeklyKPIs.peakDay?.total || 0)}
+                </span>
+              </div>
+            </div>
+
+            {/* Recharts Line Graph Component */}
+            <div className="w-full h-64 sm:h-72">
+              <ResponsiveContainer width="100%" height="100%">
+                <LineChart 
+                  data={weeklyChartData}
+                  margin={{ top: 10, right: 15, left: 10, bottom: 5 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" vertical={false} />
+                  <XAxis 
+                    dataKey="shortLabel" 
+                    stroke="#64748b" 
+                    fontSize={11} 
+                    tickLine={false} 
+                    axisLine={{ stroke: '#e2e8f0' }}
+                  />
+                  <YAxis 
+                    yAxisId="left"
+                    stroke="#64748b" 
+                    fontSize={11} 
+                    tickLine={false} 
+                    axisLine={false} 
+                    tickFormatter={(val) => `GH₵${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`}
+                  />
+                  {(chartMetric === 'orders' || chartMetric === 'dual') && (
+                    <YAxis 
+                      yAxisId="right"
+                      orientation="right"
+                      stroke="#10b981" 
+                      fontSize={11} 
+                      tickLine={false} 
+                      axisLine={false} 
+                      allowDecimals={false}
+                      tickFormatter={(val) => `${val}`}
+                    />
+                  )}
+                  <Tooltip 
+                    content={({ active, payload, label }) => {
+                      if (active && payload && payload.length) {
+                        const item = payload[0].payload;
+                        return (
+                          <div className="bg-slate-900 text-white p-3 rounded-lg shadow-xl border border-slate-800 text-xs">
+                            <p className="font-bold text-slate-300 mb-1.5 flex items-center gap-1">
+                              <Calendar size={12} className="text-blue-400" />
+                              {item.label}
+                            </p>
+                            <div className="space-y-1">
+                              {(chartMetric === 'revenue' || chartMetric === 'dual') && (
+                                <div className="flex items-center justify-between gap-4 text-blue-400 font-black">
+                                  <span>Revenue:</span>
+                                  <span>{formatGHS(item.total)}</span>
+                                </div>
+                              )}
+                              {(chartMetric === 'orders' || chartMetric === 'dual') && (
+                                <div className="flex items-center justify-between gap-4 text-emerald-400 font-bold">
+                                  <span>Orders Count:</span>
+                                  <span>{item.sales_count}</span>
+                                </div>
+                              )}
+                              {item.sales_count > 0 && (
+                                <div className="flex items-center justify-between gap-4 text-slate-400 font-medium text-[11px] pt-1 border-t border-slate-800">
+                                  <span>Average Order:</span>
+                                  <span>{formatGHS(item.avg_order)}</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      }
+                      return null;
+                    }}
+                  />
+                  <Legend 
+                    verticalAlign="top" 
+                    height={36} 
+                    formatter={(value) => <span className="text-xs font-bold text-slate-700">{value}</span>}
+                  />
+                  {(chartMetric === 'revenue' || chartMetric === 'dual') && (
+                    <Line 
+                      yAxisId="left"
+                      type="monotone" 
+                      dataKey="total" 
+                      name="Revenue (GH₵)" 
+                      stroke="#2563eb" 
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }}
+                      activeDot={{ r: 7, fill: '#1d4ed8', stroke: '#ffffff', strokeWidth: 2 }}
+                    />
+                  )}
+                  {(chartMetric === 'orders' || chartMetric === 'dual') && (
+                    <Line 
+                      yAxisId={chartMetric === 'dual' ? "right" : "left"}
+                      type="monotone" 
+                      dataKey="sales_count" 
+                      name="Orders Volume" 
+                      stroke="#10b981" 
+                      strokeWidth={3}
+                      dot={{ r: 4, fill: '#10b981', stroke: '#ffffff', strokeWidth: 2 }}
+                      activeDot={{ r: 7, fill: '#059669', stroke: '#ffffff', strokeWidth: 2 }}
+                    />
+                  )}
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Filter Controls Bar */}

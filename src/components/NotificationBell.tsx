@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { 
   Bell, CheckCircle2, AlertTriangle, Info, AlertCircle, Trash2, ExternalLink, RefreshCw,
-  Sparkles, Heart, BellRing, CheckCheck, Smile, PartyPopper, MessageSquare, Zap
+  Heart, BellRing, CheckCheck, Smile, PartyPopper, MessageSquare, Zap
 } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
 
@@ -118,13 +118,13 @@ export default function NotificationBell() {
       case 'success':
         return (
           <span className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs">
-            ✨
+            <CheckCircle2 size={16} />
           </span>
         );
       default:
         return (
           <span className="w-8 h-8 rounded-full bg-sky-100 text-sky-600 flex items-center justify-center shrink-0 shadow-2xs font-bold text-xs">
-            💡
+            <Info size={16} />
           </span>
         );
     }
@@ -152,7 +152,7 @@ export default function NotificationBell() {
   const timeAgo = (dateStr: string) => {
     const time = new Date(dateStr).getTime();
     const diff = Math.floor((Date.now() - time) / 1000);
-    if (diff < 60) return 'Just now ✨';
+    if (diff < 60) return 'Just now';
     if (diff < 3600) return `${Math.floor(diff / 60)}m ago`;
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return `${Math.floor(diff / 86400)}d ago`;
@@ -164,7 +164,7 @@ export default function NotificationBell() {
       <button
         onClick={() => setIsOpen(!isOpen)}
         className="relative p-2.5 bg-gradient-to-br from-pink-50 via-purple-50 to-indigo-50 hover:from-pink-100 hover:to-indigo-100 text-indigo-700 rounded-full border border-indigo-100/80 transition-all transform active:scale-95 shadow-2xs focus:outline-none group"
-        title="System Notifications ✨"
+        title="System Notifications"
       >
         <BellRing size={19} className="group-hover:rotate-12 transition-transform text-indigo-600" />
         
@@ -186,12 +186,11 @@ export default function NotificationBell() {
           <div className="p-4 bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 text-white flex items-center justify-between shadow-xs">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-2xl bg-white/20 backdrop-blur-xs flex items-center justify-center text-white shadow-inner">
-                <Sparkles size={18} className="animate-spin-slow" />
+                <BellRing size={18} />
               </div>
               <div>
                 <div className="flex items-center gap-1.5">
                   <h3 className="text-xs font-black uppercase tracking-wider">In-App Inbox</h3>
-                  <span className="text-xs">✨</span>
                 </div>
                 <p className="text-[10px] text-pink-100/90 font-medium">Real-time alerts & system logs</p>
               </div>
@@ -347,19 +346,17 @@ export default function NotificationBell() {
                 <div className="w-16 h-16 rounded-full bg-gradient-to-tr from-pink-100 via-purple-100 to-indigo-100 flex items-center justify-center text-2xl shadow-inner border border-purple-100">
                   🌸
                 </div>
-                <div className="font-black text-slate-700 text-xs mt-1">All Clear & Cute! ✨</div>
+                <div className="font-black text-slate-700 text-xs mt-1">All Clear!</div>
                 <p className="text-[11px] text-slate-400 font-medium max-w-[200px] leading-relaxed">
-                  No notifications match your selected tab. Check back later ~
+                  No notifications match your selected tab.
                 </p>
               </div>
             )}
           </div>
 
-          {/* Cute Footer */}
+          {/* Clean Footer */}
           <div className="p-2.5 bg-slate-50 border-t border-purple-100 text-center text-[10px] font-bold text-slate-400 flex items-center justify-center gap-1">
-            <Sparkles size={11} className="text-pink-500" />
             <span>Ummis Lane System Notifications</span>
-            <Sparkles size={11} className="text-pink-500" />
           </div>
 
         </div>

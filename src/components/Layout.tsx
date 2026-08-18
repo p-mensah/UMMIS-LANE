@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, 
   Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, 
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
-  Store, Sparkles, Building2, Wallet,
+  Store, Building2, Wallet,
   SlidersHorizontal, UserCog, History, FolderTree, Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -79,9 +79,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <Store size={20} />
             </div>
             <div className="min-w-0">
-              <h1 className="text-xs font-black uppercase tracking-widest text-white truncate flex items-center gap-1">
+              <h1 className="text-xs font-black uppercase tracking-widest text-white truncate">
                 Ummis Lane
-                <Sparkles size={11} className="text-pink-400 shrink-0" />
               </h1>
               <p className="text-[10px] text-slate-400 font-semibold tracking-wide">Retail OS • Cloud POS</p>
             </div>

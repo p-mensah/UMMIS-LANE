@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  AlertTriangle, AlertCircle, CheckCircle2, Info, X, ExternalLink, ShoppingBag, Truck, Sparkles, Heart, Zap
+  AlertTriangle, AlertCircle, CheckCircle2, Info, X, ExternalLink, ShoppingBag, Truck, Heart, Zap
 } from 'lucide-react';
 
 export interface Toast {
@@ -84,7 +84,7 @@ function ToastItem({ toast, onDismiss }: { key?: string; toast: Toast; onDismiss
       case 'warning':
         return '🎀';
       case 'success':
-        return '✨';
+        return '✔️';
       default:
         return '💡';
     }
@@ -134,9 +134,8 @@ function ToastItem({ toast, onDismiss }: { key?: string; toast: Toast; onDismiss
 
       <div className="flex-1 min-w-0 pr-1">
         <div className="flex items-center justify-between gap-2">
-          <h4 className="text-xs font-black text-slate-900 truncate tracking-tight flex items-center gap-1">
+          <h4 className="text-xs font-black text-slate-900 truncate tracking-tight">
             {toast.title}
-            <Sparkles size={11} className="text-pink-500 shrink-0" />
           </h4>
           <span className="text-[9px] font-black uppercase tracking-wider bg-white/80 text-purple-700 px-2 py-0.5 rounded-full border border-purple-100">
             Alert

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 
 interface Product {
@@ -28,6 +28,7 @@ export default function Products() {
   const [categories, setCategories] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
+  const [activeActionMenuId, setActiveActionMenuId] = useState<number | null>(null);
   
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
@@ -47,6 +48,9 @@ export default function Products() {
 
   useEffect(() => {
     loadProducts();
+    const handleClickOutside = () => setActiveActionMenuId(null);
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
   }, []);
 
   const loadProducts = () => {
@@ -449,7 +453,7 @@ export default function Products() {
         </div>
       </div>
 
-      <div className="bg-white border border-slate-200 rounded-sm overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-sm overflow-x-auto min-h-[300px]">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
@@ -462,7 +466,7 @@ export default function Products() {
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price (Sell)</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock</th>
-              {user?.role === 'admin' && <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Actions</th>}
+              <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
@@ -493,18 +497,68 @@ export default function Products() {
                     {p.stock_quantity}
                   </span>
                 </td>
-                {user?.role === 'admin' && (
-                  <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
-                    <button onClick={() => openAdjust(p)} className="text-amber-500 hover:text-amber-700 mr-4">Adjust</button>
-                    <button onClick={() => handleEdit(p)} className="text-blue-500 hover:text-blue-700 mr-4">Edit</button>
-                    <button onClick={() => setDeletingProductId(p.id)} className="text-red-500 hover:text-red-700">Delete</button>
-                  </td>
-                )}
+                <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
+                  <div className="relative inline-block text-left">
+                    <button 
+                      id={`product-action-btn-${p.id}`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setActiveActionMenuId(activeActionMenuId === p.id ? null : p.id);
+                      }} 
+                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none"
+                      title="Actions"
+                    >
+                      <MoreVertical size={16} />
+                    </button>
+
+                    {activeActionMenuId === p.id && (
+                      <div 
+                        className="absolute right-0 mt-1 w-32 bg-white rounded border border-slate-200 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <button 
+                          id={`action-adjust-${p.id}`}
+                          onClick={() => {
+                            setActiveActionMenuId(null);
+                            openAdjust(p);
+                          }} 
+                          className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors"
+                        >
+                          <SlidersHorizontal size={14} className="text-amber-500" />
+                          <span>Adjust</span>
+                        </button>
+                        <button 
+                          id={`action-edit-${p.id}`}
+                          onClick={() => {
+                            setActiveActionMenuId(null);
+                            handleEdit(p);
+                          }} 
+                          className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
+                        >
+                          <Edit size={14} className="text-blue-500" />
+                          <span>Edit</span>
+                        </button>
+                        <div className="border-t border-slate-100 my-0.5" />
+                        <button 
+                          id={`action-delete-${p.id}`}
+                          onClick={() => {
+                            setActiveActionMenuId(null);
+                            setDeletingProductId(p.id);
+                          }} 
+                          className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
+                        >
+                          <Trash2 size={14} className="text-rose-500" />
+                          <span>Delete</span>
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </td>
               </tr>
             ))}
             {filteredProducts.length === 0 && !loading && (
               <tr>
-                <td colSpan={8} className="px-5 py-8 text-center text-slate-500 text-[13px] italic">
+                <td colSpan={10} className="px-5 py-8 text-center text-slate-500 text-[13px] italic">
                    {searchQuery ? (
                      <span>No products found matching <strong className="text-slate-900 font-black">"{searchQuery}"</strong></span>
                    ) : (
