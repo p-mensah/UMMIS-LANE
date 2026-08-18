@@ -5,9 +5,27 @@ import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
+import fs from 'fs';
 
 // --- Database Setup ---
-const db = new Database('retailos.db');
+const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
+const dbPath = isServerless 
+  ? path.join('/tmp', 'retailos.db') 
+  : path.join(process.cwd(), 'retailos.db');
+
+// In serverless environments (e.g. Vercel Lambda), copy bundled DB to /tmp if present
+if (isServerless) {
+  try {
+    const bundledDbPath = path.join(process.cwd(), 'retailos.db');
+    if (!fs.existsSync(dbPath) && fs.existsSync(bundledDbPath)) {
+      fs.copyFileSync(bundledDbPath, dbPath);
+    }
+  } catch (err) {
+    console.warn('Serverless database fallback initialization notice:', err);
+  }
+}
+
+const db = new Database(dbPath);
 
 function addColumnOrIgnore(tableName: string, columnName: string, columnDef: string) {
   try {
@@ -430,6 +448,13 @@ function seedDatabase(dbInstance: any) {
   } catch (err) {
     console.error('Error seeding database:', err);
   }
+}
+
+// Immediately initialize DB tables and default accounts
+try {
+  initDb();
+} catch (e) {
+  console.error('Database initialization error:', e);
 }
 
 // --- Audit & Notification Helpers ---
@@ -2745,4 +2770,10 @@ async function startServer() {
   });
 }
 
-startServer();
+// If running as standalone server (Node/Cloud Run), boot the dev/prod server
+if (!isServerless && process.env.NODE_ENV !== 'test') {
+  startServer();
+}
+
+export { app, db, initDb };
+export default app;

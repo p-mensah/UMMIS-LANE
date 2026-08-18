@@ -1,26 +1,78 @@
-export const API_URL = '/api';
+export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
   const token = localStorage.getItem('token');
   
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
+    'Accept': 'application/json',
     ...options.headers,
   };
 
   if (token) {
-    headers['Authorization'] = `Bearer ${token}`;
+    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  // Ensure endpoint starts with a slash
+  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  const url = `${API_URL}${cleanEndpoint}`;
 
-  if (!response.ok) {
-    const errorData = await response.json().catch(() => ({}));
-    throw new Error(errorData.error || 'API request failed');
+  try {
+    const response = await fetch(url, {
+      ...options,
+      headers,
+    });
+
+    // Check if the response is JSON
+    const contentType = response.headers.get('content-type') || '';
+    const isJson = contentType.includes('application/json');
+
+    if (!response.ok) {
+      let errorMessage = `Server responded with status ${response.status}`;
+      
+      if (isJson) {
+        try {
+          const errorData = await response.json();
+          if (errorData?.error) {
+            errorMessage = errorData.error;
+          }
+        } catch {
+          // ignore parsing error
+        }
+      } else {
+        if (response.status === 404) {
+          errorMessage = 'API endpoint not found (404). Please ensure the backend server is running.';
+        } else if (response.status === 401) {
+          errorMessage = 'Invalid email or password credentials.';
+        } else if (response.status === 403) {
+          errorMessage = 'Access denied. You do not have permission to perform this action.';
+        } else if (response.status >= 500) {
+          errorMessage = 'Internal server error. Please check server logs.';
+        }
+      }
+
+      throw new Error(errorMessage);
+    }
+
+    if (isJson) {
+      return await response.json();
+    }
+
+    // Fallback text check
+    const text = await response.text();
+    if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
+      throw new Error('Received unexpected HTML page instead of API response. Check API configuration.');
+    }
+    
+    try {
+      return JSON.parse(text);
+    } catch {
+      return text;
+    }
+  } catch (err: any) {
+    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+      throw new Error('Unable to connect to the server. Please check your network or server status.');
+    }
+    throw err;
   }
-
-  return response.json();
 };

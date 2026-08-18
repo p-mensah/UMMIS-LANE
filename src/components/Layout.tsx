@@ -4,7 +4,7 @@ import {
   LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, 
   Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, 
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
-  Store, Building2, Wallet, Menu, X,
+  Store, Building2, Wallet, Menu, X, Lock,
   SlidersHorizontal, UserCog, History, FolderTree, Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -61,6 +61,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
   const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  const handleLockTerminal = () => {
+    try {
+      sessionStorage.setItem('umis_session_timeout_msg', 'Terminal locked by user. Please sign in to resume your register session.');
+    } catch (e) {}
     logout();
     navigate('/login');
   };
@@ -143,8 +151,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 
   const renderUserProfileFooter = () => (
-    <div className="p-3 border-t border-slate-800 bg-slate-950/70 text-xs">
-      <div className="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded border border-slate-800 mb-2">
+    <div className="p-3 border-t border-slate-800 bg-slate-950/70 text-xs space-y-2">
+      <div className="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded-lg border border-slate-800">
         <div className="flex items-center gap-2 min-w-0">
           <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0">
             {user?.name?.charAt(0) || 'U'}
@@ -159,6 +167,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
         </div>
+
+        <button
+          onClick={handleLockTerminal}
+          className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
+          title="Lock Terminal (Quick Sign Out)"
+        >
+          <Lock size={14} />
+        </button>
       </div>
 
       <button
@@ -182,9 +198,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
           <div className="min-w-0">
             <h1 className="text-xs font-black uppercase tracking-widest text-white truncate">
-              Ummis Lane
+              UMMIS LANE ENT
             </h1>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wide">Retail OS • Cloud POS</p>
+            <p className="text-[10px] text-slate-400 font-medium tracking-wide">Enterprise Retail OS</p>
           </div>
         </div>
 
@@ -211,7 +227,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                   <Store size={16} />
                 </div>
                 <div>
-                  <h2 className="text-xs font-black uppercase tracking-wider text-white">Ummis Lane</h2>
+                  <h2 className="text-xs font-black uppercase tracking-wider text-white">UMMIS LANE ENT</h2>
                   <p className="text-[10px] text-slate-400">Retail OS</p>
                 </div>
               </div>
@@ -247,7 +263,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             <div className="min-w-0">
               <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                Ummis Lane Ent. /
+                UMMIS LANE ENT /
               </span>
               <h2 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight leading-none truncate mt-0.5">
                 {getPageTitle()}
@@ -256,6 +272,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* Security Indicator */}
+            <div className="hidden lg:flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 border border-slate-200 text-slate-600 rounded-lg text-[11px] font-medium" title="30-minute inactivity auto-logout protection active for shared retail environment">
+              <ShieldCheck size={14} className="text-emerald-600" />
+              <span>30m Inactivity Lock</span>
+            </div>
+
             {/* Real-time Ticking Digital Clock & Date */}
             <LiveRealtimeClock />
 
