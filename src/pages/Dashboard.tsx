@@ -368,8 +368,8 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* QUICK SHORTCUT TOOLBAR */}
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+      {/* QUICK SHORTCUT TOOLBAR (Fluid auto-adjusting grid) */}
+      <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,140px),1fr))] gap-3">
         <Link
           to="/sales"
           className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded shadow-2xs transition flex flex-col items-center text-center gap-1.5 group"
@@ -441,8 +441,8 @@ export default function Dashboard() {
             isLoading={loading}
           />
 
-          {/* PRIMARY BUSINESS KPI CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          {/* PRIMARY BUSINESS KPI CARDS (Fluid auto-adjusting grid from mobile to ultra-wide) */}
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4">
             {/* Card 1: Today's Gross Sales */}
             <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-2">
               <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">

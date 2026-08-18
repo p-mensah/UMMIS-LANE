@@ -506,21 +506,6 @@ export default function Purchases() {
               </div>
 
               <div className="flex-1 overflow-y-auto p-5 space-y-4 max-h-[400px]">
-                {isAutoDraft && (
-                  <div className="p-3 bg-gradient-to-r from-amber-50 to-orange-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-bold flex items-center justify-between shadow-2xs">
-                    <div className="flex items-center gap-2">
-                      <Zap className="text-amber-600 shrink-0" size={16} />
-                      <span>Auto-populated draft from low-stock notification. Review quantities and supplier before saving.</span>
-                    </div>
-                    <button 
-                      onClick={() => setIsAutoDraft(false)} 
-                      className="text-amber-600 hover:text-amber-900 text-[10px] font-black uppercase tracking-wider px-2 py-0.5 rounded bg-white/80 border border-amber-200"
-                    >
-                      Dismiss
-                    </button>
-                  </div>
-                )}
-
                 {/* Supplier & Status Form */}
                 <div className="grid grid-cols-2 gap-3">
                   <div>

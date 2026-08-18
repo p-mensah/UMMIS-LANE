@@ -12,6 +12,28 @@
   --color-border: #cbd5e1;         /* Slate 300 - Decorative/Border */
 }
 
-body {
-  @apply bg-slate-100 text-slate-800;
+/* Fluid Auto-Adjusting Grid Utilities (Without hardcoded pixel widths) */
+.grid-fluid-auto {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
 }
+
+.grid-fluid-kpi {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+
+.grid-fluid-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+}
+
+.grid-fluid-shortcuts {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 150px), 1fr));
+}
+
+body {
+  @apply bg-slate-100 text-slate-800 antialiased;
+}
+
