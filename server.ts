@@ -3,7 +3,6 @@ import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
-import { createServer as createViteServer } from 'vite';
 import path from 'path';
 import fs from 'fs';
 
@@ -570,6 +569,33 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_retailos_key_change_me
 
 app.use(cors());
 app.use(express.json());
+
+// Normalize incoming API requests (e.g. from Vercel rewrites or direct serverless routing)
+app.use((req, res, next) => {
+  if (!req.url.startsWith('/api') && (
+    req.url.startsWith('/auth') ||
+    req.url.startsWith('/products') ||
+    req.url.startsWith('/sales') ||
+    req.url.startsWith('/purchases') ||
+    req.url.startsWith('/inventory') ||
+    req.url.startsWith('/reports') ||
+    req.url.startsWith('/users') ||
+    req.url.startsWith('/categories') ||
+    req.url.startsWith('/suppliers') ||
+    req.url.startsWith('/expenses') ||
+    req.url.startsWith('/shifts') ||
+    req.url.startsWith('/customers') ||
+    req.url.startsWith('/returns') ||
+    req.url.startsWith('/settings') ||
+    req.url.startsWith('/audit-logs') ||
+    req.url.startsWith('/notifications') ||
+    req.url.startsWith('/health') ||
+    req.url.startsWith('/pos')
+  )) {
+    req.url = `/api${req.url.startsWith('/') ? req.url : `/${req.url}`}`;
+  }
+  next();
+});
 
 // --- Middleware ---
 const authenticate = (req: any, res: any, next: any) => {
@@ -2752,6 +2778,7 @@ async function startServer() {
   }, 15000);
 
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",

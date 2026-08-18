@@ -42,7 +42,12 @@ export default function Login() {
       login(data.token, data.user);
       navigate('/');
     } catch (err: any) {
-      setError(err.message);
+      const msg = typeof err === 'string'
+        ? err
+        : (err?.message && typeof err.message === 'string' && err.message !== '[object Object]'
+            ? err.message
+            : 'Login failed. Please check your credentials.');
+      setError(msg);
     } finally {
       setLoading(false);
     }
@@ -105,7 +110,7 @@ export default function Login() {
               disabled={loading}
               className="group relative w-full flex justify-center py-2.5 px-4 border border-transparent text-xs font-bold rounded-lg text-white bg-blue-600 hover:bg-blue-700 focus:outline-none disabled:opacity-50 transition-colors uppercase tracking-wider shadow-sm"
             >
-              {loading ? 'Authenticating...' : 'Sign In To POS'}
+              {loading ? 'Authenticating...' : 'Sign In'}
             </button>
           </div>
           

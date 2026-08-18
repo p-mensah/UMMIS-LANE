@@ -477,8 +477,8 @@ export default function Sales() {
             </div>
 
             {/* Recharts Line Graph Component */}
-            <div className="w-full h-64 sm:h-72">
-              <ResponsiveContainer width="100%" height="100%">
+            <div className="w-full h-64 sm:h-72 min-w-0 relative">
+              <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
                 <LineChart 
                   data={weeklyChartData}
                   margin={{ top: 10, right: 15, left: 10, bottom: 5 }}

@@ -33,8 +33,20 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
       if (isJson) {
         try {
           const errorData = await response.json();
-          if (errorData?.error) {
-            errorMessage = errorData.error;
+          if (errorData) {
+            if (typeof errorData === 'string') {
+              errorMessage = errorData;
+            } else if (typeof errorData.error === 'string') {
+              errorMessage = errorData.error;
+            } else if (errorData.error && typeof errorData.error === 'object') {
+              errorMessage = errorData.error.message || errorData.error.code || JSON.stringify(errorData.error);
+            } else if (typeof errorData.message === 'string') {
+              errorMessage = errorData.message;
+            } else if (typeof errorData.detail === 'string') {
+              errorMessage = errorData.detail;
+            } else {
+              errorMessage = JSON.stringify(errorData);
+            }
           }
         } catch {
           // ignore parsing error
