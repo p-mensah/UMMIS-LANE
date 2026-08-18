@@ -1,16 +1,17 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
-import { Plus, Scan, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText } from 'lucide-react';
-import BarcodeScannerModal from '../components/BarcodeScannerModal';
+import { useAuth } from '../context/AuthContext';
+import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert } from 'lucide-react';
 
 export default function Adjustments() {
+  const { user } = useAuth();
   const [adjustments, setAdjustments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
 
   // New Adjustment Modal state
   const [showModal, setShowModal] = useState(false);
-  const [showScanner, setShowScanner] = useState(false);
   const [selectedProductId, setSelectedProductId] = useState<string>('');
   const [adjustmentType, setAdjustmentType] = useState<'add' | 'deduct'>('add');
   const [quantity, setQuantity] = useState<number>(1);
@@ -23,19 +24,25 @@ export default function Adjustments() {
   // Toast feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
+  const canAdjustStock = user?.role === 'admin' || allowStaffAdjustments;
+
   useEffect(() => {
     loadData();
-  }, []);
+  }, [user]);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [adjData, prodData] = await Promise.all([
-        fetchApi('/inventory/adjustments'),
-        fetchApi('/products')
+      const [adjData, prodData, settingsData] = await Promise.all([
+        fetchApi('/inventory/adjustments').catch(() => []),
+        fetchApi('/products').catch(() => []),
+        fetchApi('/settings').catch(() => ({}))
       ]);
-      setAdjustments(adjData);
-      setProducts(prodData);
+      setAdjustments(Array.isArray(adjData) ? adjData : []);
+      setProducts(Array.isArray(prodData) ? prodData : []);
+      if (settingsData && settingsData.allow_staff_stock_adjustments) {
+        setAllowStaffAdjustments(settingsData.allow_staff_stock_adjustments === 'true');
+      }
     } catch (err) {
       console.error('Failed to load adjustments data:', err);
     } finally {
@@ -43,26 +50,13 @@ export default function Adjustments() {
     }
   };
 
-  const handleScanSuccess = (scannedCode: string) => {
-    const code = scannedCode.trim().toLowerCase();
-    const matched = products.find(p => 
-      (p.barcode && p.barcode.trim().toLowerCase() === code) ||
-      (p.sku && p.sku.trim().toLowerCase() === code) ||
-      (p.id.toString() === code)
-    );
-
-    if (matched) {
-      setSelectedProductId(matched.id.toString());
-      setFeedback({ type: 'success', message: `Selected Product: "${matched.name}" (Current Stock: ${matched.stock_quantity})` });
-      setShowScanner(false);
-      if (!showModal) setShowModal(true);
-    } else {
-      setFeedback({ type: 'error', message: `No product found matching SKU/Barcode "${scannedCode}"` });
-    }
-  };
-
   const handleSubmitAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canAdjustStock) {
+      alert('Permission Denied: Staff stock adjustments are disabled by administrator.');
+      return;
+    }
+
     if (!selectedProductId) {
       alert('Please select a product to adjust.');
       return;
@@ -136,24 +130,37 @@ export default function Adjustments() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <button
-            onClick={() => setShowScanner(true)}
-            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
-          >
-            <Scan size={16} /> Scan QR / Barcode
-          </button>
-
-          <button
-            onClick={() => {
-              setSelectedProductId('');
-              setShowModal(true);
-            }}
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
-          >
-            <Plus size={16} /> New Stock Adjustment
-          </button>
+          {canAdjustStock ? (
+            <button
+              onClick={() => {
+                setSelectedProductId('');
+                setShowModal(true);
+              }}
+              className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+            >
+              <Plus size={16} /> New Stock Adjustment
+            </button>
+          ) : (
+            <div className="px-3 py-2 bg-slate-100 border border-slate-200 text-slate-500 rounded text-xs font-bold flex items-center gap-1.5">
+              <Lock size={14} className="text-amber-600" />
+              <span>Staff Adjustments Locked</span>
+            </div>
+          )}
         </div>
       </div>
+
+      {/* Staff Restricted Notice if not allowed */}
+      {!canAdjustStock && user?.role !== 'admin' && (
+        <div className="p-4 bg-amber-50 border border-amber-200 text-amber-900 rounded-md flex items-start gap-3 text-xs">
+          <ShieldAlert size={18} className="text-amber-600 shrink-0 mt-0.5" />
+          <div>
+            <div className="font-black uppercase tracking-wider text-[11px] text-amber-800">Staff Stock Adjustments Restricted</div>
+            <p className="mt-0.5 text-amber-700 leading-relaxed font-medium">
+              You are signed in with a Staff role. Manual stock adjustments, write-offs, and stock additions are restricted by the administrator. To perform an adjustment, please ask a store manager or administrator.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Feedback Toast */}
       {feedback && (
@@ -252,8 +259,8 @@ export default function Adjustments() {
         </div>
       </div>
 
-      {/* NEW ADJUSTMENT MODAL */}
-      {showModal && (
+      {/* NEW ADJUSTMENT MODAL (Only when allowed) */}
+      {showModal && canAdjustStock && (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white rounded-md max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-4">
             <div className="flex items-center justify-between pb-3 border-b border-slate-100">
@@ -262,19 +269,9 @@ export default function Adjustments() {
             </div>
 
             <form onSubmit={handleSubmitAdjustment} className="space-y-4">
-              {/* Product Picker & Camera Scan Button */}
+              {/* Product Picker */}
               <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">Select Product</label>
-                  <button
-                    type="button"
-                    onClick={() => setShowScanner(true)}
-                    className="text-[11px] font-bold text-emerald-600 hover:text-emerald-800 flex items-center gap-1"
-                  >
-                    <Scan size={13} /> Camera Scan
-                  </button>
-                </div>
-
+                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Select Product</label>
                 <select
                   required
                   value={selectedProductId}
@@ -390,14 +387,6 @@ export default function Adjustments() {
           </div>
         </div>
       )}
-
-      {/* Barcode / QR Scanner Modal */}
-      <BarcodeScannerModal
-        isOpen={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScanSuccess={handleScanSuccess}
-        title="Inventory Barcode Scanner"
-      />
     </div>
   );
 }

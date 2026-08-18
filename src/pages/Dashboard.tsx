@@ -14,6 +14,7 @@ import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
+import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -28,11 +29,16 @@ export default function Dashboard() {
   // Executive Data States
   const [summary, setSummary] = useState<any>(null);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
+  const [allProducts, setAllProducts] = useState<any[]>([]);
   const [salesTrends, setSalesTrends] = useState<any[]>([]);
   const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('7days');
   const [trendChartType, setTrendChartType] = useState<'area' | 'bar'>('area');
   const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
+
+  // Staff Permissions and Alert Display Settings
+  const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
+  const [showStaffAlerts, setShowStaffAlerts] = useState<boolean>(true);
 
   // Monthly Financial Breakdown
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
@@ -103,17 +109,29 @@ export default function Dashboard() {
       fetchApi('/reports/low-stock'),
       fetchApi('/reports/best-sellers'),
       fetchApi('/sales').catch(() => []),
-      fetchApi('/settings').catch(() => ({}))
+      fetchApi('/settings').catch(() => ({})),
+      fetchApi('/products').catch(() => [])
     ])
-      .then(([summaryData, lowStockData, top, sales, settingsData]) => {
+      .then(([summaryData, lowStockData, top, sales, settingsData, prods]) => {
          setSummary(summaryData);
          setLowStockProducts(lowStockData);
          setBestSellers(top);
          if (Array.isArray(sales)) {
            setRecentSalesList(sales.slice(0, 6));
          }
-         if (settingsData && settingsData.low_stock_threshold) {
-           setGlobalThreshold(parseInt(settingsData.low_stock_threshold, 10));
+         if (Array.isArray(prods)) {
+           setAllProducts(prods);
+         }
+         if (settingsData) {
+           if (settingsData.low_stock_threshold) {
+             setGlobalThreshold(parseInt(settingsData.low_stock_threshold, 10));
+           }
+           if (settingsData.allow_staff_stock_adjustments !== undefined) {
+             setAllowStaffAdjustments(settingsData.allow_staff_stock_adjustments === 'true');
+           }
+           if (settingsData.show_staff_stock_alerts !== undefined) {
+             setShowStaffAlerts(settingsData.show_staff_stock_alerts === 'true');
+           }
          }
       })
       .catch(console.error)
@@ -176,9 +194,39 @@ export default function Dashboard() {
     }
   };
 
+  const handleToggleStaffAdjustments = async (newValue: boolean) => {
+    try {
+      setAllowStaffAdjustments(newValue);
+      await fetchApi('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ allow_staff_stock_adjustments: newValue })
+      });
+    } catch (err: any) {
+      alert('Failed to update staff stock adjustment setting: ' + err.message);
+      loadDashboardData();
+    }
+  };
+
+  const handleToggleStaffAlerts = async (newValue: boolean) => {
+    try {
+      setShowStaffAlerts(newValue);
+      await fetchApi('/settings', {
+        method: 'PUT',
+        body: JSON.stringify({ show_staff_stock_alerts: newValue })
+      });
+    } catch (err: any) {
+      alert('Failed to update staff alert visibility setting: ' + err.message);
+      loadDashboardData();
+    }
+  };
+
   const handleQuickRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductForRestock || restockQty <= 0) return;
+    if (user?.role !== 'admin' && !allowStaffAdjustments) {
+      alert('Permission Denied: Staff stock adjustments are disabled by administrator.');
+      return;
+    }
     setIsSubmittingRestock(true);
     try {
       await fetchApi('/inventory/adjust', {
@@ -374,6 +422,25 @@ export default function Dashboard() {
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
         <>
+          {/* REAL-TIME AUTOMATED LOW-STOCK ALERT INDICATOR & GOVERNANCE WIDGET */}
+          <LowStockAlertIndicator
+            products={allProducts.length > 0 ? allProducts : lowStockProducts}
+            globalThreshold={globalThreshold}
+            userRole="admin"
+            allowStaffAdjustments={allowStaffAdjustments}
+            showStaffAlerts={showStaffAlerts}
+            onToggleStaffAdjustments={handleToggleStaffAdjustments}
+            onToggleStaffAlerts={handleToggleStaffAlerts}
+            onOpenThresholdModal={() => setShowThresholdModal(true)}
+            onQuickRestock={(prod) => {
+              setSelectedProductForRestock(prod);
+              setRestockQty(10);
+              setShowRestockModal(true);
+            }}
+            onRefresh={loadDashboardData}
+            isLoading={loading}
+          />
+
           {/* PRIMARY BUSINESS KPI CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Card 1: Today's Gross Sales */}
@@ -856,6 +923,24 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
+          {/* STAFF LOW-STOCK REAL-TIME ALERT INDICATOR (IF ENABLED BY ADMIN) */}
+          {showStaffAlerts && (
+            <LowStockAlertIndicator
+              products={allProducts.length > 0 ? allProducts : lowStockProducts}
+              globalThreshold={globalThreshold}
+              userRole="staff"
+              allowStaffAdjustments={allowStaffAdjustments}
+              showStaffAlerts={showStaffAlerts}
+              onQuickRestock={allowStaffAdjustments ? (prod) => {
+                setSelectedProductForRestock(prod);
+                setRestockQty(10);
+                setShowRestockModal(true);
+              } : undefined}
+              onRefresh={loadDashboardData}
+              isLoading={loading}
+            />
+          )}
+
           {/* Staff Counter KPI Strip */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">

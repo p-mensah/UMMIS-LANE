@@ -1,14 +1,16 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { formatGHS } from '../lib/formatters';
 import { 
   FolderTree, Plus, Search, Edit, Trash2, X, RefreshCw, 
   Package, Layers, DollarSign, LayoutGrid, List, ArrowRight,
-  ChevronRight, Tag, ShieldAlert, CheckCircle2, Box
+  ChevronRight, Tag, ShieldAlert, CheckCircle2, Box, Lock
 } from 'lucide-react';
 
 export default function Categories() {
+  const { user } = useAuth();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   
@@ -133,12 +135,19 @@ export default function Categories() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          <button
-            onClick={() => setShowModal(true)}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
-          >
-            <Plus size={16} /> Add Category
-          </button>
+          {user?.role === 'admin' ? (
+            <button
+              onClick={() => setShowModal(true)}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+            >
+              <Plus size={16} /> Add Category
+            </button>
+          ) : (
+            <div className="px-3 py-1.5 bg-slate-100 border border-slate-200 text-slate-500 rounded text-xs font-bold flex items-center gap-1.5">
+              <Lock size={13} className="text-slate-400" />
+              <span>Read-Only Catalog</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -283,22 +292,24 @@ export default function Categories() {
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleEdit(cat)}
-                      className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition"
-                      title="Edit Category"
-                    >
-                      <Edit size={15} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(cat.id, cat.name)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                      title="Delete Category"
-                    >
-                      <Trash2 size={15} />
-                    </button>
-                  </div>
+                  {user?.role === 'admin' && (
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={() => handleEdit(cat)}
+                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition"
+                        title="Edit Category"
+                      >
+                        <Edit size={15} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(cat.id, cat.name)}
+                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
+                        title="Delete Category"
+                      >
+                        <Trash2 size={15} />
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Metrics Breakdown */}
@@ -380,19 +391,30 @@ export default function Categories() {
                     <td className="px-4 py-3 text-right font-black text-slate-900">
                       {formatGHS(cat.total_value || 0)}
                     </td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button
-                        onClick={() => handleEdit(cat)}
-                        className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(cat.id, cat.name)}
-                        className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
-                      >
-                        Delete
-                      </button>
+                    <td className="px-4 py-3 text-right">
+                      {user?.role === 'admin' ? (
+                        <div className="space-x-2 inline-flex">
+                          <button
+                            onClick={() => handleEdit(cat)}
+                            className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
+                          >
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleDelete(cat.id, cat.name)}
+                            className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      ) : (
+                        <Link
+                          to={`/products?category=${encodeURIComponent(cat.name)}`}
+                          className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 font-bold rounded text-[11px] transition inline-flex items-center gap-1"
+                        >
+                          View SKUs <ChevronRight size={12} />
+                        </Link>
+                      )}
                     </td>
                   </tr>
                 ))}

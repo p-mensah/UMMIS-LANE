@@ -229,6 +229,8 @@ function initDb() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('low_stock_threshold', '10')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('audit_log_retention_days', '90')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_clear_audit_logs', 'true')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_staff_stock_adjustments', 'false')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('show_staff_stock_alerts', 'true')").run();
 
   // Seed default admin and staff
   const checkAdmin = db.prepare('SELECT id FROM users WHERE email = ?').get('admin@admin.com');
@@ -852,6 +854,15 @@ app.post('/api/inventory/adjust', authenticate, (req: any, res) => {
   if (!reason || reason.trim().length < 3) {
     return res.status(400).json({ error: 'Reason must be at least 3 characters long' });
   }
+
+  // Permission check: if not admin, check if staff stock adjustments are allowed by admin
+  if (req.user.role !== 'admin') {
+    const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
+    if (allowSetting?.value !== 'true') {
+      return res.status(403).json({ error: 'Permission denied: Manual stock adjustments by staff are disabled by administrator.' });
+    }
+  }
+
   const dbTx = db.transaction(() => {
     db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(quantity_change, product_id);
     db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
@@ -866,11 +877,19 @@ app.post('/api/inventory/adjust', authenticate, (req: any, res) => {
   }
 });
 
-app.post('/api/inventory/adjust-bulk', authenticate, requireAdmin, (req: any, res) => {
+app.post('/api/inventory/adjust-bulk', authenticate, (req: any, res) => {
   const { adjustments, reason } = req.body; // adjustments: { product_id: number, quantity_change: number }[]
   if (!adjustments || adjustments.length === 0) return res.status(400).json({ error: 'No adjustments provided' });
   if (!reason || reason.trim().length < 3) {
     return res.status(400).json({ error: 'Reason must be at least 3 characters long' });
+  }
+
+  // Permission check: if not admin, check if staff stock adjustments are allowed by admin
+  if (req.user.role !== 'admin') {
+    const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
+    if (allowSetting?.value !== 'true') {
+      return res.status(403).json({ error: 'Permission denied: Manual stock adjustments by staff are disabled by administrator.' });
+    }
   }
 
   const dbTx = db.transaction(() => {
@@ -890,7 +909,15 @@ app.post('/api/inventory/adjust-bulk', authenticate, requireAdmin, (req: any, re
   }
 });
 
-app.get('/api/inventory/adjustments', authenticate, requireAdmin, (req, res) => {
+app.get('/api/inventory/adjustments', authenticate, (req: any, res) => {
+  // Allow admin or staff (if staff adjustments are enabled)
+  if (req.user.role !== 'admin') {
+    const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
+    if (allowSetting?.value !== 'true') {
+      return res.status(403).json({ error: 'Permission denied: Stock adjustments log is restricted to administrators.' });
+    }
+  }
+
   const adjustments = db.prepare(`
     SELECT sa.*, p.name as product_name, u.name as user_name 
     FROM stock_adjustments sa
@@ -2551,7 +2578,7 @@ app.post('/api/products/bulk-import', authenticate, requireAdmin, (req, res) => 
 });
 
 // Settings API
-app.get('/api/settings', authenticate, requireAdmin, (req, res) => {
+app.get('/api/settings', authenticate, (req, res) => {
   const settings = db.prepare('SELECT * FROM settings').all();
   const result: Record<string, string> = {};
   for (const s of settings as any[]) {
@@ -2561,7 +2588,7 @@ app.get('/api/settings', authenticate, requireAdmin, (req, res) => {
 });
 
 app.put('/api/settings', authenticate, requireAdmin, (req, res) => {
-  const { low_stock_threshold, audit_log_retention_days, auto_clear_audit_logs } = req.body;
+  const { low_stock_threshold, audit_log_retention_days, auto_clear_audit_logs, allow_staff_stock_adjustments, show_staff_stock_alerts } = req.body;
   if (low_stock_threshold !== undefined) {
     db.prepare("INSERT INTO settings (key, value) VALUES ('low_stock_threshold', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(low_stock_threshold.toString(), low_stock_threshold.toString());
   }
@@ -2572,8 +2599,16 @@ app.put('/api/settings', authenticate, requireAdmin, (req, res) => {
     const val = auto_clear_audit_logs ? 'true' : 'false';
     db.prepare("INSERT INTO settings (key, value) VALUES ('auto_clear_audit_logs', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
   }
+  if (allow_staff_stock_adjustments !== undefined) {
+    const val = allow_staff_stock_adjustments ? 'true' : 'false';
+    db.prepare("INSERT INTO settings (key, value) VALUES ('allow_staff_stock_adjustments', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
+  }
+  if (show_staff_stock_alerts !== undefined) {
+    const val = show_staff_stock_alerts ? 'true' : 'false';
+    db.prepare("INSERT INTO settings (key, value) VALUES ('show_staff_stock_alerts', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
+  }
 
-  logAuditEvent((req as any).user.id, (req as any).user.name, 'Updated System Settings', 'settings', `Updated settings: Low Stock Threshold = ${low_stock_threshold}, Retention Days = ${audit_log_retention_days}, Auto Clear = ${auto_clear_audit_logs}`);
+  logAuditEvent((req as any).user.id, (req as any).user.name, 'Updated System Settings', 'settings', `Updated settings: Low Stock Threshold = ${low_stock_threshold}, Retention Days = ${audit_log_retention_days}, Auto Clear = ${auto_clear_audit_logs}, Allow Staff Adjustments = ${allow_staff_stock_adjustments}, Show Staff Alerts = ${show_staff_stock_alerts}`);
 
   res.json({ success: true });
 });

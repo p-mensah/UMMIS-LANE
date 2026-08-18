@@ -4,7 +4,6 @@ import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
-import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 interface Product {
   id: number;
@@ -41,8 +40,6 @@ export default function Products() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [parsedImportProducts, setParsedImportProducts] = useState<any[]>([]);
   const [bulkStatus, setBulkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-
-  const [showScanner, setShowScanner] = useState(false);
 
   const [formData, setFormData] = useState({
     name: '', sku: '', category: '', cost_price: 0, selling_price: 0, stock_quantity: 0, barcode: '', brand: '', unit_of_measure: '', image_url: '', min_stock_level: 10
@@ -417,14 +414,6 @@ export default function Products() {
               </button>
             )}
           </div>
-
-          <button
-            type="button"
-            onClick={() => setShowScanner(true)}
-            className="flex items-center justify-center px-4 py-2 bg-emerald-600 text-white rounded-sm font-bold text-[13px] hover:bg-emerald-700 transition shadow-sm w-full sm:w-auto shrink-0"
-          >
-            <Scan size={16} className="mr-2" /> Camera Scan
-          </button>
 
           {user?.role === 'admin' && (
             <>
@@ -911,20 +900,6 @@ export default function Products() {
         </div>
       )}
 
-      {/* Barcode / QR Camera Scanner Modal */}
-      <BarcodeScannerModal
-        isOpen={showScanner}
-        onClose={() => setShowScanner(false)}
-        onScanSuccess={(code) => {
-          if (showModal) {
-            setFormData(prev => ({ ...prev, barcode: code }));
-          } else {
-            setSearchQuery(code);
-          }
-          setShowScanner(false);
-        }}
-        title="Products Barcode & QR Scanner"
-      />
     </div>
   );
 }

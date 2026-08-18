@@ -8,7 +8,6 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
-import BarcodeScannerModal from '../components/BarcodeScannerModal';
 
 export default function Sales() {
   const { user } = useAuth();
@@ -23,7 +22,6 @@ export default function Sales() {
   const [showPOSModal, setShowPOSModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [invoiceSaleData, setInvoiceSaleData] = useState<any | null>(null);
-  const [showCameraScanner, setShowCameraScanner] = useState(false);
 
   // Cart & POS filters
   const [cart, setCart] = useState<{product_id: number, quantity: number, unit_price: number, notes?: string}[]>([]);
@@ -290,13 +288,6 @@ export default function Sales() {
         </div>
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-          <button 
-            onClick={() => setShowCameraScanner(true)}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-1.5"
-          >
-            <Scan size={16} /> Camera Scanner
-          </button>
-
           <button 
             onClick={handleExportCSV} 
             disabled={sales.length === 0} 
@@ -964,16 +955,6 @@ export default function Sales() {
           onNewSale={() => setShowPOSModal(true)}
         />
       )}
-
-      {/* Device Camera Barcode / QR Scanner Modal */}
-      <BarcodeScannerModal
-        isOpen={showCameraScanner}
-        onClose={() => setShowCameraScanner(false)}
-        onScanSuccess={(code) => {
-          handleBarcodeScan(code);
-        }}
-        title="POS Camera QR & Barcode Scanner"
-      />
 
     </div>
   );

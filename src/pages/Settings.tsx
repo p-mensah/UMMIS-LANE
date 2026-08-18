@@ -2,13 +2,16 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { 
   Settings as SettingsIcon, ShieldCheck, Database, Bell, CheckCircle2, 
-  Trash2, RefreshCw, AlertTriangle, Clock, Save
+  Trash2, RefreshCw, AlertTriangle, Clock, Save, Lock, SlidersHorizontal, Eye
 } from 'lucide-react';
 
 export default function Settings() {
   const [threshold, setThreshold] = useState<number>(10);
   const [retentionDays, setRetentionDays] = useState<number>(90);
   const [autoClear, setAutoClear] = useState<boolean>(true);
+  const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
+  const [showStaffStockAlerts, setShowStaffStockAlerts] = useState<boolean>(true);
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState('');
@@ -29,6 +32,12 @@ export default function Settings() {
         if (data.auto_clear_audit_logs !== undefined) {
           setAutoClear(data.auto_clear_audit_logs === 'true');
         }
+        if (data.allow_staff_stock_adjustments !== undefined) {
+          setAllowStaffAdjustments(data.allow_staff_stock_adjustments === 'true');
+        }
+        if (data.show_staff_stock_alerts !== undefined) {
+          setShowStaffStockAlerts(data.show_staff_stock_alerts === 'true');
+        }
       })
       .catch(console.error)
       .finally(() => setLoading(false));
@@ -44,10 +53,12 @@ export default function Settings() {
         body: JSON.stringify({ 
           low_stock_threshold: threshold,
           audit_log_retention_days: retentionDays,
-          auto_clear_audit_logs: autoClear
+          auto_clear_audit_logs: autoClear,
+          allow_staff_stock_adjustments: allowStaffAdjustments,
+          show_staff_stock_alerts: showStaffStockAlerts
         })
       });
-      setMessage('System configuration saved successfully.');
+      setMessage('System configuration and staff permission settings saved successfully.');
       setTimeout(() => setMessage(''), 4000);
     } catch (err: any) {
       alert(err.message || 'Failed to save settings');
@@ -94,8 +105,8 @@ export default function Settings() {
           <SettingsIcon size={22} />
         </div>
         <div>
-          <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">System Configuration</h1>
-          <p className="text-[12px] text-slate-500 font-medium">Manage global business thresholds, audit log retention policies, and automated database maintenance</p>
+          <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">System Configuration & Governance</h1>
+          <p className="text-[12px] text-slate-500 font-medium">Manage global business thresholds, staff dashboard permissions, and database maintenance</p>
         </div>
       </div>
 
@@ -123,8 +134,69 @@ export default function Settings() {
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                Products with stock quantities equal to or below this threshold trigger low stock alerts on the dashboard and system notifications.
+                Products with stock quantities equal to or below this threshold trigger automated visual alerts on the dashboard and system notifications.
               </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Staff Dashboard & Role Permissions Card */}
+        <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <SlidersHorizontal size={16} className="text-indigo-600" />
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Staff Role Permissions & Dashboard Display</h2>
+            </div>
+            <span className="px-2 py-0.5 bg-indigo-50 text-indigo-700 text-[10px] font-extrabold uppercase rounded border border-indigo-200">
+              Access Control
+            </span>
+          </div>
+
+          <div className="p-6 space-y-4">
+            {/* Toggle 1: Staff Stock Adjustments */}
+            <div className="flex items-start justify-between p-4 rounded border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+              <div className="pr-4">
+                <div className="flex items-center gap-2">
+                  <Lock size={15} className={allowStaffAdjustments ? 'text-indigo-600' : 'text-amber-600'} />
+                  <span className="text-xs font-black text-slate-900">Allow Staff to Record Stock Adjustments</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  When disabled (recommended), cashiers and staff users cannot manually add, deduct, or adjust inventory. Only Administrators can adjust stock counts.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={allowStaffAdjustments}
+                  onChange={e => setAllowStaffAdjustments(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-indigo-600"></div>
+              </label>
+            </div>
+
+            {/* Toggle 2: Show Low Stock Alerts on Staff Dashboard */}
+            <div className="flex items-start justify-between p-4 rounded border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+              <div className="pr-4">
+                <div className="flex items-center gap-2">
+                  <Eye size={15} className={showStaffStockAlerts ? 'text-emerald-600' : 'text-slate-400'} />
+                  <span className="text-xs font-black text-slate-900">Show Real-Time Low Stock Alerts in Staff Dashboard</span>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                  Controls whether cashiers and staff see the automated real-time visual low-stock indicator banner on their terminal dashboard.
+                </p>
+              </div>
+
+              <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                <input
+                  type="checkbox"
+                  checked={showStaffStockAlerts}
+                  onChange={e => setShowStaffStockAlerts(e.target.checked)}
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-emerald-600"></div>
+              </label>
             </div>
           </div>
         </div>
