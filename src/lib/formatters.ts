@@ -4,10 +4,10 @@
  * @returns A string formatted with the GH₵ symbol
  */
 export const formatGHS = (amount: number): string => {
-  return new Intl.NumberFormat('en-GH', {
-    style: 'currency',
-    currency: 'GHS',
+  const formatted = new Intl.NumberFormat('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
-  }).format(amount);
+  }).format(amount || 0);
+  return `₵${formatted}`;
 };
+

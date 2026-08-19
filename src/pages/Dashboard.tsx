@@ -8,7 +8,7 @@ import {
   Users, Calendar, RefreshCw, ChevronRight, FileText, Settings, 
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
-  CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store
+  CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store, Zap
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../lib/api';
@@ -35,6 +35,14 @@ export default function Dashboard() {
   const [trendChartType, setTrendChartType] = useState<'area' | 'bar'>('area');
   const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
+
+  // Quick Sale Modal State
+  const [showQuickSaleModal, setShowQuickSaleModal] = useState(false);
+  const [quickSaleCart, setQuickSaleCart] = useState<Array<{ product_id: number; name: string; quantity: number; unit_price: number; max_stock: number }>>([]);
+  const [quickSaleSearch, setQuickSaleSearch] = useState('');
+  const [quickSaleCustomerName, setQuickSaleCustomerName] = useState('');
+  const [quickSalePaymentMethod, setQuickSalePaymentMethod] = useState('Cash');
+  const [isProcessingQuickSale, setIsProcessingQuickSale] = useState(false);
 
   // Staff Permissions and Alert Display Settings
   const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
@@ -417,6 +425,77 @@ export default function Dashboard() {
           <Users size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
           <span className="text-xs font-black uppercase tracking-wider">Customers</span>
         </Link>
+      </div>
+
+      {/* REORDER POINT & LOW STOCK REPLENISHMENT WIDGET */}
+      <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+          <div>
+            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <AlertTriangle size={16} className="text-amber-600" /> Inventory Reorder Points & Low Stock Replenishment
+            </h2>
+            <p className="text-xs text-slate-500">Products currently at or below their reorder point threshold requiring purchase or replenishment.</p>
+          </div>
+          <div className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded border border-amber-200">
+            {lowStockProducts.length} Item(s) Need Restocking
+          </div>
+        </div>
+
+        {lowStockProducts.length === 0 ? (
+          <div className="py-8 text-center text-slate-400 text-xs">
+            <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1" />
+            All inventory levels are currently above reorder point thresholds.
+          </div>
+        ) : (
+          <div className="overflow-x-auto max-h-[300px]">
+            <table className="w-full text-left text-xs">
+              <thead className="bg-slate-50 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0">
+                <tr>
+                  <th className="p-2.5">Product Name</th>
+                  <th className="p-2.5">SKU / Barcode</th>
+                  <th className="p-2.5 text-right">In Stock</th>
+                  <th className="p-2.5 text-right">Reorder Level</th>
+                  <th className="p-2.5 text-center">Status</th>
+                  <th className="p-2.5 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {lowStockProducts.map((p) => {
+                  const isOut = p.stock_quantity === 0;
+                  return (
+                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                      <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
+                      <td className="p-2.5 text-slate-500 font-mono text-[11px]">{p.sku || p.barcode || 'N/A'}</td>
+                      <td className="p-2.5 text-right font-black text-slate-900">
+                        <span className={`px-2 py-0.5 rounded ${isOut ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
+                          {p.stock_quantity}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-right text-slate-600">{p.min_stock_level || globalThreshold}</td>
+                      <td className="p-2.5 text-center">
+                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${isOut ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`}>
+                          {isOut ? 'Out of Stock' : 'Low Stock'}
+                        </span>
+                      </td>
+                      <td className="p-2.5 text-right">
+                        <button
+                          onClick={() => {
+                            setSelectedProductForRestock(p);
+                            setRestockQty(Math.max(10, (p.min_stock_level || 10) * 2 - p.stock_quantity));
+                            setShowRestockModal(true);
+                          }}
+                          className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[11px] uppercase tracking-wider transition"
+                        >
+                          Restock
+                        </button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* ADMIN OVERVIEW VIEW */}

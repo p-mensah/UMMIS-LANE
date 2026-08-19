@@ -1,14 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import { 
   LayoutDashboard, Package, ShoppingCart, Truck, LogOut, FileText, 
   Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, 
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
   Store, Building2, Wallet, Menu, X, Lock,
-  SlidersHorizontal, UserCog, History, FolderTree, Scale
+  SlidersHorizontal, UserCog, History, FolderTree, Scale, Search
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
+import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
   to: string;
@@ -59,6 +60,64 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  // Global search state
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<{ products: any[]; customers: any[]; transactions: any[] }>({ products: [], customers: [], transactions: [] });
+  const [isSearching, setIsSearching] = useState(false);
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+  const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
+        setShowSearchDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    if (!searchQuery.trim() || searchQuery.length < 2) {
+      setSearchResults({ products: [], customers: [], transactions: [] });
+      setIsSearching(false);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const [prods, custs, trans] = await Promise.all([
+          fetchApi('/products').catch(() => []),
+          fetchApi('/customers').catch(() => []),
+          fetchApi('/reports/transactions').catch(() => [])
+        ]);
+
+        const q = searchQuery.toLowerCase();
+        const matchedProds = (Array.isArray(prods) ? prods : []).filter((p: any) => 
+          p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
+        ).slice(0, 5);
+
+        const matchedCusts = (Array.isArray(custs) ? custs : []).filter((c: any) => 
+          c.name?.toLowerCase().includes(q) || c.phone?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q)
+        ).slice(0, 5);
+
+        const matchedTrans = (Array.isArray(trans) ? trans : []).filter((t: any) => 
+          t.id?.toString().includes(q) || t.customer_name?.toLowerCase().includes(q) || t.payment_method?.toLowerCase().includes(q)
+        ).slice(0, 5);
+
+        setSearchResults({ products: matchedProds, customers: matchedCusts, transactions: matchedTrans });
+        setShowSearchDropdown(true);
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
 
   const handleLogout = () => {
     logout();
@@ -269,6 +328,103 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                 {getPageTitle()}
               </h2>
             </div>
+          </div>
+
+          {/* Global Search Bar */}
+          <div className="relative flex-1 max-w-xs mx-4 hidden md:block" ref={searchRef}>
+            <div className="relative">
+              <Search size={15} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
+              <input
+                type="text"
+                placeholder="Search products, customers, transactions..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                onFocus={() => { if (searchQuery.length >= 2) setShowSearchDropdown(true); }}
+                className="w-full pl-9 pr-8 py-1.5 bg-slate-100 focus:bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
+              />
+              {searchQuery && (
+                <button 
+                  onClick={() => { setSearchQuery(''); setShowSearchDropdown(false); }}
+                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {/* Search Results Dropdown */}
+            {showSearchDropdown && (
+              <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 max-h-96 overflow-y-auto z-50 divide-y divide-slate-100">
+                {isSearching ? (
+                  <div className="p-4 text-center text-xs text-slate-400 font-medium">Searching records...</div>
+                ) : searchResults.products.length === 0 && searchResults.customers.length === 0 && searchResults.transactions.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-slate-400 font-medium">No results found for "{searchQuery}"</div>
+                ) : (
+                  <div className="py-2">
+                    {/* Products */}
+                    {searchResults.products.length > 0 && (
+                      <div>
+                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Products ({searchResults.products.length})</div>
+                        {searchResults.products.map((p: any) => (
+                          <div 
+                            key={`prod-${p.id}`}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/products'); }}
+                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <Package size={14} className="text-blue-600 shrink-0" />
+                              <span className="font-bold text-slate-900 truncate">{p.name}</span>
+                              <span className="text-[10px] font-mono text-slate-400">SKU: {p.sku}</span>
+                            </div>
+                            <span className="font-black text-blue-600">GH₵{p.selling_price?.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Customers */}
+                    {searchResults.customers.length > 0 && (
+                      <div>
+                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Customers ({searchResults.customers.length})</div>
+                        {searchResults.customers.map((c: any) => (
+                          <div 
+                            key={`cust-${c.id}`}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/customers'); }}
+                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <UserCheck size={14} className="text-emerald-600 shrink-0" />
+                              <span className="font-bold text-slate-900">{c.name}</span>
+                              <span className="text-[10px] text-slate-500">{c.phone || c.email}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Transactions */}
+                    {searchResults.transactions.length > 0 && (
+                      <div>
+                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Transactions ({searchResults.transactions.length})</div>
+                        {searchResults.transactions.map((t: any) => (
+                          <div 
+                            key={`trans-${t.id}`}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/transactions'); }}
+                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
+                          >
+                            <div className="flex items-center gap-2">
+                              <ArrowLeftRight size={14} className="text-indigo-600 shrink-0" />
+                              <span className="font-bold text-slate-900">Sale #{t.id} - {t.customer_name || 'Walk-in'}</span>
+                            </div>
+                            <span className="font-black text-slate-900">GH₵{t.total?.toFixed(2)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">

@@ -11,11 +11,15 @@ if (typeof window !== 'undefined') {
     if (
       reasonStr.includes('WebSocket') ||
       messageStr.includes('WebSocket') ||
-      reasonStr.includes('WebSocket closed without opened') ||
-      messageStr.includes('WebSocket closed without opened') ||
-      reasonStr.includes('failed to connect to websocket') ||
+      reasonStr.includes('closed without opened') ||
       messageStr.includes('failed to connect to websocket')
     ) {
+      event.preventDefault();
+    }
+  });
+  window.addEventListener('error', (event) => {
+    const msg = String(event.message || '');
+    if (msg.includes('WebSocket') || msg.includes('closed without opened')) {
       event.preventDefault();
     }
   });
