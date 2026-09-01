@@ -1,3 +1,15 @@
+export class ApiError extends Error {
+  status: number;
+  data?: any;
+
+  constructor(message: string, status: number, data?: any) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
 export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
 export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
@@ -10,7 +22,8 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
   };
 
   if (token) {
-    (headers as Record<string, string>)['Authorization'] = `Bearer ${token}`;
+    const bearer = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
+    (headers as Record<string, string>)['Authorization'] = bearer;
   }
 
   // Ensure endpoint starts with a slash
@@ -29,10 +42,12 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
 
     if (!response.ok) {
       let errorMessage = `Server responded with status ${response.status}`;
+      let parsedErrorData: any = null;
       
       if (isJson) {
         try {
           const errorData = await response.json();
+          parsedErrorData = errorData;
           if (errorData) {
             if (typeof errorData === 'string') {
               errorMessage = errorData;
@@ -55,15 +70,15 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
         if (response.status === 404) {
           errorMessage = 'API endpoint not found (404). Please ensure the backend server is running.';
         } else if (response.status === 401) {
-          errorMessage = 'Invalid email or password credentials.';
+          errorMessage = 'Invalid email or password credentials (401).';
         } else if (response.status === 403) {
-          errorMessage = 'Access denied. You do not have permission to perform this action.';
+          errorMessage = 'Access forbidden (403). Administrator privileges are required to perform this action.';
         } else if (response.status >= 500) {
           errorMessage = 'Internal server error. Please check server logs.';
         }
       }
 
-      throw new Error(errorMessage);
+      throw new ApiError(errorMessage, response.status, parsedErrorData);
     }
 
     if (isJson) {

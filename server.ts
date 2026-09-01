@@ -1890,6 +1890,25 @@ app.put('/api/users/:id/status', authenticate, requireAdmin, (req, res) => {
   }
 });
 
+app.put('/api/users/:id', authenticate, requireAdmin, (req, res) => {
+  const { name, role } = req.body;
+  try {
+    if (role && !['admin', 'staff'].includes(role)) {
+      return res.status(400).json({ error: 'Invalid role specified' });
+    }
+    if (name && role) {
+      db.prepare('UPDATE users SET name = ?, role = ? WHERE id = ?').run(name, role, req.params.id);
+    } else if (name) {
+      db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, req.params.id);
+    } else if (role) {
+      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+    }
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.put('/api/users/:id/role', authenticate, requireAdmin, (req, res) => {
   const { role } = req.body;
   try {
