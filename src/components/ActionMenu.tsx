@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Edit2, UserX, UserCheck, Trash2, Loader2 } from 'lucide-react';
+import { MoreVertical, Edit2, UserX, UserCheck, Trash2, Loader2, Eye, ShieldCheck, Sliders } from 'lucide-react';
 import { suspendUser, reactivateUser, deleteUser as deleteAdminUser } from '../lib/adminApi';
 import { fetchApi, ApiError } from '../lib/api';
 import { useNotifications } from '../context/NotificationContext';
@@ -10,24 +10,37 @@ export interface ActionMenuItemUser {
   email: string;
   role: string;
   is_active?: number;
+  profile_picture?: string | null;
+  created_at?: string;
+  created_by?: string;
+  last_login_at?: string | null;
+  last_login_ip?: string | null;
+  force_password_reset?: number;
+  session_revoked_at?: string | null;
 }
 
 interface ActionMenuProps {
   user: ActionMenuItemUser;
+  onView?: (user: ActionMenuItemUser) => void;
+  onSecurity?: (user: ActionMenuItemUser) => void;
   onEdit?: (user: ActionMenuItemUser) => void;
   onSuccess?: () => void;
   onToggleStatus?: (user: ActionMenuItemUser) => Promise<void> | void;
   onDelete?: (user: ActionMenuItemUser) => Promise<void> | void;
+  onToggleNavigationSlider?: () => void;
   isPrimaryAdmin?: boolean;
   disabled?: boolean;
 }
 
 export default function ActionMenu({
   user,
+  onView,
+  onSecurity,
   onEdit,
   onSuccess,
   onToggleStatus,
   onDelete,
+  onToggleNavigationSlider,
   isPrimaryAdmin = false,
   disabled = false
 }: ActionMenuProps) {
@@ -65,36 +78,60 @@ export default function ActionMenu({
     return null;
   }
 
-  const handleEditClick = () => {
-    console.log('[ActionMenu] Triggering Edit for user:', user.email);
-    setIsOpen(false);
+  const handleThreeDotsClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(prev => !prev);
+    // When clicking on three dots, also notify navigation slider if attached
+    if (onToggleNavigationSlider) {
+      onToggleNavigationSlider();
+    }
+  };
+
+  const handleViewClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false); // Hide the three dots menu
+    if (onView) {
+      onView(user);
+    }
+  };
+
+  const handleSecurityClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false); // Hide the three dots menu
+    if (onSecurity) {
+      onSecurity(user);
+    } else if (onEdit) {
+      onEdit(user);
+    }
+  };
+
+  const handleEditClick = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false); // Hide the three dots menu
     if (onEdit) {
       onEdit(user);
     }
   };
 
-  const handleToggleStatusClick = async () => {
-    setIsOpen(false);
+  const handleToggleStatusClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false); // Hide the three dots menu
     const actionLabel = isActive ? 'suspend' : 'activate';
     
     if (!confirm(`Are you sure you want to ${actionLabel} user "${user.name}" (${user.email})?`)) {
       return;
     }
 
-    console.log(`[ActionMenu] Attempting to ${actionLabel} user:`, { id: user.id, email: user.email });
     setIsProcessing(true);
 
     try {
       if (onToggleStatus) {
         await onToggleStatus(user);
       } else {
-        // Direct execution of adminApi functions
         try {
           if (isActive) {
-            console.log('[ActionMenu] Calling suspendUser adminApi...');
             await suspendUser(user.id);
           } else {
-            console.log('[ActionMenu] Calling reactivateUser adminApi...');
             await reactivateUser(user.id);
           }
         } catch (edgeErr: any) {
@@ -104,7 +141,6 @@ export default function ActionMenu({
           }
         }
 
-        // Update backend database
         await fetchApi(`/users/${user.id}/status`, {
           method: 'PUT',
           body: JSON.stringify({ is_active: !isActive })
@@ -143,8 +179,9 @@ export default function ActionMenu({
     }
   };
 
-  const handleDeleteClick = async () => {
-    setIsOpen(false);
+  const handleDeleteClick = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setIsOpen(false); // Hide the three dots menu
     if (isPrimaryAdmin || user.email === 'rabbi@ummis.com' || user.email === 'admin@admin.com') {
       alert('Security Policy: The primary administrator account cannot be deleted.');
       return;
@@ -154,16 +191,13 @@ export default function ActionMenu({
       return;
     }
 
-    console.log('[ActionMenu] Attempting to delete user:', { id: user.id, email: user.email });
     setIsProcessing(true);
 
     try {
       if (onDelete) {
         await onDelete(user);
       } else {
-        // Direct execution of adminApi deleteUser function
         try {
-          console.log('[ActionMenu] Calling deleteUser adminApi...');
           await deleteAdminUser(user.id);
         } catch (edgeErr: any) {
           console.warn('[ActionMenu] adminApi delete edge function note:', edgeErr.message);
@@ -172,7 +206,6 @@ export default function ActionMenu({
           }
         }
 
-        // Delete from backend database
         await fetchApi(`/users/${user.id}`, {
           method: 'DELETE'
         });
@@ -214,9 +247,11 @@ export default function ActionMenu({
     <div className="relative inline-block text-left" ref={menuRef}>
       <button
         type="button"
-        onClick={() => setIsOpen(prev => !prev)}
+        onClick={handleThreeDotsClick}
         disabled={isProcessing}
-        className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50"
+        className={`p-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 ${
+          isOpen ? 'bg-slate-200 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+        }`}
         title="More user actions"
         aria-expanded={isOpen}
       >
@@ -229,18 +264,41 @@ export default function ActionMenu({
 
       {isOpen && (
         <div 
-          className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-0 top-full mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
           role="menu"
         >
+          {/* View Option */}
+          <div className="py-1">
+            <button
+              type="button"
+              onClick={handleViewClick}
+              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors"
+              role="menuitem"
+            >
+              <Eye size={14} className="text-blue-600 shrink-0" />
+              <span>View Profile & Security</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSecurityClick}
+              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 transition-colors"
+              role="menuitem"
+            >
+              <ShieldCheck size={14} className="text-indigo-600 shrink-0" />
+              <span>Security & Reset</span>
+            </button>
+          </div>
+
           <div className="py-1">
             <button
               type="button"
               onClick={handleEditClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-blue-600 flex items-center gap-2.5 transition-colors"
+              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
               role="menuitem"
             >
-              <Edit2 size={14} className="text-blue-600 shrink-0" />
-              <span>Edit</span>
+              <Edit2 size={14} className="text-slate-600 shrink-0" />
+              <span>Edit Account</span>
             </button>
 
             <button
@@ -252,12 +310,12 @@ export default function ActionMenu({
               {isActive ? (
                 <>
                   <UserX size={14} className="text-amber-600 shrink-0" />
-                  <span className="text-amber-700">Suspend</span>
+                  <span className="text-amber-700">Suspend Account</span>
                 </>
               ) : (
                 <>
                   <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                  <span className="text-emerald-700">Activate</span>
+                  <span className="text-emerald-700">Reactivate Account</span>
                 </>
               )}
             </button>
@@ -272,7 +330,7 @@ export default function ActionMenu({
                 role="menuitem"
               >
                 <Trash2 size={14} className="shrink-0" />
-                <span>Delete</span>
+                <span>Delete Account</span>
               </button>
             </div>
           )}

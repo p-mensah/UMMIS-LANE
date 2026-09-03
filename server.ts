@@ -31,7 +31,14 @@ function addColumnOrIgnore(tableName: string, columnName: string, columnDef: str
     const tableInfo = db.prepare(`PRAGMA table_info(${tableName})`).all() as any[];
     const hasColumn = tableInfo.some(col => col.name === columnName);
     if (!hasColumn) {
-      db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${columnDef}`).run();
+      // In SQLite, ALTER TABLE ADD COLUMN does NOT allow non-constant defaults like CURRENT_TIMESTAMP
+      const sanitizedDef = columnDef.replace(/DEFAULT\s+CURRENT_TIMESTAMP/gi, '').trim();
+      db.prepare(`ALTER TABLE ${tableName} ADD COLUMN ${columnName} ${sanitizedDef}`).run();
+      if (/CURRENT_TIMESTAMP/i.test(columnDef)) {
+        try {
+          db.prepare(`UPDATE ${tableName} SET ${columnName} = datetime('now') WHERE ${columnName} IS NULL`).run();
+        } catch (e) {}
+      }
     }
   } catch(e) {
     console.error(`Failed to add column ${columnName} to ${tableName}:`, e);
@@ -46,7 +53,9 @@ function initDb() {
       email TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'staff',
-      is_active INTEGER DEFAULT 1
+      is_active INTEGER DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login_at DATETIME
     );
 
     CREATE TABLE IF NOT EXISTS categories (
@@ -245,8 +254,52 @@ function initDb() {
   addColumnOrIgnore('products', 'image_url', 'TEXT');
   addColumnOrIgnore('products', 'min_stock_level', 'INTEGER DEFAULT NULL');
   addColumnOrIgnore('users', 'is_active', 'INTEGER DEFAULT 1');
+  addColumnOrIgnore('users', 'created_at', 'DATETIME');
+  addColumnOrIgnore('users', 'last_login_at', 'DATETIME');
+  addColumnOrIgnore('users', 'profile_picture', 'TEXT');
+  addColumnOrIgnore('users', 'force_password_reset', 'INTEGER DEFAULT 0');
+  addColumnOrIgnore('users', 'session_revoked_at', 'DATETIME');
+
+  // Explicitly ensure users table columns and backfill created_at for existing users
+  try {
+    const tableInfo = db.prepare('PRAGMA table_info(users)').all() as any[];
+    const colNames = tableInfo.map((c: any) => c.name);
+    if (!colNames.includes('is_active')) {
+      db.prepare('ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1').run();
+    }
+    if (!colNames.includes('created_at')) {
+      db.prepare('ALTER TABLE users ADD COLUMN created_at DATETIME').run();
+      db.prepare("UPDATE users SET created_at = datetime('now') WHERE created_at IS NULL").run();
+    }
+    if (!colNames.includes('last_login_at')) {
+      db.prepare('ALTER TABLE users ADD COLUMN last_login_at DATETIME').run();
+    }
+    if (!colNames.includes('profile_picture')) {
+      db.prepare('ALTER TABLE users ADD COLUMN profile_picture TEXT').run();
+    }
+    if (!colNames.includes('force_password_reset')) {
+      db.prepare('ALTER TABLE users ADD COLUMN force_password_reset INTEGER DEFAULT 0').run();
+    }
+    if (!colNames.includes('session_revoked_at')) {
+      db.prepare('ALTER TABLE users ADD COLUMN session_revoked_at DATETIME').run();
+    }
+  } catch (err) {
+    console.error('Migration error for users columns:', err);
+  }
 
   // Seed default settings
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'Ummis Lane Enterprise')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_address', 'Madina Market, Main Station, Accra - Ghana')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_phone', '+233 24 123 4567')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_email', 'info@ummislane.com')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_id', 'C0012345678')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_code', 'GHS')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('currency_symbol', 'GH₵')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_rate', '0')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('tax_inclusive', 'true')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('max_staff_discount_percent', '10')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('receipt_header', 'Welcome to Ummis Lane Enterprise - Quality at Best Prices')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('receipt_footer', 'Goods sold in good condition are non-refundable after 7 days. Thank you for your business!')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('low_stock_threshold', '10')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('audit_log_retention_days', '90')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_clear_audit_logs', 'true')").run();
@@ -288,6 +341,15 @@ function initDb() {
     db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Key Vendor Supplier', supplierEmail2, supplierHash, 'supplier');
   } else {
     db.prepare('UPDATE users SET password = ?, role = ? WHERE email = ?').run(supplierHash, 'supplier', supplierEmail2);
+  }
+
+  // Seed store owner / super admin
+  const ingEmail = 'ing.mensah@gmail.com';
+  const checkIng = db.prepare('SELECT id FROM users WHERE LOWER(email) = ?').get(ingEmail.toLowerCase());
+  if (!checkIng) {
+    db.prepare("INSERT INTO users (name, email, password, role, is_active, created_at) VALUES (?, ?, ?, ?, 1, datetime('now'))").run('Ing. Mensah (Owner)', ingEmail, adminHash, 'admin');
+  } else {
+    db.prepare('UPDATE users SET role = ? WHERE LOWER(email) = ?').run('admin', ingEmail.toLowerCase());
   }
 
   // Create supplier interactions table
@@ -488,6 +550,18 @@ try {
 }
 
 // --- Audit & Notification Helpers ---
+function getClientIp(req: any): string {
+  try {
+    const forwarded = req.headers?.['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      return forwarded.split(',')[0].trim();
+    }
+    return req.socket?.remoteAddress || req.ip || '127.0.0.1';
+  } catch {
+    return '127.0.0.1';
+  }
+}
+
 function logAuditEvent(userId: number | null, userName: string | null, action: string, category: string = 'general', details: string | null = null, ipAddress: string | null = null) {
   try {
     db.prepare(`
@@ -644,9 +718,28 @@ const authenticate = (req: any, res: any, next: any) => {
       return next();
     }
     const decoded: any = jwt.verify(token, JWT_SECRET);
-    if (decoded.email && (decoded.email.toLowerCase().includes('rabbi') || decoded.email.toLowerCase().includes('admin'))) {
+    if (decoded.email && (decoded.email.toLowerCase().includes('rabbi') || decoded.email.toLowerCase().includes('admin') || decoded.email.toLowerCase().includes('mensah'))) {
       decoded.role = 'admin';
     }
+
+    // Enforce active status and session revocation
+    if (decoded.id) {
+      try {
+        const uRec: any = db.prepare('SELECT is_active, session_revoked_at FROM users WHERE id = ?').get(decoded.id);
+        if (uRec) {
+          if (uRec.is_active === 0) {
+            return res.status(403).json({ error: 'Your account has been suspended.' });
+          }
+          if (uRec.session_revoked_at && decoded.iat) {
+            const revokedTs = new Date(uRec.session_revoked_at).getTime();
+            if (decoded.iat * 1000 < revokedTs) {
+              return res.status(401).json({ error: 'Active session has been revoked by an administrator. Please sign in again.' });
+            }
+          }
+        }
+      } catch (e) {}
+    }
+
     req.user = decoded;
     next();
   } catch (error) {
@@ -654,7 +747,7 @@ const authenticate = (req: any, res: any, next: any) => {
       const decodedAny: any = jwt.decode(token);
       if (decodedAny && (decodedAny.email || decodedAny.sub)) {
         const email = decodedAny.email || 'user@example.com';
-        const role = (email.toLowerCase().includes('rabbi') || email.toLowerCase().includes('admin')) ? 'admin' : (decodedAny.role || decodedAny.user_metadata?.role || (email.toLowerCase().includes('supplier') || email.toLowerCase().includes('nestle') ? 'supplier' : 'staff'));
+        const role = (email.toLowerCase().includes('rabbi') || email.toLowerCase().includes('admin') || email.toLowerCase().includes('mensah')) ? 'admin' : (decodedAny.role || decodedAny.user_metadata?.role || (email.toLowerCase().includes('supplier') || email.toLowerCase().includes('nestle') ? 'supplier' : 'staff'));
         req.user = {
           id: decodedAny.sub || decodedAny.id || 1,
           email,
@@ -682,14 +775,39 @@ app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
   const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
   if (!user || !bcrypt.compareSync(password, user.password)) {
+    logAuditEvent(null, email || 'Unknown', 'Failed Login Attempt', 'auth', `Failed login attempt with email: ${email}`, getClientIp(req));
     return res.status(401).json({ error: 'Invalid credentials' });
   }
+
+  if (user.is_active === 0) {
+    logAuditEvent(user.id, user.name, 'Blocked Suspended Login', 'auth', `Suspended account ${email} attempted to log in`, getClientIp(req));
+    return res.status(403).json({ error: 'Your account has been suspended. Please contact your store administrator.' });
+  }
+
+  db.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
+  logAuditEvent(user.id, user.name, 'User Logged In', 'auth', `User ${user.email} (${user.role}) logged in successfully`, getClientIp(req));
+
   const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
-  res.json({ token, user: { id: user.id, email: user.email, role: user.role, name: user.name } });
+  res.json({ 
+    token, 
+    user: { 
+      id: user.id, 
+      email: user.email, 
+      role: user.role, 
+      name: user.name,
+      profile_picture: user.profile_picture || null,
+      force_password_reset: user.force_password_reset || 0
+    } 
+  });
 });
 
 app.get('/api/auth/me', authenticate, (req: any, res) => {
-  res.json({ user: req.user });
+  try {
+    const userRec: any = db.prepare('SELECT id, name, email, role, profile_picture, force_password_reset FROM users WHERE id = ?').get(req.user.id);
+    res.json({ user: userRec ? { ...req.user, ...userRec } : req.user });
+  } catch (e) {
+    res.json({ user: req.user });
+  }
 });
 
 // Products
@@ -2097,7 +2215,72 @@ app.get('/api/reports/staff-transactions-report', authenticate, (req: any, res) 
 
 app.get('/api/users', authenticate, (req, res) => {
   try {
-    const usersList = db.prepare('SELECT id, name, email, role, is_active FROM users ORDER BY name ASC').all();
+    const tableInfo = db.prepare('PRAGMA table_info(users)').all() as any[];
+    const colNames = tableInfo.map((c: any) => c.name);
+
+    if (!colNames.includes('created_at')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN created_at DATETIME').run();
+        db.prepare("UPDATE users SET created_at = datetime('now') WHERE created_at IS NULL").run();
+        colNames.push('created_at');
+      } catch (e) {}
+    }
+    if (!colNames.includes('last_login_at')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN last_login_at DATETIME').run();
+        colNames.push('last_login_at');
+      } catch (e) {}
+    }
+    if (!colNames.includes('is_active')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1').run();
+        colNames.push('is_active');
+      } catch (e) {}
+    }
+    if (!colNames.includes('profile_picture')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN profile_picture TEXT').run();
+        colNames.push('profile_picture');
+      } catch (e) {}
+    }
+    if (!colNames.includes('force_password_reset')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN force_password_reset INTEGER DEFAULT 0').run();
+        colNames.push('force_password_reset');
+      } catch (e) {}
+    }
+    if (!colNames.includes('session_revoked_at')) {
+      try {
+        db.prepare('ALTER TABLE users ADD COLUMN session_revoked_at DATETIME').run();
+        colNames.push('session_revoked_at');
+      } catch (e) {}
+    }
+
+    // Created date and last login handled with authentic audit security log cross-referencing
+    const usersList = db.prepare(`
+      SELECT 
+        u.id, 
+        u.name, 
+        u.email, 
+        u.role, 
+        u.is_active, 
+        u.profile_picture,
+        u.force_password_reset,
+        u.session_revoked_at,
+        COALESCE(
+          (SELECT a.created_at FROM audit_logs a WHERE a.action IN ('Created User Account', 'USER_CREATED', 'Registered User') AND (a.details LIKE '%' || u.email || '%' OR a.user_id = u.id) ORDER BY a.id ASC LIMIT 1),
+          u.created_at,
+          datetime('now')
+        ) as created_at,
+        (SELECT a.user_name FROM audit_logs a WHERE a.action IN ('Created User Account', 'USER_CREATED', 'Registered User') AND (a.details LIKE '%' || u.email || '%' OR a.user_id = u.id) ORDER BY a.id ASC LIMIT 1) as created_by,
+        COALESCE(
+          (SELECT a.created_at FROM audit_logs a WHERE (a.user_id = u.id OR a.details LIKE '%' || u.email || '%') AND (a.action LIKE '%login%' OR a.action LIKE '%Login%') AND a.action NOT LIKE '%Blocked%' AND a.action NOT LIKE '%Failed%' ORDER BY a.id DESC LIMIT 1),
+          u.last_login_at
+        ) as last_login_at,
+        (SELECT a.ip_address FROM audit_logs a WHERE (a.user_id = u.id OR a.details LIKE '%' || u.email || '%') AND (a.action LIKE '%login%' OR a.action LIKE '%Login%') AND a.action NOT LIKE '%Blocked%' AND a.action NOT LIKE '%Failed%' ORDER BY a.id DESC LIMIT 1) as last_login_ip
+      FROM users u 
+      ORDER BY u.name ASC
+    `).all();
     res.json(usersList);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -2105,66 +2288,344 @@ app.get('/api/users', authenticate, (req, res) => {
 });
 
 // Users Management (Admin)
-app.post('/api/users', authenticate, requireAdmin, (req, res) => {
-  const { name, email, password, role } = req.body;
+app.post('/api/users', authenticate, requireAdmin, (req: any, res) => {
+  const { name, email, password, role, profile_picture } = req.body;
+  const validRoles = ['admin', 'staff', 'supplier'];
+  const userRole = role || 'staff';
+
+  if (!validRoles.includes(userRole)) {
+    return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
+  }
+
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const result = db.prepare('INSERT INTO users (name, email, password, role, is_active) VALUES (?, ?, ?, ?, 1)').run(name, email, hash, role || 'staff');
+    const result = db.prepare("INSERT INTO users (name, email, password, role, is_active, created_at, profile_picture) VALUES (?, ?, ?, ?, 1, datetime('now'), ?)").run(name, email, hash, userRole, profile_picture || null);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Created User Account',
+      'auth',
+      `Registered user account "${name}" (${email}) with role: ${userRole}`,
+      getClientIp(req)
+    );
     res.json({ id: result.lastInsertRowid });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.put('/api/users/:id/status', authenticate, requireAdmin, (req, res) => {
+app.put('/api/users/:id/status', authenticate, requireAdmin, (req: any, res) => {
   const { is_active } = req.body;
+  const targetId = Number(req.params.id);
+
+  if (targetId === Number(req.user.id)) {
+    return res.status(400).json({ error: 'You cannot suspend your own administrative account.' });
+  }
+
   try {
-    db.prepare('UPDATE users SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, req.params.id);
+    const target: any = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    db.prepare('UPDATE users SET is_active = ? WHERE id = ?').run(is_active ? 1 : 0, targetId);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      is_active ? 'Reactivated User Account' : 'Suspended User Account',
+      'auth',
+      `${is_active ? 'Reactivated' : 'Suspended'} user account ${target.name} (${target.email})`,
+      getClientIp(req)
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.put('/api/users/:id', authenticate, requireAdmin, (req, res) => {
-  const { name, role } = req.body;
+app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
+  const { name, role, password, profile_picture } = req.body;
+  const targetId = Number(req.params.id);
+  const validRoles = ['admin', 'staff', 'supplier'];
+
   try {
-    if (role && !['admin', 'staff'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role specified' });
+    const target: any = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    if (role && !validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
     }
-    if (name && role) {
-      db.prepare('UPDATE users SET name = ?, role = ? WHERE id = ?').run(name, role, req.params.id);
-    } else if (name) {
-      db.prepare('UPDATE users SET name = ? WHERE id = ?').run(name, req.params.id);
-    } else if (role) {
-      db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+
+    if (targetId === Number(req.user.id) && role && role !== 'admin') {
+      return res.status(400).json({ error: 'You cannot remove administrative privileges from your own account.' });
     }
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (name && name.trim()) {
+      updates.push('name = ?');
+      params.push(name.trim());
+    }
+    if (role) {
+      updates.push('role = ?');
+      params.push(role);
+    }
+    if (password && password.trim()) {
+      updates.push('password = ?');
+      params.push(bcrypt.hashSync(password.trim(), 10));
+    }
+    if (profile_picture !== undefined) {
+      updates.push('profile_picture = ?');
+      params.push(profile_picture);
+    }
+
+    if (updates.length > 0) {
+      params.push(targetId);
+      db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+      const logDetails = `Updated user ${target.email}: ` + [
+        name ? `name: "${name}"` : '',
+        role ? `role: "${role}"` : '',
+        password ? 'password reset' : '',
+        profile_picture !== undefined ? 'avatar updated' : ''
+      ].filter(Boolean).join(', ');
+
+      logAuditEvent(req.user.id, req.user.name, 'Updated User Account', 'auth', logDetails, getClientIp(req));
+    }
+
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.put('/api/users/:id/role', authenticate, requireAdmin, (req, res) => {
+// Update Profile Picture avatar directly
+app.post('/api/users/:id/avatar', authenticate, (req: any, res) => {
+  const targetId = Number(req.params.id);
+  const { profile_picture } = req.body;
+  
+  if (req.user.role !== 'admin' && Number(req.user.id) !== targetId) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const target: any = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    db.prepare('UPDATE users SET profile_picture = ? WHERE id = ?').run(profile_picture || null, targetId);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Updated User Avatar',
+      'auth',
+      `Updated profile picture for ${target.name} (${target.email})`,
+      getClientIp(req)
+    );
+    res.json({ success: true, profile_picture });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// User Security Details Endpoint (Audit Log Powered)
+app.get('/api/users/:id/security-details', authenticate, (req: any, res) => {
+  const targetId = Number(req.params.id);
+  if (req.user.role !== 'admin' && Number(req.user.id) !== targetId) {
+    return res.status(403).json({ error: 'Forbidden' });
+  }
+
+  try {
+    const target: any = db.prepare(`
+      SELECT id, name, email, role, is_active, profile_picture, created_at, last_login_at, force_password_reset, session_revoked_at
+      FROM users WHERE id = ?
+    `).get(targetId);
+
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    // Retrieve account creation event from audit logs
+    const creationAudit: any = db.prepare(`
+      SELECT created_at, user_name as created_by, ip_address, details
+      FROM audit_logs
+      WHERE action IN ('Created User Account', 'USER_CREATED', 'Registered User')
+        AND (details LIKE '%' || ? || '%' OR user_id = ?)
+      ORDER BY id ASC LIMIT 1
+    `).get(target.email, target.id);
+
+    // Retrieve recent login history from audit logs
+    const loginHistory = db.prepare(`
+      SELECT id, action, details, ip_address, created_at
+      FROM audit_logs
+      WHERE (user_id = ? OR details LIKE '%' || ? || '%')
+        AND (action LIKE '%login%' OR action LIKE '%Login%' OR action LIKE '%Session%')
+      ORDER BY id DESC LIMIT 15
+    `).all(target.id, target.email);
+
+    // Retrieve comprehensive security audit events for this user
+    const securityAuditHistory = db.prepare(`
+      SELECT id, action, category, details, ip_address, created_at, user_name
+      FROM audit_logs
+      WHERE (user_id = ? OR details LIKE '%' || ? || '%')
+      ORDER BY id DESC LIMIT 20
+    `).all(target.id, target.email);
+
+    // Latest successful login from audit logs
+    const latestLoginAudit: any = db.prepare(`
+      SELECT created_at, ip_address, details
+      FROM audit_logs
+      WHERE (user_id = ? OR details LIKE '%' || ? || '%')
+        AND (action LIKE '%login%' OR action LIKE '%Login%')
+        AND action NOT LIKE '%Blocked%' AND action NOT LIKE '%Failed%'
+      ORDER BY id DESC LIMIT 1
+    `).get(target.id, target.email);
+
+    const effectiveCreatedAt = creationAudit?.created_at || target.created_at;
+    const effectiveLastLogin = latestLoginAudit?.created_at || target.last_login_at;
+
+    res.json({
+      user: {
+        ...target,
+        created_at: effectiveCreatedAt,
+        created_by: creationAudit?.created_by || 'System Genesis',
+        creation_ip: creationAudit?.ip_address || null,
+        last_login_at: effectiveLastLogin,
+        last_login_ip: latestLoginAudit?.ip_address || null,
+        last_login_details: latestLoginAudit?.details || null
+      },
+      loginHistory,
+      securityAuditHistory,
+      totalLogins: loginHistory.filter((l: any) => l.action.toLowerCase().includes('logged in')).length
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Force Password Reset Endpoint (Admin Only)
+app.post('/api/users/:id/force-password-reset', authenticate, requireAdmin, (req: any, res) => {
+  const targetId = Number(req.params.id);
+  const { new_password, require_change_on_login, revoke_existing_sessions = true } = req.body;
+
+  try {
+    const target: any = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (new_password && new_password.trim()) {
+      const hash = bcrypt.hashSync(new_password.trim(), 10);
+      updates.push('password = ?');
+      params.push(hash);
+    }
+
+    if (revoke_existing_sessions) {
+      updates.push("session_revoked_at = datetime('now')");
+    }
+
+    updates.push("force_password_reset = ?");
+    params.push(require_change_on_login ? 1 : 0);
+
+    params.push(targetId);
+    db.prepare(`UPDATE users SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Forced Password Reset',
+      'auth',
+      `Admin forced password reset for user "${target.name}" (${target.email}). ${require_change_on_login ? 'Password change required on next login.' : ''} ${revoke_existing_sessions ? 'Existing active sessions terminated.' : ''}`,
+      getClientIp(req)
+    );
+
+    res.json({ 
+      success: true, 
+      message: `Password reset successfully enforced for ${target.email}.` 
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Revoke Active Sessions Endpoint (Admin Only)
+app.post('/api/users/:id/revoke-sessions', authenticate, requireAdmin, (req: any, res) => {
+  const targetId = Number(req.params.id);
+
+  try {
+    const target: any = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    db.prepare("UPDATE users SET session_revoked_at = datetime('now') WHERE id = ?").run(targetId);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Revoked Active Sessions',
+      'auth',
+      `Admin revoked all active login sessions and authentication tokens for user "${target.name}" (${target.email})`,
+      getClientIp(req)
+    );
+
+    res.json({ 
+      success: true, 
+      message: `All active sessions and tokens for ${target.email} have been revoked.` 
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/users/:id/role', authenticate, requireAdmin, (req: any, res) => {
   const { role } = req.body;
+  const targetId = Number(req.params.id);
+  const validRoles = ['admin', 'staff', 'supplier'];
+
   try {
-    if (!['admin', 'staff'].includes(role)) {
-      return res.status(400).json({ error: 'Invalid role specified' });
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
     }
-    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, req.params.id);
+    if (targetId === Number(req.user.id) && role !== 'admin') {
+      return res.status(400).json({ error: 'You cannot remove administrative privileges from your own account.' });
+    }
+    const target: any = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetId);
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, targetId);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Changed User Role',
+      'auth',
+      `Changed role for ${target.name} (${target.email}) from ${target.role} to ${role}`,
+      getClientIp(req)
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
 });
 
-app.delete('/api/users/:id', authenticate, requireAdmin, (req, res) => {
+app.delete('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
+  const targetId = Number(req.params.id);
+
+  if (targetId === Number(req.user.id)) {
+    return res.status(400).json({ error: 'You cannot delete your own active account.' });
+  }
+
   try {
-    const target = db.prepare('SELECT email FROM users WHERE id = ?').get(req.params.id) as any;
-    if (target && (target.email === 'rabbi@ummis.com' || target.email === 'admin@admin.com')) {
+    const target = db.prepare('SELECT email, name FROM users WHERE id = ?').get(targetId) as any;
+    if (!target) return res.status(404).json({ error: 'User not found' });
+
+    if (target.email === 'rabbi@ummis.com' || target.email === 'admin@admin.com') {
       return res.status(400).json({ error: 'Cannot delete the primary administrator account.' });
     }
-    db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(targetId);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Deleted User Account',
+      'auth',
+      `Deleted user account #${targetId} (${target.name} - ${target.email})`,
+      getClientIp(req)
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -2334,10 +2795,18 @@ app.get('/api/customers', authenticate, (req, res) => {
   }
 });
 
-app.post('/api/customers', authenticate, (req, res) => {
+app.post('/api/customers', authenticate, (req: any, res) => {
   const { name, phone, email } = req.body;
   try {
     const result = db.prepare('INSERT INTO customers (name, phone, email) VALUES (?, ?, ?)').run(name, phone, email);
+    logAuditEvent(
+      req.user?.id || null,
+      req.user?.name || 'User',
+      'Registered Customer',
+      'general',
+      `Registered customer profile "${name}" (${phone || 'No phone'})`,
+      getClientIp(req)
+    );
     res.json({ id: result.lastInsertRowid });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -2358,7 +2827,34 @@ app.post('/api/expenses', authenticate, requireAdmin, (req: any, res) => {
   const { description, amount } = req.body;
   try {
     const result = db.prepare('INSERT INTO expenses (description, amount, user_id) VALUES (?, ?, ?)').run(description, amount, req.user.id);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Recorded Store Expense',
+      'sales',
+      `Recorded business expense: "${description}" (${Number(amount).toFixed(2)})`,
+      getClientIp(req)
+    );
     res.json({ id: result.lastInsertRowid });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/expenses/:id', authenticate, requireAdmin, (req: any, res) => {
+  try {
+    const expense: any = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
+    if (!expense) return res.status(404).json({ error: 'Expense record not found' });
+    db.prepare('DELETE FROM expenses WHERE id = ?').run(req.params.id);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Deleted Store Expense',
+      'sales',
+      `Deleted expense entry #${req.params.id}: "${expense.description}" (${Number(expense.amount).toFixed(2)})`,
+      getClientIp(req)
+    );
+    res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -2380,6 +2876,14 @@ app.post('/api/shifts/open', authenticate, (req: any, res) => {
     const active = db.prepare('SELECT id FROM shifts WHERE user_id = ? AND status = ?').get(req.user.id, 'open');
     if (active) return res.status(400).json({ error: 'Shift already open' });
     const result = db.prepare('INSERT INTO shifts (user_id, starting_cash) VALUES (?, ?)').run(req.user.id, starting_cash || 0);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Opened Cashier Shift',
+      'sales',
+      `Opened shift register #${result.lastInsertRowid} with starting float of ${Number(starting_cash || 0).toFixed(2)}`,
+      getClientIp(req)
+    );
     res.json({ id: result.lastInsertRowid });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -2393,11 +2897,18 @@ app.post('/api/shifts/close', authenticate, (req: any, res) => {
     if (!active) return res.status(400).json({ error: 'No open shift' });
     
     // Calculate expected cash
-    // For simplicity, total sales since shift start.
     const salesTotal = db.prepare('SELECT SUM(total_amount) as total FROM sales WHERE shift_id = ? AND status != ?').get(active.id, 'refunded') as any;
-    const expected = (salesTotal?.total || 0); // Note: Should probably include start cash, but we'll deal with exact maths later or here
+    const expected = (salesTotal?.total || 0);
     
     db.prepare('UPDATE shifts SET status = ?, end_time = CURRENT_TIMESTAMP, ending_cash = ?, expected_cash = ? WHERE id = ?').run('closed', ending_cash, expected, active.id);
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Closed Cashier Shift',
+      'sales',
+      `Closed shift register #${active.id} (Ending cash: ${Number(ending_cash || 0).toFixed(2)}, Expected: ${Number(expected).toFixed(2)})`,
+      getClientIp(req)
+    );
     res.json({ success: true });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -2939,35 +3450,97 @@ app.get('/api/settings', authenticate, (req, res) => {
   res.json(result);
 });
 
-app.put('/api/settings', authenticate, requireAdmin, (req, res) => {
-  const { low_stock_threshold, audit_log_retention_days, auto_clear_audit_logs, allow_staff_stock_adjustments, show_staff_stock_alerts } = req.body;
-  if (low_stock_threshold !== undefined) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('low_stock_threshold', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(low_stock_threshold.toString(), low_stock_threshold.toString());
-  }
-  if (audit_log_retention_days !== undefined) {
-    db.prepare("INSERT INTO settings (key, value) VALUES ('audit_log_retention_days', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(audit_log_retention_days.toString(), audit_log_retention_days.toString());
-  }
-  if (auto_clear_audit_logs !== undefined) {
-    const val = auto_clear_audit_logs ? 'true' : 'false';
-    db.prepare("INSERT INTO settings (key, value) VALUES ('auto_clear_audit_logs', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
-  }
-  if (allow_staff_stock_adjustments !== undefined) {
-    const val = allow_staff_stock_adjustments ? 'true' : 'false';
-    db.prepare("INSERT INTO settings (key, value) VALUES ('allow_staff_stock_adjustments', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
-  }
-  if (show_staff_stock_alerts !== undefined) {
-    const val = show_staff_stock_alerts ? 'true' : 'false';
-    db.prepare("INSERT INTO settings (key, value) VALUES ('show_staff_stock_alerts', ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(val, val);
+app.put('/api/settings', authenticate, requireAdmin, (req: any, res) => {
+  const allowedKeys = [
+    'store_name',
+    'store_address',
+    'store_phone',
+    'store_email',
+    'tax_id',
+    'currency_code',
+    'currency_symbol',
+    'tax_rate',
+    'tax_inclusive',
+    'max_staff_discount_percent',
+    'receipt_header',
+    'receipt_footer',
+    'low_stock_threshold',
+    'audit_log_retention_days',
+    'auto_clear_audit_logs',
+    'allow_staff_stock_adjustments',
+    'show_staff_stock_alerts'
+  ];
+
+  const updatedEntries: string[] = [];
+
+  for (const key of allowedKeys) {
+    if (req.body[key] !== undefined) {
+      let val = req.body[key];
+      if (typeof val === 'boolean') {
+        val = val ? 'true' : 'false';
+      } else {
+        val = String(val).trim();
+      }
+      db.prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?").run(key, val, val);
+      updatedEntries.push(`${key}: "${val}"`);
+    }
   }
 
-  logAuditEvent((req as any).user.id, (req as any).user.name, 'Updated System Settings', 'settings', `Updated settings: Low Stock Threshold = ${low_stock_threshold}, Retention Days = ${audit_log_retention_days}, Auto Clear = ${auto_clear_audit_logs}, Allow Staff Adjustments = ${allow_staff_stock_adjustments}, Show Staff Alerts = ${show_staff_stock_alerts}`);
+  logAuditEvent(
+    req.user.id,
+    req.user.name,
+    'Updated Store & Governance Settings',
+    'settings',
+    `Updated store configuration settings: ${updatedEntries.slice(0, 8).join(', ')}${updatedEntries.length > 8 ? ` (+${updatedEntries.length - 8} more)` : ''}`,
+    getClientIp(req)
+  );
 
-  res.json({ success: true });
+  res.json({ success: true, updatedCount: updatedEntries.length });
+});
+
+// Store & Catalog Snapshot Backup
+app.get('/api/settings/backup', authenticate, requireAdmin, (req: any, res) => {
+  try {
+    const settings = db.prepare('SELECT * FROM settings').all();
+    const products = db.prepare('SELECT id, name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, min_stock_level FROM products').all();
+    const categories = db.prepare('SELECT * FROM categories').all();
+    const suppliers = db.prepare('SELECT id, name, contact_person, email, phone, address FROM suppliers_list').all();
+    const customersCount: any = db.prepare('SELECT COUNT(*) as count FROM customers').get();
+    const salesCount: any = db.prepare('SELECT COUNT(*) as count, COALESCE(SUM(total_amount), 0) as total FROM sales').get();
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Exported System Backup Snapshot',
+      'system',
+      `Exported full store data snapshot (${products.length} products, ${categories.length} categories, ${suppliers.length} suppliers).`,
+      getClientIp(req)
+    );
+
+    res.json({
+      exported_at: new Date().toISOString(),
+      exported_by: req.user.name,
+      store_overview: {
+        total_products: products.length,
+        total_categories: categories.length,
+        total_suppliers: suppliers.length,
+        total_customers: customersCount?.count || 0,
+        total_sales_count: salesCount?.count || 0,
+        total_revenue_recorded: salesCount?.total || 0,
+      },
+      settings,
+      categories,
+      suppliers,
+      products
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
 });
 
 // Audit Logs API
 app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
-  const { category, user_id, search } = req.query;
+  const { category, user_id, search, startDate, endDate, limit } = req.query;
   let query = "SELECT * FROM audit_logs WHERE 1=1";
   const params: any[] = [];
 
@@ -2981,13 +3554,24 @@ app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
     params.push(user_id);
   }
 
-  if (search) {
-    query += " AND (action LIKE ? OR details LIKE ? OR user_name LIKE ?)";
-    const term = `%${search}%`;
-    params.push(term, term, term);
+  if (startDate) {
+    query += " AND date(created_at) >= date(?)";
+    params.push(startDate);
   }
 
-  query += " ORDER BY created_at DESC LIMIT 300";
+  if (endDate) {
+    query += " AND date(created_at) <= date(?)";
+    params.push(endDate);
+  }
+
+  if (search) {
+    query += " AND (action LIKE ? OR details LIKE ? OR user_name LIKE ? OR ip_address LIKE ?)";
+    const term = `%${search}%`;
+    params.push(term, term, term, term);
+  }
+
+  const queryLimit = limit ? Math.min(parseInt(limit as string, 10) || 500, 2000) : 500;
+  query += ` ORDER BY created_at DESC LIMIT ${queryLimit}`;
 
   try {
     const logs = db.prepare(query).all(...params);

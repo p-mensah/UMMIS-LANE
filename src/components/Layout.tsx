@@ -60,6 +60,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [isNavCollapsed, setIsNavCollapsed] = useState(false);
 
   // Global search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -67,6 +68,19 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Listen to navigation slider events from action menu or page triggers
+  useEffect(() => {
+    const handleSliderToggle = (e: any) => {
+      if (e?.detail?.collapsed !== undefined) {
+        setIsNavCollapsed(e.detail.collapsed);
+      } else {
+        setIsNavCollapsed(prev => !prev);
+      }
+    };
+    window.addEventListener('toggle-nav-slider', handleSliderToggle);
+    return () => window.removeEventListener('toggle-nav-slider', handleSliderToggle);
+  }, []);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -179,7 +193,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   const renderNavList = () => (
-    <nav className="flex-1 px-3 py-3 space-y-1 overflow-y-auto custom-scrollbar">
+    <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto custom-scrollbar">
       {navItems.map((item) => {
         if (item.adminOnly && user?.role !== 'admin') return null;
 
@@ -189,22 +203,23 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             to={item.to}
             end={item.to === '/'}
             onClick={() => setMobileMenuOpen(false)}
+            title={isNavCollapsed ? item.label : undefined}
             className={({ isActive }) =>
-              `group flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all ${
+              `group flex items-center ${isNavCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 rounded-lg text-xs font-bold transition-all ${
                 isActive
                   ? 'bg-blue-600 text-white shadow-2xs'
                   : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
               }`
             }
           >
-            <div className="flex items-center gap-2.5 min-w-0">
+            <div className={`flex items-center ${isNavCollapsed ? 'justify-center' : 'gap-2.5'} min-w-0`}>
               <span className="shrink-0 transition-transform group-hover:scale-105">
                 {item.icon}
               </span>
-              <span className="truncate">{item.label}</span>
+              {!isNavCollapsed && <span className="truncate">{item.label}</span>}
             </div>
 
-            {item.badge && (
+            {!isNavCollapsed && item.badge && (
               <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-black rounded uppercase">
                 {item.badge}
               </span>
@@ -216,57 +231,83 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 
   const renderUserProfileFooter = () => (
-    <div className="p-3 border-t border-slate-800 bg-slate-950/70 text-xs space-y-2">
-      <div className="flex items-center justify-between gap-2 p-2 bg-slate-900 rounded-lg border border-slate-800">
-        <div className="flex items-center gap-2 min-w-0">
-          <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0">
-            {user?.name?.charAt(0) || 'U'}
-          </div>
-          <div className="min-w-0">
-            <div className="font-bold text-slate-100 truncate text-[11px]">{user?.name}</div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-              <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
-                {user?.role}
-              </span>
+    <div className={`p-2.5 border-t border-slate-800 bg-slate-950/70 text-xs ${isNavCollapsed ? 'flex flex-col items-center space-y-2' : 'space-y-2'}`}>
+      <div className={`flex items-center ${isNavCollapsed ? 'justify-center p-1.5' : 'justify-between gap-2 p-2'} bg-slate-900 rounded-lg border border-slate-800 w-full`}>
+        <div className={`flex items-center ${isNavCollapsed ? 'justify-center' : 'gap-2'} min-w-0`}>
+          {user?.profile_picture ? (
+            <img 
+              src={user.profile_picture} 
+              alt={user.name} 
+              className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0" 
+            />
+          ) : (
+            <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0">
+              {user?.name?.charAt(0) || 'U'}
             </div>
-          </div>
+          )}
+          {!isNavCollapsed && (
+            <div className="min-w-0">
+              <div className="font-bold text-slate-100 truncate text-[11px]">{user?.name}</div>
+              <div className="flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
+                  {user?.role}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
-        <button
-          onClick={handleLockTerminal}
-          className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
-          title="Lock Terminal (Quick Sign Out)"
-        >
-          <Lock size={14} />
-        </button>
+        {!isNavCollapsed && (
+          <button
+            onClick={handleLockTerminal}
+            className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
+            title="Lock Terminal (Quick Sign Out)"
+          >
+            <Lock size={14} />
+          </button>
+        )}
       </div>
 
       <button
         onClick={handleLogout}
-        className="w-full flex items-center justify-center gap-2 py-1.5 px-3 bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded font-bold text-xs border border-rose-500/20 transition-colors"
+        className={`w-full flex items-center justify-center gap-2 py-1.5 ${isNavCollapsed ? 'px-1' : 'px-3'} bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded font-bold text-xs border border-rose-500/20 transition-colors`}
+        title="Sign Out"
       >
         <LogOut size={13} />
-        Sign Out
+        {!isNavCollapsed && <span>Sign Out</span>}
       </button>
     </div>
   );
 
   return (
     <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
-      {/* Desktop Sidebar (Fluid Flex layout) */}
-      <aside className="hidden md:flex flex-col w-56 lg:w-64 bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl">
+      {/* Desktop Sidebar (Fluid Flex layout with collapsible Navigation Slider) */}
+      <aside className={`hidden md:flex flex-col ${isNavCollapsed ? 'w-16' : 'w-56 lg:w-64'} bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl transition-all duration-300 ease-in-out`}>
         {/* Brand Header */}
-        <div className="p-4 border-b border-slate-800 bg-slate-950/60 flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
-            <Store size={18} />
+        <div className={`p-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center ${isNavCollapsed ? 'justify-center' : 'justify-between'} gap-2.5`}>
+          <div className="flex items-center gap-2.5 min-w-0">
+            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
+              <Store size={16} />
+            </div>
+            {!isNavCollapsed && (
+              <div className="min-w-0">
+                <h1 className="text-xs font-black uppercase tracking-widest text-white truncate">
+                  UMMIS LANE ENT
+                </h1>
+                <p className="text-[10px] text-slate-400 font-medium tracking-wide truncate">Retail OS</p>
+              </div>
+            )}
           </div>
-          <div className="min-w-0">
-            <h1 className="text-xs font-black uppercase tracking-widest text-white truncate">
-              UMMIS LANE ENT
-            </h1>
-            <p className="text-[10px] text-slate-400 font-medium tracking-wide">Enterprise Retail OS</p>
-          </div>
+
+          <button
+            type="button"
+            onClick={() => setIsNavCollapsed(!isNavCollapsed)}
+            className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition"
+            title={isNavCollapsed ? "Expand Navigation Slider" : "Collapse Navigation Slider"}
+          >
+            <SlidersHorizontal size={14} />
+          </button>
         </div>
 
         {/* Navigation List */}

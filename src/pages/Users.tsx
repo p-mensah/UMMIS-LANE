@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -6,7 +6,11 @@ import { supabase } from '../lib/supabase';
 import { callAdminApi, createUser as createAdminUser, suspendUser, reactivateUser, deleteUser as deleteAdminUser } from '../lib/adminApi';
 import ActionMenu, { ActionMenuItemUser } from '../components/ActionMenu';
 import UserManagementModal, { UserManagementData } from '../components/UserManagementModal';
-import { ShieldAlert, UserPlus, Users as UsersIcon, Shield, RefreshCw, AlertCircle, CheckCircle2, Lock } from 'lucide-react';
+import { 
+  ShieldAlert, UserPlus, Users as UsersIcon, Shield, RefreshCw, AlertCircle, 
+  CheckCircle2, Lock, Eye, ShieldCheck, Clock, KeyRound, Globe, Camera,
+  SlidersHorizontal, X, LogOut, Sparkles, UserCheck, UserX, ChevronRight
+} from 'lucide-react';
 
 export default function Users() {
   const { user } = useAuth();
@@ -15,12 +19,16 @@ export default function Users() {
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserManagementData | null>(null);
-  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'staff' });
+  const [modalInitialTab, setModalInitialTab] = useState<'profile' | 'security'>('profile');
+  const [inspectingUser, setInspectingUser] = useState<any | null>(null);
+  const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'staff', profile_picture: '' });
+  const [addProfilePreview, setAddProfilePreview] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [loadingCheck, setLoadingCheck] = useState(true);
   const [forbiddenError, setForbiddenError] = useState<string | null>(null);
   const [feedbackMessage, setFeedbackMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const addFileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => { 
     checkAdminStatus();
@@ -56,6 +64,7 @@ export default function Users() {
       setIsAdmin(
         user.email?.toLowerCase().includes('admin') || 
         user.email?.toLowerCase().includes('rabbi') || 
+        user.email?.toLowerCase().includes('mensah') ||
         false
       );
     } finally {
@@ -78,7 +87,6 @@ export default function Users() {
       console.warn('[UsersPage] 403 Forbidden condition triggered:', message);
       setForbiddenError(message);
       
-      // Notify via NotificationProvider
       addToast({
         title: 'Access Forbidden (403)',
         message: 'You do not have administrative clearance to manage user accounts or modify security roles.',
@@ -105,6 +113,14 @@ export default function Users() {
       const data = await fetchApi('/users');
       console.log(`[UsersPage] Successfully fetched ${Array.isArray(data) ? data.length : 0} user records.`);
       setUsers(Array.isArray(data) ? data : []);
+      
+      // Keep inspecting user in sync if currently open in slide-over
+      if (inspectingUser) {
+        const updated = (Array.isArray(data) ? data : []).find(u => u.id === inspectingUser.id);
+        if (updated) {
+          setInspectingUser(updated);
+        }
+      }
     } catch (err: any) {
       handleApiError(err, 'Failed to retrieve system user directory.');
     } finally {
@@ -136,10 +152,16 @@ export default function Users() {
         }
       }
 
-      // 2. Persist in database
+      // 2. Persist in database including profile picture
       await fetchApi('/users', {
         method: 'POST',
-        body: JSON.stringify(formData)
+        body: JSON.stringify({
+          name: formData.name,
+          email: formData.email,
+          password: formData.password,
+          role: formData.role,
+          profile_picture: addProfilePreview || null
+        })
       });
 
       addToast({
@@ -150,7 +172,8 @@ export default function Users() {
 
       setFeedbackMessage({ type: 'success', text: `Successfully registered ${formData.email}` });
       setShowAddModal(false);
-      setFormData({ name: '', email: '', password: '', role: 'staff' });
+      setFormData({ name: '', email: '', password: '', role: 'staff', profile_picture: '' });
+      setAddProfilePreview(null);
       loadUsers();
     } catch (err: any) {
       handleApiError(err, 'Failed to create new user account.');
@@ -172,14 +195,12 @@ export default function Users() {
     setForbiddenError(null);
 
     try {
-      // 1. Edge Function sync
       try {
         if (isCurrentlyActive) {
           await suspendUser(targetUser.id);
         } else {
           await reactivateUser(targetUser.id);
         }
-        console.log(`[UsersPage] Edge function ${actionLabel}_user completed.`);
       } catch (edgeErr: any) {
         console.warn(`[UsersPage] Edge function status notice:`, edgeErr.message);
         if (edgeErr?.status === 403 || edgeErr?.message?.includes('403')) {
@@ -187,7 +208,6 @@ export default function Users() {
         }
       }
 
-      // 2. Database update
       await fetchApi(`/users/${targetUser.id}/status`, {
         method: 'PUT',
         body: JSON.stringify({ is_active: !isCurrentlyActive })
@@ -215,10 +235,8 @@ export default function Users() {
     setForbiddenError(null);
 
     try {
-      // 1. Edge function delete
       try {
         await deleteAdminUser(targetUser.id);
-        console.log('[UsersPage] Edge function delete_user completed.');
       } catch (edgeErr: any) {
         console.warn('[UsersPage] Edge function delete notice:', edgeErr.message);
         if (edgeErr?.status === 403 || edgeErr?.message?.includes('403')) {
@@ -226,7 +244,6 @@ export default function Users() {
         }
       }
 
-      // 2. Database delete
       await fetchApi(`/users/${targetUser.id}`, {
         method: 'DELETE'
       });
@@ -237,15 +254,71 @@ export default function Users() {
         type: 'info'
       });
 
+      if (inspectingUser?.id === targetUser.id) {
+        setInspectingUser(null);
+      }
+
       loadUsers();
     } catch (err: any) {
       handleApiError(err, 'Failed to delete user account.');
     }
   };
 
+  const handleToggleNavigationSlider = () => {
+    // Dispatches navigation slider event to collapse or expand the desktop navigation slider
+    window.dispatchEvent(new CustomEvent('toggle-nav-slider'));
+  };
+
+  const handleViewUser = (targetUser: any) => {
+    setInspectingUser(targetUser);
+  };
+
+  const handleSecurityUser = (targetUser: any) => {
+    setSelectedUserForEdit(targetUser);
+    setModalInitialTab('security');
+  };
+
+  const handleEditUser = (targetUser: any) => {
+    setSelectedUserForEdit(targetUser);
+    setModalInitialTab('profile');
+  };
+
+  const handleAddAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+      alert('Please select a valid image file (PNG, JPG, or WEBP).');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (loadEvt) => {
+      const base64 = loadEvt.target?.result as string;
+      setAddProfilePreview(base64);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const formatDateTime = (dateStr: string | null | undefined) => {
+    if (!dateStr) return null;
+    try {
+      const d = new Date(dateStr);
+      return d.toLocaleDateString(undefined, {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch {
+      return dateStr;
+    }
+  };
+
   return (
     <div className="space-y-6">
-      {/* Top Header */}
+      {/* Header Bar */}
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -255,11 +328,21 @@ export default function Users() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Configure system accounts, assign security roles, and manage active session states.
+            Configure system accounts, assign security roles, inspect audit genesis logs, and manage active sessions.
           </p>
         </div>
 
         <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
+          {/* Navigation Slider Toggle Button */}
+          <button
+            onClick={handleToggleNavigationSlider}
+            className="p-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
+            title="Toggle Navigation Slider (Sidebar)"
+          >
+            <SlidersHorizontal size={14} />
+            <span className="hidden sm:inline">Toggle Nav Slider</span>
+          </button>
+
           <button
             onClick={loadUsers}
             disabled={loading}
@@ -274,6 +357,7 @@ export default function Users() {
             <button
               onClick={() => {
                 setForbiddenError(null);
+                setAddProfilePreview(null);
                 setShowAddModal(true);
               }}
               className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs shadow-sm shadow-blue-500/20 transition flex items-center gap-1.5"
@@ -336,6 +420,8 @@ export default function Users() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">User / Staff</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Email Address</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Access Role</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Created (Audit Genesis)</th>
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Last Login (Audit Verified)</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Account Status</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -343,14 +429,14 @@ export default function Users() {
             <tbody className="bg-white divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-xs text-slate-400">
+                  <td colSpan={7} className="px-5 py-10 text-center text-xs text-slate-400">
                     <RefreshCw size={18} className="animate-spin inline mr-2 text-blue-600" />
                     Loading user directory...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-xs text-slate-400">
+                  <td colSpan={7} className="px-5 py-10 text-center text-xs text-slate-400">
                     <UsersIcon size={24} className="mx-auto mb-2 text-slate-300" />
                     No user accounts found.
                   </td>
@@ -358,26 +444,38 @@ export default function Users() {
               ) : (
                 users.map(u => {
                   const isActive = u.is_active === 1 || u.is_active === undefined;
-                  const isPrimaryAdmin = u.email === 'rabbi@ummis.com' || u.email === 'admin@admin.com';
+                  const isPrimaryAdmin = 
+                    u.email?.toLowerCase() === 'ing.mensah@gmail.com' || 
+                    u.email === 'rabbi@ummis.com' || 
+                    u.email === 'admin@admin.com';
 
                   return (
                     <tr key={u.id} className="hover:bg-slate-50/60 transition-colors">
+                      {/* User / Staff with Profile Picture */}
                       <td className="px-5 py-3.5">
-                        <div className="flex items-center gap-2.5">
-                          <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs uppercase ${
-                            u.role === 'admin'
-                              ? 'bg-indigo-100 text-indigo-700'
-                              : u.role === 'supplier'
-                              ? 'bg-emerald-100 text-emerald-700'
-                              : 'bg-blue-100 text-blue-700'
-                          }`}>
-                            {u.name?.charAt(0) || 'U'}
-                          </div>
-                          <div>
-                            <div className="text-xs font-bold text-slate-900">{u.name}</div>
+                        <div className="flex items-center gap-3">
+                          {u.profile_picture ? (
+                            <img
+                              src={u.profile_picture}
+                              alt={u.name}
+                              className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-2xs shrink-0"
+                            />
+                          ) : (
+                            <div className={`w-9 h-9 rounded-full flex items-center justify-center font-bold text-xs uppercase shadow-2xs shrink-0 ${
+                              u.role === 'admin'
+                                ? 'bg-indigo-100 text-indigo-700 border border-indigo-200'
+                                : u.role === 'supplier'
+                                ? 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                                : 'bg-blue-100 text-blue-700 border border-blue-200'
+                            }`}>
+                              {u.name?.charAt(0) || 'U'}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <div className="text-xs font-bold text-slate-900 truncate">{u.name}</div>
                             {isPrimaryAdmin && (
-                              <span className="text-[10px] text-indigo-600 font-semibold flex items-center gap-1">
-                                <Lock size={10} /> Primary Super Admin
+                              <span className="text-[10px] text-indigo-600 font-semibold flex items-center gap-1 mt-0.5">
+                                <Lock size={10} /> Super Admin
                               </span>
                             )}
                           </div>
@@ -400,6 +498,38 @@ export default function Users() {
                         </span>
                       </td>
 
+                      {/* Created date handled by audit security log */}
+                      <td className="px-5 py-3.5 text-xs whitespace-nowrap">
+                        <div className="font-medium text-slate-800">
+                          {formatDateTime(u.created_at) || 'System Genesis'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5" title="Account creation verified through audit trail">
+                          <ShieldCheck size={11} className="text-emerald-600" />
+                          <span>Audit Genesis {u.created_by ? `• by ${u.created_by}` : ''}</span>
+                        </div>
+                      </td>
+
+                      {/* Last login handled by audit security log */}
+                      <td className="px-5 py-3.5 text-xs whitespace-nowrap">
+                        {u.last_login_at ? (
+                          <div>
+                            <div className="text-slate-900 font-semibold">{formatDateTime(u.last_login_at)}</div>
+                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5" title="Audit security verified login event">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              <span>IP: {u.last_login_ip || 'Local Network'}</span>
+                            </div>
+                          </div>
+                        ) : (
+                          <div>
+                            <span className="text-slate-400 italic text-[11px]">Never logged in</span>
+                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                              <Clock size={10} />
+                              <span>No audit login recorded</span>
+                            </div>
+                          </div>
+                        )}
+                      </td>
+
                       <td className="px-5 py-3.5 text-xs">
                         {isActive ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -414,19 +544,36 @@ export default function Users() {
                         )}
                       </td>
 
-                      <td className="px-5 py-3.5 text-right">
-                        {isAdmin ? (
-                          <ActionMenu
-                            user={u}
-                            onEdit={target => setSelectedUserForEdit(target)}
-                            onToggleStatus={handleToggleStatus}
-                            onDelete={handleDeleteUser}
-                            onSuccess={loadUsers}
-                            isPrimaryAdmin={isPrimaryAdmin}
-                          />
-                        ) : (
-                          <span className="text-[11px] text-slate-400 italic">Read-only</span>
-                        )}
+                      {/* Action Column with View Button & Three Dots */}
+                      <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Dedicated View Action Button */}
+                          <button
+                            type="button"
+                            onClick={() => handleViewUser(u)}
+                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border border-slate-200 shadow-2xs hover:border-blue-300"
+                            title="View user details & audit security history"
+                          >
+                            <Eye size={13} className="text-blue-600" />
+                            <span>View</span>
+                          </button>
+
+                          {isAdmin ? (
+                            <ActionMenu
+                              user={u}
+                              onView={handleViewUser}
+                              onSecurity={handleSecurityUser}
+                              onEdit={handleEditUser}
+                              onToggleNavigationSlider={handleToggleNavigationSlider}
+                              onToggleStatus={handleToggleStatus}
+                              onDelete={handleDeleteUser}
+                              onSuccess={loadUsers}
+                              isPrimaryAdmin={isPrimaryAdmin}
+                            />
+                          ) : (
+                            <span className="text-[11px] text-slate-400 italic">Read-only</span>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -437,10 +584,245 @@ export default function Users() {
         </div>
       </div>
 
-      {/* UserManagementModal (Connected to assign_role and user editing) */}
+      {/* User Profile & Security Slide-Over Navigation Slider */}
+      {inspectingUser && (
+        <div className="fixed inset-0 z-50 overflow-hidden">
+          <div 
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-2xs transition-opacity animate-in fade-in duration-200"
+            onClick={() => setInspectingUser(null)}
+          />
+
+          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
+            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-300">
+              {/* Drawer Header */}
+              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
+                    <ShieldCheck size={18} />
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">
+                      User Profile & Security Slider
+                    </h2>
+                    <p className="text-[11px] text-slate-500">Audit-backed identity and access verification</p>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-1.5">
+                  <button
+                    onClick={handleToggleNavigationSlider}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
+                    title="Toggle main navigation slider (sidebar)"
+                  >
+                    <SlidersHorizontal size={16} />
+                  </button>
+                  <button
+                    onClick={() => setInspectingUser(null)}
+                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
+                    title="Close details slider"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Drawer Body */}
+              <div className="flex-1 overflow-y-auto p-6 space-y-6">
+                {/* Profile Card */}
+                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 flex flex-col items-center text-center relative">
+                  {inspectingUser.profile_picture ? (
+                    <img 
+                      src={inspectingUser.profile_picture} 
+                      alt={inspectingUser.name}
+                      className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md mb-3"
+                    />
+                  ) : (
+                    <div className={`w-20 h-20 rounded-full flex items-center justify-center font-black text-2xl uppercase border-4 border-white shadow-md mb-3 ${
+                      inspectingUser.role === 'admin'
+                        ? 'bg-indigo-100 text-indigo-700'
+                        : inspectingUser.role === 'supplier'
+                        ? 'bg-emerald-100 text-emerald-700'
+                        : 'bg-blue-100 text-blue-700'
+                    }`}>
+                      {inspectingUser.name?.charAt(0) || 'U'}
+                    </div>
+                  )}
+
+                  <h3 className="text-base font-bold text-slate-900">{inspectingUser.name}</h3>
+                  <p className="text-xs text-slate-500 font-mono mt-0.5">{inspectingUser.email}</p>
+
+                  <div className="flex items-center gap-2 mt-3">
+                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                      inspectingUser.role === 'admin' 
+                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' 
+                        : inspectingUser.role === 'supplier'
+                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                        : 'bg-slate-200 text-slate-800'
+                    }`}>
+                      {inspectingUser.role === 'admin' ? 'Administrator' : inspectingUser.role === 'supplier' ? 'Supplier Vendor' : 'Staff Member'}
+                    </span>
+
+                    {inspectingUser.is_active === 0 ? (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
+                        <UserX size={10} /> Suspended
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        <UserCheck size={10} /> Active
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                {/* Audit Security Log Section */}
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck size={16} className="text-emerald-600" />
+                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Audit Security Log Records
+                    </h4>
+                  </div>
+                  <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 text-xs shadow-2xs">
+                    {/* Creation Record from Audit Log */}
+                    <div className="p-3.5 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                          Account Genesis Timestamp
+                        </div>
+                        <div className="font-bold text-slate-900 mt-0.5">
+                          {formatDateTime(inspectingUser.created_at) || 'System Origin'}
+                        </div>
+                        <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
+                          <ShieldCheck size={11} className="text-emerald-600" />
+                          <span>Derived from Audit Log (by: {inspectingUser.created_by || 'Store Genesis'})</span>
+                        </div>
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
+                        Audit Log
+                      </span>
+                    </div>
+
+                    {/* Last Login Record from Audit Log */}
+                    <div className="p-3.5 flex items-start justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                          Last Successful Sign-In
+                        </div>
+                        <div className="font-bold text-slate-900 mt-0.5">
+                          {inspectingUser.last_login_at ? formatDateTime(inspectingUser.last_login_at) : 'No Sign-In Recorded'}
+                        </div>
+                        {inspectingUser.last_login_ip && (
+                          <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
+                            <Globe size={11} className="text-blue-500" />
+                            <span>Client IP Address: {inspectingUser.last_login_ip}</span>
+                          </div>
+                        )}
+                      </div>
+                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 uppercase">
+                        Verified
+                      </span>
+                    </div>
+
+                    {/* Security flags */}
+                    <div className="p-3.5 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                          Mandatory Password Reset
+                        </div>
+                        <div className="font-bold text-slate-800 mt-0.5">
+                          {inspectingUser.force_password_reset ? (
+                            <span className="text-amber-700 font-bold flex items-center gap-1">
+                              <KeyRound size={12} /> Yes (Required on Next Login)
+                            </span>
+                          ) : (
+                            <span className="text-slate-500">Not Flagged</span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Session state */}
+                    <div className="p-3.5 flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
+                          Session Invalidation Status
+                        </div>
+                        <div className="font-bold text-slate-800 mt-0.5">
+                          {inspectingUser.session_revoked_at ? (
+                            <span className="text-rose-700 text-[11px]">
+                              Revoked at {formatDateTime(inspectingUser.session_revoked_at)}
+                            </span>
+                          ) : (
+                            <span className="text-emerald-700 text-[11px] flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              Healthy & Active
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Action Controls */}
+                <div className="space-y-2 pt-2">
+                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                    Quick Security Controls
+                  </h4>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingUser(null);
+                      handleSecurityUser(inspectingUser);
+                    }}
+                    className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center justify-between border border-indigo-200 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <KeyRound size={15} />
+                      <span>Security & Password Reset Center</span>
+                    </div>
+                    <ChevronRight size={14} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setInspectingUser(null);
+                      handleEditUser(inspectingUser);
+                    }}
+                    className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-between border border-slate-200 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <Camera size={15} />
+                      <span>Update Profile Picture & Role</span>
+                    </div>
+                    <ChevronRight size={14} />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleNavigationSlider}
+                    className="w-full py-2.5 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-between border border-blue-200 shadow-2xs"
+                  >
+                    <div className="flex items-center gap-2">
+                      <SlidersHorizontal size={15} />
+                      <span>Toggle Navigation Slider (Expand/Collapse Sidebar)</span>
+                    </div>
+                    <ChevronRight size={14} />
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* UserManagementModal (Connected to assign_role, password reset, and security audit) */}
       <UserManagementModal
         user={selectedUserForEdit}
         isOpen={Boolean(selectedUserForEdit)}
+        initialTab={modalInitialTab}
         onClose={() => setSelectedUserForEdit(null)}
         onSuccess={loadUsers}
       />
@@ -456,12 +838,74 @@ export default function Users() {
                 </div>
                 <div>
                   <h2 className="text-sm font-bold text-slate-900">Create New System User</h2>
-                  <p className="text-[11px] text-slate-500">Register new staff account or administrator</p>
+                  <p className="text-[11px] text-slate-500">Register new staff account with profile picture and access role</p>
                 </div>
               </div>
+              <button
+                type="button"
+                onClick={() => setShowAddModal(false)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg"
+              >
+                <X size={18} />
+              </button>
             </div>
 
             <form onSubmit={handleCreateUser} className="p-6 space-y-4">
+              {/* Profile Picture Upload Preview */}
+              <div className="flex items-center gap-4 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="relative shrink-0">
+                  {addProfilePreview ? (
+                    <img
+                      src={addProfilePreview}
+                      alt="Avatar preview"
+                      className="w-14 h-14 rounded-full object-cover border-2 border-white shadow-xs"
+                    />
+                  ) : (
+                    <div className="w-14 h-14 rounded-full bg-slate-200 text-slate-400 flex items-center justify-center font-bold text-lg border-2 border-white shadow-xs">
+                      {formData.name?.charAt(0) || 'U'}
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => addFileInputRef.current?.click()}
+                    className="absolute -bottom-1 -right-1 p-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-md transition"
+                    title="Upload profile photo"
+                  >
+                    <Camera size={12} />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-bold text-slate-900">User Profile Picture</div>
+                  <p className="text-[11px] text-slate-500">Optional photo avatar for staff identification</p>
+                  <input
+                    ref={addFileInputRef}
+                    type="file"
+                    accept="image/*"
+                    onChange={handleAddAvatarUpload}
+                    className="hidden"
+                  />
+                  <div className="flex items-center gap-2 mt-1">
+                    <button
+                      type="button"
+                      onClick={() => addFileInputRef.current?.click()}
+                      className="text-[11px] font-bold text-blue-600 hover:text-blue-700"
+                    >
+                      {addProfilePreview ? 'Change Photo' : 'Select Photo'}
+                    </button>
+                    {addProfilePreview && (
+                      <button
+                        type="button"
+                        onClick={() => setAddProfilePreview(null)}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-700"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </div>
+                </div>
+              </div>
+
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
                   Full Name
