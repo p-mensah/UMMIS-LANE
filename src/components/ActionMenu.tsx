@@ -29,6 +29,7 @@ interface ActionMenuProps {
   onDelete?: (user: ActionMenuItemUser) => Promise<void> | void;
   onToggleNavigationSlider?: () => void;
   isPrimaryAdmin?: boolean;
+  isAdmin?: boolean;
   disabled?: boolean;
 }
 
@@ -42,6 +43,7 @@ export default function ActionMenu({
   onDelete,
   onToggleNavigationSlider,
   isPrimaryAdmin = false,
+  isAdmin = true,
   disabled = false
 }: ActionMenuProps) {
   const { addToast } = useNotifications();
@@ -80,11 +82,8 @@ export default function ActionMenu({
 
   const handleThreeDotsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
+    // Toggle dropdown overlay without touching or collapsing the navigation slider
     setIsOpen(prev => !prev);
-    // When clicking on three dots, also notify navigation slider if attached
-    if (onToggleNavigationSlider) {
-      onToggleNavigationSlider();
-    }
   };
 
   const handleViewClick = (e: React.MouseEvent) => {
@@ -264,69 +263,73 @@ export default function ActionMenu({
 
       {isOpen && (
         <div 
-          className="absolute right-0 top-full mt-1 w-52 bg-white rounded-xl shadow-xl border border-slate-200 py-1.5 z-50 divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
+          className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[60] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
           role="menu"
         >
-          {/* View Option */}
+          {/* View Profile Option */}
           <div className="py-1">
             <button
               type="button"
               onClick={handleViewClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors"
+              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors text-left"
               role="menuitem"
             >
               <Eye size={14} className="text-blue-600 shrink-0" />
-              <span>View Profile & Security</span>
+              <span>View Profile</span>
             </button>
 
-            <button
-              type="button"
-              onClick={handleSecurityClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 transition-colors"
-              role="menuitem"
-            >
-              <ShieldCheck size={14} className="text-indigo-600 shrink-0" />
-              <span>Security & Reset</span>
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={handleSecurityClick}
+                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 transition-colors text-left"
+                role="menuitem"
+              >
+                <ShieldCheck size={14} className="text-indigo-600 shrink-0" />
+                <span>Security & Reset</span>
+              </button>
+            )}
           </div>
 
-          <div className="py-1">
-            <button
-              type="button"
-              onClick={handleEditClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors"
-              role="menuitem"
-            >
-              <Edit2 size={14} className="text-slate-600 shrink-0" />
-              <span>Edit Account</span>
-            </button>
+          {isAdmin && (
+            <div className="py-1">
+              <button
+                type="button"
+                onClick={handleEditClick}
+                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors text-left"
+                role="menuitem"
+              >
+                <Edit2 size={14} className="text-slate-600 shrink-0" />
+                <span>Edit Account</span>
+              </button>
 
-            <button
-              type="button"
-              onClick={handleToggleStatusClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors"
-              role="menuitem"
-            >
-              {isActive ? (
-                <>
-                  <UserX size={14} className="text-amber-600 shrink-0" />
-                  <span className="text-amber-700">Suspend Account</span>
-                </>
-              ) : (
-                <>
-                  <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                  <span className="text-emerald-700">Reactivate Account</span>
-                </>
-              )}
-            </button>
-          </div>
+              <button
+                type="button"
+                onClick={handleToggleStatusClick}
+                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors text-left"
+                role="menuitem"
+              >
+                {isActive ? (
+                  <>
+                    <UserX size={14} className="text-amber-600 shrink-0" />
+                    <span className="text-amber-700">Suspend Account</span>
+                  </>
+                ) : (
+                  <>
+                    <UserCheck size={14} className="text-emerald-600 shrink-0" />
+                    <span className="text-emerald-700">Reactivate Account</span>
+                  </>
+                )}
+              </button>
+            </div>
+          )}
 
-          {!isPrimaryAdmin && (
+          {isAdmin && !isPrimaryAdmin && (
             <div className="py-1">
               <button
                 type="button"
                 onClick={handleDeleteClick}
-                className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors"
+                className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors text-left"
                 role="menuitem"
               >
                 <Trash2 size={14} className="shrink-0" />

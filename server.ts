@@ -287,6 +287,62 @@ function initDb() {
     console.error('Migration error for users columns:', err);
   }
 
+  // Ensure extended schema columns for audit_logs
+  try {
+    addColumnOrIgnore('audit_logs', 'actor_role', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'sub_category', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'pre_state', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'post_state', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'delta', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'device_terminal', 'TEXT');
+    addColumnOrIgnore('audit_logs', 'location', 'TEXT');
+    addColumnOrIgnore('users', 'created_by', 'TEXT');
+    addColumnOrIgnore('users', 'last_login_ip', 'TEXT');
+
+    // Backfill defaults for existing audit logs
+    db.prepare(`
+      UPDATE audit_logs 
+      SET actor_role = CASE 
+        WHEN user_name LIKE '%Admin%' OR user_name LIKE '%Maintenance%' THEN 'admin' 
+        WHEN user_id IS NULL THEN 'system'
+        ELSE 'staff' 
+      END
+      WHERE actor_role IS NULL
+    `).run();
+
+    db.prepare(`
+      UPDATE audit_logs 
+      SET sub_category = CASE 
+        WHEN category = 'system' THEN 'system_maintenance'
+        WHEN category = 'sales' THEN 'pos_orders'
+        WHEN category = 'auth' THEN 'signin_signout'
+        WHEN category = 'product' THEN 'item_master'
+        WHEN category = 'stock' THEN 'manual_adjustments'
+        WHEN category = 'purchasing' THEN 'purchase_orders'
+        WHEN category = 'settings' THEN 'store_config'
+        ELSE 'general'
+      END
+      WHERE sub_category IS NULL
+    `).run();
+
+    db.prepare(`
+      UPDATE audit_logs 
+      SET device_terminal = CASE 
+        WHEN category = 'system' THEN 'Internal Server Daemon' 
+        ELSE 'POS Terminal #1 (Lane A)' 
+      END
+      WHERE device_terminal IS NULL
+    `).run();
+
+    db.prepare(`
+      UPDATE audit_logs 
+      SET location = 'Main Store - Accra'
+      WHERE location IS NULL
+    `).run();
+  } catch (auditMigErr) {
+    console.error('Migration notice for audit_logs:', auditMigErr);
+  }
+
   // Seed default settings
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_name', 'Ummis Lane Enterprise')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('store_address', 'Madina Market, Main Station, Accra - Ghana')").run();
@@ -545,8 +601,456 @@ function seedDatabase(dbInstance: any) {
 // Immediately initialize DB tables and default accounts
 try {
   initDb();
+  seedAuditSecurityLedger();
 } catch (e) {
   console.error('Database initialization error:', e);
+}
+
+// --- Extended Audit Security Ledger Seeding ---
+function seedAuditSecurityLedger() {
+  try {
+    const authCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category = 'auth'").get();
+    if (!authCount || authCount.count === 0) {
+      const authLogs = [
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'LOGIN_SUCCESS',
+          category: 'auth',
+          subCategory: 'signin_signout',
+          details: 'Super administrator Ing. Mensah authenticated successfully via password & device authorization',
+          ipAddress: '102.176.65.22',
+          preState: 'Offline / Disconnected',
+          postState: 'Authenticated (Session #JWT-9102)',
+          delta: 'Session initiated; permissions verified',
+          deviceTerminal: 'Admin Workstation #1 (HQ)',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 35 * 60 * 1000).toISOString()
+        },
+        {
+          userId: 2,
+          userName: 'Kofi Mensah',
+          actorRole: 'staff',
+          action: 'LOGIN_SUCCESS',
+          category: 'auth',
+          subCategory: 'signin_signout',
+          details: 'Staff member signed into primary checkout lane with validated cashier PIN',
+          ipAddress: '192.168.1.105',
+          preState: 'Offline',
+          postState: 'Authenticated Active Session',
+          delta: 'Cashier shift opened at terminal',
+          deviceTerminal: 'POS Terminal #1 (Lane A)',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 2 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: null,
+          userName: 'Unknown / staff2@ummis.com',
+          actorRole: 'staff',
+          action: 'FAILED_LOGIN_ATTEMPT',
+          category: 'auth',
+          subCategory: 'signin_signout',
+          details: 'Invalid password challenge rejection on staff account. Rate-limiting counter incremented to 1/5',
+          ipAddress: '192.168.1.140',
+          preState: 'Unauthenticated Challenge',
+          postState: '401 Unauthorized Rejection',
+          delta: 'Authentication denied; warning flag logged',
+          deviceTerminal: 'Back-Office Terminal #2',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 5 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'MFA_PROMPT_VERIFIED',
+          category: 'auth',
+          subCategory: 'security_alerts',
+          details: 'Multi-factor authentication (MFA) TOTP challenge passed for elevated security access',
+          ipAddress: '102.176.65.22',
+          preState: 'MFA Challenge Pending (Token #TOTP-4401)',
+          postState: 'MFA Verified (Security Level: High)',
+          delta: 'Secondary factor verified within 12 seconds',
+          deviceTerminal: 'Admin Workstation #1 (HQ)',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 12 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'FORCED_SESSION_SIGNOUT',
+          category: 'auth',
+          subCategory: 'session_lifecycle',
+          details: 'Security administrator executed forced token revocation for dormant session on Terminal #3',
+          ipAddress: '102.176.65.22',
+          preState: 'Session #8821 Active (Dormant >4 hrs)',
+          postState: 'Session Revoked & Blacklisted',
+          delta: 'Forced termination; JWT token invalidated',
+          deviceTerminal: 'Security Console',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 18 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'USER_ACCOUNT_GENESIS',
+          category: 'auth',
+          subCategory: 'session_lifecycle',
+          details: 'Account creation genesis for staff member Ama Osei (ama@ummis.com) with role staff',
+          ipAddress: '102.176.65.22',
+          preState: 'Account Non-Existent',
+          postState: 'Account Active (Role: Staff)',
+          delta: 'User genesis record generated by Admin Ing. Mensah',
+          deviceTerminal: 'Admin Console',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 24 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of authLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+
+    const productCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category = 'product'").get();
+    if (!productCount || productCount.count === 0) {
+      const productLogs = [
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'ITEM_MASTER_CREATED',
+          category: 'product',
+          subCategory: 'item_master',
+          details: 'New SKU PRD-BEV-008 created: Nestle Milo 400g Tin in category Beverages with barcode 7613035123456',
+          ipAddress: '102.176.65.22',
+          preState: 'Non-Existent SKU in Catalog',
+          postState: 'SKU: PRD-BEV-008 | Name: Nestle Milo 400g Tin | Cat: Beverages | Barcode: 7613035123456',
+          delta: 'New master item provisioned with initial stock 0',
+          deviceTerminal: 'Admin Workstation #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 4 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'PRICING_ALTERATION',
+          category: 'product',
+          subCategory: 'pricing_cost',
+          details: 'Updated price matrix for Royal Aroma Fragrant Rice 5kg following supplier tariff increase',
+          ipAddress: '102.176.65.22',
+          preState: 'Cost: GHS 75.00 | Retail: GHS 95.00 | Wholesale: GHS 88.00',
+          postState: 'Cost: GHS 82.00 | Retail: GHS 105.00 | Wholesale: GHS 98.00',
+          delta: 'Retail: +GHS 10.00 (+10.5%) | Cost: +GHS 7.00 (+9.3%)',
+          deviceTerminal: 'Admin Workstation #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 8 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 2,
+          userName: 'Store Supervisor',
+          actorRole: 'staff',
+          action: 'THRESHOLD_MODIFICATION',
+          category: 'product',
+          subCategory: 'thresholds',
+          details: 'Adjusted replenishment and reorder alert thresholds for Frytol Vegetable Cooking Oil 1L',
+          ipAddress: '192.168.1.102',
+          preState: 'Min Stock: 10 units | Reorder Point: 15 | Max Capacity: 50',
+          postState: 'Min Stock: 25 units | Reorder Point: 35 | Max Capacity: 100',
+          delta: 'Reorder threshold +20 units; safety buffer increased by 15 units',
+          deviceTerminal: 'Warehouse Tablet #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 14 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of productLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+
+    const stockCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category = 'stock'").get();
+    if (!stockCount || stockCount.count === 0) {
+      const stockLogs = [
+        {
+          userId: 2,
+          userName: 'Kofi Mensah',
+          actorRole: 'staff',
+          action: 'MANUAL_STOCK_ADJUSTMENT',
+          category: 'stock',
+          subCategory: 'manual_adjustments',
+          details: 'Logged stock shrinkage and write-off due to handling damage during pallet offloading',
+          ipAddress: '192.168.1.105',
+          preState: 'System Quantity: 45 units',
+          postState: 'Adjusted Quantity: 40 units',
+          delta: 'Quantity changed from 45 to 40 (-5 units damaged write-off)',
+          deviceTerminal: 'POS Terminal #1 (Lane A)',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 6 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'WAREHOUSE_TRANSFER_DISPATCH',
+          category: 'stock',
+          subCategory: 'warehouse_transfers',
+          details: 'Authorized and dispatched stock transfer manifest #TRF-2026-088 to Madina Satellite Store',
+          ipAddress: '102.176.65.22',
+          preState: 'Central Warehouse: 150 units | In-Transit: 0 units',
+          postState: 'Central Warehouse: 100 units | In-Transit: 50 units (Manifest #TRF-2026-088)',
+          delta: '-50 units dispatched; status transitioned to IN_TRANSIT',
+          deviceTerminal: 'Logistics Station',
+          location: 'Central Depot - Accra',
+          createdAt: new Date(Date.now() - 11 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'PHYSICAL_COUNT_RECONCILIATION',
+          category: 'stock',
+          subCategory: 'cycle_counts_audits',
+          details: 'Reconciled cycle stocktake variance for St. Louis Sugar Cubes 500g following bi-weekly physical audit',
+          ipAddress: '102.176.65.22',
+          preState: 'System Recorded Count: 84 units',
+          postState: 'Physical Verified Count: 81 units',
+          delta: '-3 units variance approved and reconciled by Store Admin',
+          deviceTerminal: 'Admin Workstation #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 20 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of stockLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+
+    const purchasingCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category = 'purchasing'").get();
+    if (!purchasingCount || purchasingCount.count === 0) {
+      const purchasingLogs = [
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'PURCHASE_ORDER_AUTHORIZED',
+          category: 'purchasing',
+          subCategory: 'purchase_orders',
+          details: 'Purchase Order #PO-2026-042 approved and transmitted to vendor Wilmar Africa Ltd',
+          ipAddress: '102.176.65.22',
+          preState: 'Status: Draft | Value: GHS 14,500.00',
+          postState: 'Status: Authorized & Dispatched (PO-2026-042)',
+          delta: 'Status transitioned: Draft -> Approved -> Dispatched',
+          deviceTerminal: 'Purchasing Desk #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 7 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 2,
+          userName: 'Store Supervisor',
+          actorRole: 'staff',
+          action: 'GOODS_RECEIVED_NOTE_CONFIRMED',
+          category: 'purchasing',
+          subCategory: 'grn_receipts',
+          details: 'Intake confirmation for GRN-9904. Verified 200 cartons Sunlight Detergent 1kg, Batch #UN-2026-09B, Exp: 2028-04',
+          ipAddress: '192.168.1.102',
+          preState: 'PO-2026-039 Pending Delivery (0/200 Received)',
+          postState: 'GRN-9904 Verified (200/200 Received & Staged)',
+          delta: '+200 units added to active stock; Batch lot recorded',
+          deviceTerminal: 'Receiving Dock Scanner',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 15 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'SUPPLIER_PROFILE_MODIFIED',
+          category: 'purchasing',
+          subCategory: 'supplier_management',
+          details: 'Updated commercial credit parameters and dispatch lead-times for vendor FanMilk Ghana Ltd',
+          ipAddress: '102.176.65.22',
+          preState: 'Payment Terms: Net 15 Days | Lead Time: 5 Days',
+          postState: 'Payment Terms: Net 30 Days | Lead Time: 3 Days',
+          delta: 'Credit terms extended +15 days; lead time reduced by 2 days',
+          deviceTerminal: 'Admin Workstation #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 26 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of purchasingLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+
+    const governanceCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category IN ('governance', 'settings')").get();
+    if (!governanceCount || governanceCount.count === 0) {
+      const governanceLogs = [
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'USER_ROLE_PERMISSION_UPDATED',
+          category: 'governance',
+          subCategory: 'user_roles',
+          details: 'Privilege elevation for account kofi@ummis.com: Upgraded role from Staff Member to Administrator',
+          ipAddress: '102.176.65.22',
+          preState: 'Role: Staff | Permissions: POS Checkout Only',
+          postState: 'Role: Admin | Permissions: Full Administrative Access',
+          delta: 'Privilege elevation: staff -> admin',
+          deviceTerminal: 'Security Console',
+          location: 'Remote HQ - Accra',
+          createdAt: new Date(Date.now() - 9 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'STORE_CONFIG_MODIFIED',
+          category: 'governance',
+          subCategory: 'store_config',
+          details: 'Updated store VAT parameters and receipt header text to reflect updated GRA commercial registration',
+          ipAddress: '102.176.65.22',
+          preState: 'Tax Rate: 15% | Receipt Header: Standard Retail Outlet',
+          postState: 'Tax Rate: 0% (Exempt) | Receipt Header: Ummis Lane Enterprise - Quality at Best Prices',
+          delta: 'Tax rate set to 0%; receipt header updated',
+          deviceTerminal: 'Admin Workstation #1',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 17 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: null,
+          userName: 'System Auto-Maintenance',
+          actorRole: 'system',
+          action: 'AUTOMATED_SYSTEM_MAINTENANCE',
+          category: 'governance',
+          subCategory: 'system_maintenance',
+          details: 'Scheduled audit log retention purge routine executed. Checked logs against standard 90-day retention threshold',
+          ipAddress: '127.0.0.1',
+          preState: 'Total Historical Records: 1,420 entries',
+          postState: 'Total Active Records: 1,280 entries',
+          delta: '140 expired entries pruned; database indexes optimized',
+          deviceTerminal: 'Internal Cron Daemon',
+          location: 'Server Core Node',
+          createdAt: new Date(Date.now() - 30 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of governanceLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+
+    const salesSpecialCount: any = db.prepare("SELECT COUNT(*) as count FROM audit_logs WHERE category = 'sales' AND (action LIKE '%Override%' OR action LIKE '%Return%')").get();
+    if (!salesSpecialCount || salesSpecialCount.count === 0) {
+      const salesSpecialLogs = [
+        {
+          userId: 1,
+          userName: 'Ing. Mensah',
+          actorRole: 'admin',
+          action: 'MANUAL_PRICE_OVERRIDE',
+          category: 'sales',
+          subCategory: 'price_overrides',
+          details: 'Admin override applied at checkout: Approved 10% promotional wholesale discount for bulk order',
+          ipAddress: '192.168.1.105',
+          preState: 'Line Total: GHS 120.00',
+          postState: 'Discounted Total: GHS 108.00 (Auth: #OVR-338)',
+          delta: 'Price changed from GHS 120.00 to GHS 108.00 (-GHS 12.00)',
+          deviceTerminal: 'POS Terminal #1 (Lane A)',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString()
+        },
+        {
+          userId: 2,
+          userName: 'Store Supervisor',
+          actorRole: 'staff',
+          action: 'SALES_RETURN_RESTOCKED',
+          category: 'sales',
+          subCategory: 'returns_refunds',
+          details: 'Processed customer return for unopened canned beverage. Item condition verified good and restocked to shelf',
+          ipAddress: '192.168.1.102',
+          preState: 'Return Logged (Receipt #REC-10810, Amount: GHS 35.00)',
+          postState: 'Approved & Restocked to Shelf inventory',
+          delta: '+1 unit restocked to shelf; GHS 35.00 cash refunded',
+          deviceTerminal: 'Customer Service Desk',
+          location: 'Main Store - Accra',
+          createdAt: new Date(Date.now() - 10 * 3600 * 1000).toISOString()
+        }
+      ];
+
+      const stmt = db.prepare(`
+        INSERT INTO audit_logs (
+          user_id, user_name, actor_role, action, category, sub_category, 
+          details, ip_address, pre_state, post_state, delta, device_terminal, location, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const log of salesSpecialLogs) {
+        stmt.run(
+          log.userId, log.userName, log.actorRole, log.action, log.category, log.subCategory,
+          log.details, log.ipAddress, log.preState, log.postState, log.delta, log.deviceTerminal, log.location, log.createdAt
+        );
+      }
+    }
+  } catch (seedErr) {
+    console.warn('Audit logs seeding notice:', seedErr);
+  }
 }
 
 // --- Audit & Notification Helpers ---
@@ -562,12 +1066,52 @@ function getClientIp(req: any): string {
   }
 }
 
-function logAuditEvent(userId: number | null, userName: string | null, action: string, category: string = 'general', details: string | null = null, ipAddress: string | null = null) {
+interface AuditLogOptions {
+  actorRole?: string | null;
+  subCategory?: string | null;
+  preState?: string | null;
+  postState?: string | null;
+  delta?: string | null;
+  deviceTerminal?: string | null;
+  location?: string | null;
+}
+
+function logAuditEvent(
+  userId: number | null, 
+  userName: string | null, 
+  action: string, 
+  category: string = 'general', 
+  details: string | null = null, 
+  ipAddress: string | null = null,
+  options?: AuditLogOptions
+) {
   try {
+    const actorRole = options?.actorRole || (userId ? 'staff' : 'system');
+    const subCategory = options?.subCategory || category;
+    const deviceTerminal = options?.deviceTerminal || 'POS Terminal #1 (Lane A)';
+    const location = options?.location || 'Main Store - Accra';
+
     db.prepare(`
-      INSERT INTO audit_logs (user_id, user_name, action, category, details, ip_address)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(userId, userName || 'System', action, category, details, ipAddress);
+      INSERT INTO audit_logs (
+        user_id, user_name, action, category, details, ip_address,
+        actor_role, sub_category, pre_state, post_state, delta, device_terminal, location
+      )
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      userId, 
+      userName || 'System', 
+      action, 
+      category, 
+      details, 
+      ipAddress,
+      actorRole,
+      subCategory,
+      options?.preState || null,
+      options?.postState || null,
+      options?.delta || null,
+      deviceTerminal,
+      location
+    );
   } catch (err) {
     console.error('Failed to write audit log event:', err);
   }

@@ -328,7 +328,7 @@ export default function Users() {
             </span>
           </div>
           <p className="text-xs text-slate-500 mt-0.5">
-            Configure system accounts, assign security roles, inspect audit genesis logs, and manage active sessions.
+            Configure system accounts, assign security roles, and manage active sessions. Account genesis records and verified sign-in histories are audited under Audit Security Logs.
           </p>
         </div>
 
@@ -420,8 +420,6 @@ export default function Users() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">User / Staff</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Email Address</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Access Role</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Created (Audit Genesis)</th>
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Last Login (Audit Verified)</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Account Status</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
@@ -429,14 +427,14 @@ export default function Users() {
             <tbody className="bg-white divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-xs text-slate-400">
+                  <td colSpan={5} className="px-5 py-10 text-center text-xs text-slate-400">
                     <RefreshCw size={18} className="animate-spin inline mr-2 text-blue-600" />
                     Loading user directory...
                   </td>
                 </tr>
               ) : users.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-xs text-slate-400">
+                  <td colSpan={5} className="px-5 py-10 text-center text-xs text-slate-400">
                     <UsersIcon size={24} className="mx-auto mb-2 text-slate-300" />
                     No user accounts found.
                   </td>
@@ -498,38 +496,6 @@ export default function Users() {
                         </span>
                       </td>
 
-                      {/* Created date handled by audit security log */}
-                      <td className="px-5 py-3.5 text-xs whitespace-nowrap">
-                        <div className="font-medium text-slate-800">
-                          {formatDateTime(u.created_at) || 'System Genesis'}
-                        </div>
-                        <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5" title="Account creation verified through audit trail">
-                          <ShieldCheck size={11} className="text-emerald-600" />
-                          <span>Audit Genesis {u.created_by ? `• by ${u.created_by}` : ''}</span>
-                        </div>
-                      </td>
-
-                      {/* Last login handled by audit security log */}
-                      <td className="px-5 py-3.5 text-xs whitespace-nowrap">
-                        {u.last_login_at ? (
-                          <div>
-                            <div className="text-slate-900 font-semibold">{formatDateTime(u.last_login_at)}</div>
-                            <div className="text-[10px] text-slate-500 flex items-center gap-1 mt-0.5" title="Audit security verified login event">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              <span>IP: {u.last_login_ip || 'Local Network'}</span>
-                            </div>
-                          </div>
-                        ) : (
-                          <div>
-                            <span className="text-slate-400 italic text-[11px]">Never logged in</span>
-                            <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
-                              <Clock size={10} />
-                              <span>No audit login recorded</span>
-                            </div>
-                          </div>
-                        )}
-                      </td>
-
                       <td className="px-5 py-3.5 text-xs">
                         {isActive ? (
                           <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
@@ -544,35 +510,20 @@ export default function Users() {
                         )}
                       </td>
 
-                      {/* Action Column with View Button & Three Dots */}
+                      {/* Action Column with Three Dots */}
                       <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                        <div className="flex items-center justify-end gap-1.5">
-                          {/* Dedicated View Action Button */}
-                          <button
-                            type="button"
-                            onClick={() => handleViewUser(u)}
-                            className="px-2.5 py-1.5 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 rounded-lg text-xs font-semibold transition flex items-center gap-1.5 border border-slate-200 shadow-2xs hover:border-blue-300"
-                            title="View user details & audit security history"
-                          >
-                            <Eye size={13} className="text-blue-600" />
-                            <span>View</span>
-                          </button>
-
-                          {isAdmin ? (
-                            <ActionMenu
-                              user={u}
-                              onView={handleViewUser}
-                              onSecurity={handleSecurityUser}
-                              onEdit={handleEditUser}
-                              onToggleNavigationSlider={handleToggleNavigationSlider}
-                              onToggleStatus={handleToggleStatus}
-                              onDelete={handleDeleteUser}
-                              onSuccess={loadUsers}
-                              isPrimaryAdmin={isPrimaryAdmin}
-                            />
-                          ) : (
-                            <span className="text-[11px] text-slate-400 italic">Read-only</span>
-                          )}
+                        <div className="flex items-center justify-end">
+                          <ActionMenu
+                            user={u}
+                            onView={handleViewUser}
+                            onSecurity={handleSecurityUser}
+                            onEdit={handleEditUser}
+                            onToggleStatus={handleToggleStatus}
+                            onDelete={handleDeleteUser}
+                            onSuccess={loadUsers}
+                            isPrimaryAdmin={isPrimaryAdmin}
+                            isAdmin={isAdmin}
+                          />
                         </div>
                       </td>
                     </tr>
