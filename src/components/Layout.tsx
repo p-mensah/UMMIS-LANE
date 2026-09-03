@@ -133,7 +133,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   };
 
   // Flat & Standalone Navigation Links
-  const navItems: NavItemConfig[] = [
+  const navItems: NavItemConfig[] = user?.role === 'supplier' ? [
+    { to: '/supplier-dashboard', icon: <Building2 size={18} />, label: 'Supplier Portal', badge: 'Vendor' },
+    { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders' },
+    { to: '/products', icon: <Package size={18} />, label: 'Supplied Products' }
+  ] : [
     { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/sales', icon: <ShoppingCart size={18} />, label: 'Sales Terminal', badge: 'POS' },
     { to: '/returns', icon: <RotateCcw size={18} />, label: 'Returns & Credits' },
@@ -142,6 +146,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments' },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
+    { to: '/supplier-dashboard', icon: <Building2 size={18} />, label: 'Supplier Portal', adminOnly: true },
     { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
     { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
     { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },
@@ -154,7 +159,8 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Helper to determine current page title for topbar header
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path === '/') return 'Executive Dashboard Overview';
+    if (path === '/') return user?.role === 'supplier' ? 'Supplier Portal Dashboard' : 'Executive Dashboard Overview';
+    if (path === '/supplier-dashboard') return 'Supplier Portal & Restock Workflow';
     if (path.startsWith('/products')) return 'Products Catalog & Inventory';
     if (path === '/sales') return 'Point of Sale (POS) Terminal';
     if (path === '/returns') return 'Returns & Credit Notes Ledger';

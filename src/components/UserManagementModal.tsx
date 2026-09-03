@@ -183,16 +183,16 @@ export default function UserManagementModal({
             <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
               Assign Role (Permissions)
             </label>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-3 gap-2">
               <label 
-                className={`flex flex-col p-3 rounded-xl border cursor-pointer transition ${
+                className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
                   role === 'staff' 
                     ? 'border-blue-600 bg-blue-50/40 text-blue-900 ring-1 ring-blue-600' 
                     : 'border-slate-200 hover:border-slate-300 text-slate-700'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold">Staff Member</span>
+                  <span className="text-xs font-bold">Staff</span>
                   <input
                     type="radio"
                     name="modal_role"
@@ -202,18 +202,18 @@ export default function UserManagementModal({
                     className="text-blue-600 focus:ring-0"
                   />
                 </div>
-                <span className="text-[10px] text-slate-500 leading-tight">POS sales, orders & inventory operations</span>
+                <span className="text-[10px] text-slate-500 leading-tight">POS sales & inventory</span>
               </label>
 
               <label 
-                className={`flex flex-col p-3 rounded-xl border cursor-pointer transition ${
+                className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
                   role === 'admin' 
                     ? 'border-indigo-600 bg-indigo-50/40 text-indigo-900 ring-1 ring-indigo-600' 
                     : 'border-slate-200 hover:border-slate-300 text-slate-700'
                 }`}
               >
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-bold">Administrator</span>
+                  <span className="text-xs font-bold">Admin</span>
                   <input
                     type="radio"
                     name="modal_role"
@@ -223,7 +223,28 @@ export default function UserManagementModal({
                     className="text-indigo-600 focus:ring-0"
                   />
                 </div>
-                <span className="text-[10px] text-slate-500 leading-tight">Full access, staff management & audits</span>
+                <span className="text-[10px] text-slate-500 leading-tight">Full store control</span>
+              </label>
+
+              <label 
+                className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
+                  role === 'supplier' 
+                    ? 'border-emerald-600 bg-emerald-50/40 text-emerald-900 ring-1 ring-emerald-600' 
+                    : 'border-slate-200 hover:border-slate-300 text-slate-700'
+                }`}
+              >
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs font-bold">Supplier</span>
+                  <input
+                    type="radio"
+                    name="modal_role"
+                    value="supplier"
+                    checked={role === 'supplier'}
+                    onChange={() => setRole('supplier')}
+                    className="text-emerald-600 focus:ring-0"
+                  />
+                </div>
+                <span className="text-[10px] text-slate-500 leading-tight">Vendor PO portal</span>
               </label>
             </div>
           </div>

@@ -26,11 +26,20 @@ import Transactions from './pages/Transactions';
 import AuditLogs from './pages/AuditLogs';
 import ProductDetail from './pages/ProductDetail';
 import Returns from './pages/Returns';
+import SupplierDashboard from './pages/SupplierDashboard';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
   return user ? <Layout>{children}</Layout> : <Navigate to="/login" />;
+}
+
+function HomeRoute() {
+  const { user } = useAuth();
+  if (user?.role === 'supplier') {
+    return <SupplierDashboard />;
+  }
+  return <Dashboard />;
 }
 
 export default function App() {
@@ -41,7 +50,8 @@ export default function App() {
         <NotificationProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
-            <Route path="/" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+            <Route path="/" element={<PrivateRoute><HomeRoute /></PrivateRoute>} />
+            <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard /></PrivateRoute>} />
             <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
             <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
             <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />

@@ -55,6 +55,7 @@ export default function Purchases() {
   // PO Detail Drawer state
   const [selectedPO, setSelectedPO] = useState<any>(null);
   const [loadingDetail, setLoadingDetail] = useState(false);
+  const [updatingId, setUpdatingId] = useState<number | null>(null);
 
   const { addToast, refreshNotifications } = useNotifications();
 
@@ -178,6 +179,7 @@ export default function Purchases() {
   };
 
   const handleStatusChange = async (poId: number, newStatus: string) => {
+    setUpdatingId(poId);
     try {
       await fetchApi(`/purchases/${poId}/status`, {
         method: 'PUT',
@@ -191,14 +193,43 @@ export default function Purchases() {
 
       addToast({
         title: 'PO Status Changed',
-        message: `PO #PO-${poId} status updated to ${newStatus.toUpperCase()}`,
+        message: `PO #PO-${poId} status updated to ${newStatus.toUpperCase()}${newStatus === 'received' ? ' and inventory restocked!' : ''}`,
         type: newStatus === 'received' ? 'success' : newStatus === 'cancelled' ? 'danger' : 'info'
       });
 
-      loadData();
-      refreshNotifications();
+      await loadData();
+      await refreshNotifications();
     } catch (err: any) {
       alert(err.message || 'Failed to update status');
+    } finally {
+      setUpdatingId(null);
+    }
+  };
+
+  const handleConfirmReceipt = async (poId: number) => {
+    setUpdatingId(poId);
+    try {
+      await fetchApi(`/purchases/${poId}/confirm-receipt`, {
+        method: 'POST'
+      });
+
+      setPurchases(prev => prev.map(p => p.id === poId ? { ...p, status: 'received' } : p));
+      if (selectedPO && selectedPO.id === poId) {
+        setSelectedPO({ ...selectedPO, status: 'received' });
+      }
+
+      addToast({
+        title: 'Receipt Confirmed! 📦',
+        message: `PO #PO-${poId} marked as RECEIVED. Items have been added to inventory stock.`,
+        type: 'success'
+      });
+
+      await loadData();
+      await refreshNotifications();
+    } catch (err: any) {
+      alert(err.message || 'Failed to confirm receipt');
+    } finally {
+      setUpdatingId(null);
     }
   };
 
@@ -270,7 +301,12 @@ export default function Purchases() {
   };
 
   const filteredPurchases = purchases.filter(p => {
-    const matchesStatus = statusFilter === 'all' || p.status === statusFilter;
+    let matchesStatus = true;
+    if (statusFilter === 'pending') {
+      matchesStatus = p.status === 'ordered' || p.status === 'pending' || p.status === 'submitted' || p.status === 'dispatched';
+    } else if (statusFilter !== 'all') {
+      matchesStatus = p.status === statusFilter;
+    }
     const matchesSearch = !searchQuery || 
       `PO-${p.id}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
       p.supplier_name.toLowerCase().includes(searchQuery.toLowerCase());
@@ -280,16 +316,43 @@ export default function Purchases() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'received':
-        return <span className="px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-black uppercase rounded-full inline-flex items-center gap-1"><CheckCircle2 size={11} /> Received</span>;
+        return (
+          <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+            <CheckCircle2 size={12} className="text-emerald-600 shrink-0" /> Received
+          </span>
+        );
       case 'ordered':
       case 'submitted':
-        return <span className="px-2.5 py-1 bg-blue-50 text-blue-700 border border-blue-200 text-[10px] font-black uppercase rounded-full inline-flex items-center gap-1"><Truck size={11} /> Ordered</span>;
+      case 'pending':
+        return (
+          <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+            <Clock size={12} className="text-amber-600 shrink-0" /> Pending Delivery
+          </span>
+        );
+      case 'dispatched':
+        return (
+          <span className="px-2.5 py-1 bg-indigo-50 text-indigo-800 border border-indigo-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+            <Truck size={12} className="text-indigo-600 shrink-0" /> Dispatched
+          </span>
+        );
       case 'draft':
-        return <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-black uppercase rounded-full inline-flex items-center gap-1"><Clock size={11} /> Draft</span>;
+        return (
+          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold uppercase rounded-full inline-flex items-center gap-1.5">
+            <Clock size={12} className="text-slate-500 shrink-0" /> Draft
+          </span>
+        );
       case 'cancelled':
-        return <span className="px-2.5 py-1 bg-red-50 text-red-700 border border-red-200 text-[10px] font-black uppercase rounded-full inline-flex items-center gap-1"><AlertCircle size={11} /> Cancelled</span>;
+        return (
+          <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
+            <AlertCircle size={12} className="text-rose-600 shrink-0" /> Cancelled
+          </span>
+        );
       default:
-        return <span className="px-2.5 py-1 bg-slate-100 text-slate-600 text-[10px] font-bold uppercase rounded-full">{status}</span>;
+        return (
+          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-bold uppercase rounded-full">
+            {status}
+          </span>
+        );
     }
   };
 
@@ -367,7 +430,7 @@ export default function Purchases() {
       {/* Filter Toolbar */}
       <div className="bg-white border border-slate-200 p-4 rounded-sm shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
-          {['all', 'ordered', 'received', 'draft', 'cancelled'].map(st => (
+          {['all', 'pending', 'received', 'draft', 'cancelled'].map(st => (
             <button
               key={st}
               onClick={() => setStatusFilter(st)}
@@ -431,13 +494,30 @@ export default function Purchases() {
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-right text-xs">
                       <div className="flex items-center justify-end gap-2">
+                        {p.status !== 'received' && p.status !== 'cancelled' ? (
+                          <button
+                            onClick={() => handleConfirmReceipt(p.id)}
+                            disabled={updatingId === p.id}
+                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer disabled:opacity-50"
+                            title="Confirm Receipt & Restock Inventory"
+                          >
+                            {updatingId === p.id ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
+                            <span>Confirm Receipt</span>
+                          </button>
+                        ) : p.status === 'received' ? (
+                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded inline-flex items-center gap-1">
+                            <CheckCircle2 size={11} className="text-emerald-600" /> Fulfilled
+                          </span>
+                        ) : null}
+
                         <select
                           value={p.status}
+                          disabled={updatingId === p.id}
                           onChange={e => handleStatusChange(p.id, e.target.value)}
                           className="border border-slate-300 rounded px-2 py-1 text-[11px] font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
                         >
                           <option value="draft">Draft</option>
-                          <option value="ordered">Ordered</option>
+                          <option value="ordered">Pending (Ordered)</option>
                           <option value="received">Received (Fulfill)</option>
                           <option value="cancelled">Cancelled</option>
                         </select>
@@ -649,9 +729,27 @@ export default function Purchases() {
                 <span className="text-base font-black text-red-600">{formatGHS(selectedPO.total_amount)}</span>
               </div>
 
-              <button onClick={() => setSelectedPO(null)} className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded hover:bg-slate-800">
-                Close
-              </button>
+              <div className="flex items-center gap-2">
+                {selectedPO.status !== 'received' && selectedPO.status !== 'cancelled' ? (
+                  <button
+                    onClick={() => handleConfirmReceipt(selectedPO.id)}
+                    disabled={updatingId === selectedPO.id}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
+                  >
+                    {updatingId === selectedPO.id ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                    Confirm Receipt & Fulfill Stock
+                  </button>
+                ) : selectedPO.status === 'received' ? (
+                  <span className="px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded flex items-center gap-1.5">
+                    <CheckCircle2 size={14} className="text-emerald-600" />
+                    Receipt Confirmed & Stock Fulfilled
+                  </span>
+                ) : null}
+
+                <button onClick={() => setSelectedPO(null)} className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded hover:bg-slate-800">
+                  Close
+                </button>
+              </div>
             </div>
           </div>
         </div>

@@ -365,7 +365,11 @@ export default function Users() {
                       <td className="px-5 py-3.5">
                         <div className="flex items-center gap-2.5">
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs uppercase ${
-                            u.role === 'admin' ? 'bg-indigo-100 text-indigo-700' : 'bg-blue-100 text-blue-700'
+                            u.role === 'admin'
+                              ? 'bg-indigo-100 text-indigo-700'
+                              : u.role === 'supplier'
+                              ? 'bg-emerald-100 text-emerald-700'
+                              : 'bg-blue-100 text-blue-700'
                           }`}>
                             {u.name?.charAt(0) || 'U'}
                           </div>
@@ -388,9 +392,11 @@ export default function Users() {
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
                           u.role === 'admin' 
                             ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
+                            : u.role === 'supplier'
+                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             : 'bg-slate-100 text-slate-700 border border-slate-200'
                         }`}>
-                          {u.role === 'admin' ? 'Administrator' : 'Staff Member'}
+                          {u.role === 'admin' ? 'Administrator' : u.role === 'supplier' ? 'Supplier Vendor' : 'Staff Member'}
                         </span>
                       </td>
 
@@ -511,6 +517,7 @@ export default function Users() {
                 >
                   <option value="staff">Staff Member (Standard POS & Inventory access)</option>
                   <option value="admin">Administrator (Full System & User management access)</option>
+                  <option value="supplier">Supplier Vendor (Supplier Portal & PO restock access)</option>
                 </select>
               </div>
 

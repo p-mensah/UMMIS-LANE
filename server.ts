@@ -236,6 +236,9 @@ function initDb() {
   addColumnOrIgnore('purchases', 'status', "TEXT DEFAULT 'ordered'");
   addColumnOrIgnore('purchases', 'notes', 'TEXT');
   addColumnOrIgnore('purchases', 'expected_date', 'DATETIME');
+  addColumnOrIgnore('purchases', 'received_at', 'DATETIME');
+  addColumnOrIgnore('purchases', 'confirmed_by', 'TEXT');
+  addColumnOrIgnore('purchases', 'tracking_number', 'TEXT');
   addColumnOrIgnore('products', 'category_id', 'INTEGER');
   addColumnOrIgnore('products', 'unit_of_measure', 'TEXT');
   addColumnOrIgnore('products', 'brand', 'TEXT');
@@ -268,6 +271,39 @@ function initDb() {
   } else {
     db.prepare('UPDATE users SET password = ?, role = ? WHERE email = ?').run(staffHash, 'staff', staffEmail);
   }
+
+  // Seed default supplier users
+  const supplierEmail = 'orders@nestle.com.gh';
+  const checkSupplier = db.prepare('SELECT id FROM users WHERE email = ?').get(supplierEmail);
+  const supplierHash = bcrypt.hashSync('Supplier@ummis', 10);
+  if (!checkSupplier) {
+    db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Nestlé Ghana Supplier', supplierEmail, supplierHash, 'supplier');
+  } else {
+    db.prepare('UPDATE users SET password = ?, role = ? WHERE email = ?').run(supplierHash, 'supplier', supplierEmail);
+  }
+
+  const supplierEmail2 = 'supplier@ummis.com';
+  const checkSupplier2 = db.prepare('SELECT id FROM users WHERE email = ?').get(supplierEmail2);
+  if (!checkSupplier2) {
+    db.prepare('INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)').run('Key Vendor Supplier', supplierEmail2, supplierHash, 'supplier');
+  } else {
+    db.prepare('UPDATE users SET password = ?, role = ? WHERE email = ?').run(supplierHash, 'supplier', supplierEmail2);
+  }
+
+  // Create supplier interactions table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS supplier_interactions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_name TEXT NOT NULL,
+      user_id INTEGER,
+      sender_name TEXT NOT NULL,
+      sender_role TEXT NOT NULL,
+      message_type TEXT NOT NULL DEFAULT 'note',
+      po_id INTEGER,
+      message TEXT NOT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+  `);
 
   // Populate initial demo database if fresh
   seedDatabase(db);
@@ -600,6 +636,8 @@ const authenticate = (req: any, res: any, next: any) => {
     if (token.startsWith('mock_')) {
       if (token.includes('admin')) {
         req.user = { id: 1, email: 'rabbi@ummis.com', role: 'admin', name: 'Rabbi Admin' };
+      } else if (token.includes('supplier')) {
+        req.user = { id: 3, email: 'orders@nestle.com.gh', role: 'supplier', name: 'Nestlé Ghana Supplier' };
       } else {
         req.user = { id: 2, email: 'Staff@ummis.com', role: 'staff', name: 'Store Staff' };
       }
@@ -616,12 +654,12 @@ const authenticate = (req: any, res: any, next: any) => {
       const decodedAny: any = jwt.decode(token);
       if (decodedAny && (decodedAny.email || decodedAny.sub)) {
         const email = decodedAny.email || 'user@example.com';
-        const role = (email.toLowerCase().includes('rabbi') || email.toLowerCase().includes('admin')) ? 'admin' : (decodedAny.user_metadata?.role || 'staff');
+        const role = (email.toLowerCase().includes('rabbi') || email.toLowerCase().includes('admin')) ? 'admin' : (decodedAny.role || decodedAny.user_metadata?.role || (email.toLowerCase().includes('supplier') || email.toLowerCase().includes('nestle') ? 'supplier' : 'staff'));
         req.user = {
           id: decodedAny.sub || decodedAny.id || 1,
           email,
           role,
-          name: decodedAny.user_metadata?.name || email.split('@')[0]
+          name: decodedAny.user_metadata?.name || decodedAny.name || email.split('@')[0]
         };
         return next();
       }
@@ -1203,9 +1241,9 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
   }
 });
 
-app.get('/api/purchases', authenticate, (req, res) => {
+app.get('/api/purchases', authenticate, (req: any, res) => {
   try {
-    const purchases = db.prepare(`
+    let sql = `
       SELECT 
         p.*, 
         u.name as user_name,
@@ -1213,8 +1251,33 @@ app.get('/api/purchases', authenticate, (req, res) => {
         (SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id) as total_units
       FROM purchases p 
       LEFT JOIN users u ON p.user_id = u.id 
-      ORDER BY p.created_at DESC
-    `).all();
+    `;
+    const params: any[] = [];
+    const conditions: string[] = [];
+
+    // Filter by supplier if query specified or if user is a supplier
+    if (req.user?.role === 'supplier') {
+      const email = (req.user.email || '').toLowerCase();
+      const name = (req.user.name || '').replace(/supplier/i, '').trim().toLowerCase();
+      conditions.push(`(LOWER(p.supplier_name) LIKE ? OR LOWER(p.supplier_contact) LIKE ? OR ? LIKE ('%' || LOWER(p.supplier_name) || '%'))`);
+      params.push(`%${name || email.split('@')[0]}%`, `%${email}%`, req.user.name.toLowerCase());
+    } else if (req.query.supplier) {
+      conditions.push(`(LOWER(p.supplier_name) LIKE ? OR p.supplier_id = ?)`);
+      params.push(`%${(req.query.supplier as string).toLowerCase()}%`, req.query.supplier);
+    }
+
+    if (req.query.status && req.query.status !== 'all') {
+      conditions.push(`p.status = ?`);
+      params.push(req.query.status);
+    }
+
+    if (conditions.length > 0) {
+      sql += ` WHERE ${conditions.join(' AND ')}`;
+    }
+
+    sql += ` ORDER BY p.created_at DESC`;
+
+    const purchases = db.prepare(sql).all(...params);
     res.json(purchases);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -1246,8 +1309,9 @@ app.get('/api/purchases/:id', authenticate, (req, res) => {
 });
 
 app.put('/api/purchases/:id/status', authenticate, (req: any, res) => {
-  const { status } = req.body;
-  const validStatuses = ['draft', 'submitted', 'ordered', 'received', 'cancelled'];
+  let { status } = req.body;
+  if (status === 'pending') status = 'ordered';
+  const validStatuses = ['draft', 'pending', 'submitted', 'ordered', 'dispatched', 'received', 'cancelled'];
   if (!status || !validStatuses.includes(status)) {
     return res.status(400).json({ error: 'Invalid purchase order status' });
   }
@@ -1258,14 +1322,21 @@ app.put('/api/purchases/:id/status', authenticate, (req: any, res) => {
 
     const oldStatus = po.status || 'ordered';
     if (oldStatus === status) {
-      return res.json({ success: true, message: 'Status unchanged' });
+      return res.json({ success: true, message: 'Status unchanged', status });
     }
 
-    const items = db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all() as any[];
+    // FIX: Pass req.params.id to avoid RangeError: Too few parameter values
+    const items = db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all(req.params.id) as any[];
 
     db.transaction(() => {
-      // Update status
-      db.prepare('UPDATE purchases SET status = ? WHERE id = ?').run(status, req.params.id);
+      // Update status and timestamp
+      if (status === 'received') {
+        db.prepare('UPDATE purchases SET status = ?, received_at = CURRENT_TIMESTAMP, confirmed_by = ? WHERE id = ?').run(
+          status, req.user?.name || 'Authorized Staff', req.params.id
+        );
+      } else {
+        db.prepare('UPDATE purchases SET status = ? WHERE id = ?').run(status, req.params.id);
+      }
 
       // Handle inventory fulfillment on transition to received
       if (status === 'received' && oldStatus !== 'received') {
@@ -1294,15 +1365,180 @@ app.put('/api/purchases/:id/status', authenticate, (req: any, res) => {
     logAuditEvent(
       req.user.id, 
       req.user.name, 
-      'Updated PO Status', 
+      status === 'received' ? 'Confirmed PO Receipt' : 'Updated PO Status', 
       'stock', 
-      `Updated PO #PO-${po.id} status from ${oldStatus} to ${status}`
+      `Updated PO #PO-${po.id} status from ${oldStatus} to ${status}. ${status === 'received' ? 'Stock inventory replenished.' : ''}`
     );
+
+    // Record interaction in supplier workflow
+    try {
+      db.prepare('INSERT INTO supplier_interactions (supplier_name, user_id, sender_name, sender_role, message_type, po_id, message) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        po.supplier_name,
+        req.user.id,
+        req.user.name,
+        req.user.role || 'staff',
+        status === 'received' ? 'receipt_confirmation' : 'status_update',
+        po.id,
+        `PO #PO-${po.id} status changed to ${status.toUpperCase()} by ${req.user.name}`
+      );
+    } catch(e) {}
 
     // Check stock levels in case of inventory changes
     checkStockAlerts();
 
-    res.json({ success: true, oldStatus, newStatus: status });
+    res.json({ success: true, oldStatus, newStatus: status, confirmed_by: req.user.name });
+  } catch (err: any) {
+    console.error('Failed to update PO status:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Dedicated Confirm Receipt endpoint for Supplier Dashboard & Purchases workflow
+app.post('/api/purchases/:id/confirm-receipt', authenticate, (req: any, res) => {
+  try {
+    const po: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+
+    const oldStatus = po.status || 'ordered';
+    if (oldStatus === 'received') {
+      return res.json({ success: true, message: 'Purchase order is already confirmed as received.', status: 'received' });
+    }
+
+    const items = db.prepare('SELECT * FROM purchase_items WHERE purchase_id = ?').all(req.params.id) as any[];
+
+    db.transaction(() => {
+      // Mark as received with confirmation timestamp and user
+      db.prepare('UPDATE purchases SET status = "received", received_at = CURRENT_TIMESTAMP, confirmed_by = ? WHERE id = ?').run(
+        req.user?.name || 'Authorized User', req.params.id
+      );
+
+      // Fulfill products into inventory
+      for (const item of items) {
+        db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
+      }
+    })();
+
+    // Real-time Notification
+    createNotification(
+      'Receipt Confirmed: PO #' + po.id,
+      `Delivery receipt confirmed for PO #PO-${po.id} from supplier "${po.supplier_name}". ${items.length} item(s) restocked into warehouse inventory.`,
+      'success',
+      '/purchases'
+    );
+
+    // Audit Logging
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Confirmed PO Receipt',
+      'stock',
+      `Confirmed receipt for PO #PO-${po.id} from "${po.supplier_name}". Fulfilled ${items.length} restocked product line(s).`
+    );
+
+    // Log in supplier workflow thread
+    try {
+      db.prepare('INSERT INTO supplier_interactions (supplier_name, user_id, sender_name, sender_role, message_type, po_id, message) VALUES (?, ?, ?, ?, ?, ?, ?)').run(
+        po.supplier_name,
+        req.user.id,
+        req.user.name,
+        req.user.role || 'staff',
+        'receipt_confirmation',
+        po.id,
+        `Receipt confirmed for PO #PO-${po.id} by ${req.user.name}. Inventory stock has been fulfilled and restocked.`
+      );
+    } catch(e) {}
+
+    checkStockAlerts();
+
+    res.json({
+      success: true,
+      message: 'Receipt confirmed successfully. Stock fulfilled.',
+      status: 'received',
+      po_id: po.id,
+      confirmed_by: req.user.name,
+      received_at: new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error('Error in confirm-receipt:', err);
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Supplier Portal Routes
+app.get('/api/supplier/interactions', authenticate, (req: any, res) => {
+  try {
+    let sql = 'SELECT * FROM supplier_interactions';
+    const params: any[] = [];
+    if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    } else if (req.user?.role === 'supplier') {
+      const name = (req.user.name || '').replace(/supplier/i, '').trim().toLowerCase();
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${name}%`);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+    const interactions = db.prepare(sql).all(...params);
+    res.json(interactions);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/interactions', authenticate, (req: any, res) => {
+  try {
+    const { supplier_name, message, message_type, po_id } = req.body;
+    if (!message || !message.trim()) {
+      return res.status(400).json({ error: 'Message content cannot be empty' });
+    }
+
+    const suppName = supplier_name || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : 'General Supplier');
+
+    const result = db.prepare(`
+      INSERT INTO supplier_interactions (supplier_name, user_id, sender_name, sender_role, message_type, po_id, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      suppName,
+      req.user.id,
+      req.user.name,
+      req.user.role || 'supplier',
+      message_type || 'note',
+      po_id || null,
+      message.trim()
+    );
+
+    // Notify shop admin if sent by supplier
+    if (req.user?.role === 'supplier') {
+      createNotification(
+        'New Supplier Message / Dispatch Update',
+        `Supplier "${suppName}" sent an update: "${message.trim().slice(0, 100)}"`,
+        'info',
+        '/supplier-dashboard'
+      );
+    }
+
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/supplier/catalog', authenticate, (req: any, res) => {
+  try {
+    let brandFilter = req.query.brand || '';
+    if (!brandFilter && req.user?.role === 'supplier') {
+      // derive brand or supplier name
+      brandFilter = req.user.name.replace(/supplier/i, '').replace(/ghana/i, '').replace(/ltd/i, '').trim();
+    }
+    let sql = 'SELECT * FROM products';
+    const params: any[] = [];
+    if (brandFilter) {
+      sql += ' WHERE LOWER(brand) LIKE ? OR LOWER(name) LIKE ?';
+      params.push(`%${(brandFilter as string).toLowerCase()}%`, `%${(brandFilter as string).toLowerCase()}%`);
+    }
+    sql += ' ORDER BY name ASC';
+    const products = db.prepare(sql).all(...params);
+    res.json(products);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
