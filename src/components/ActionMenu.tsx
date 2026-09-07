@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import { MoreVertical, Edit2, UserX, UserCheck, Trash2, Loader2, Eye, ShieldCheck, Sliders } from 'lucide-react';
+import { MoreVertical, Edit2, UserX, UserCheck, Trash2, Loader2, Eye, ShieldCheck, Sliders, User } from 'lucide-react';
 import { suspendUser, reactivateUser, deleteUser as deleteAdminUser } from '../lib/adminApi';
 import { fetchApi, ApiError } from '../lib/api';
 import { useNotifications } from '../context/NotificationContext';
@@ -21,13 +21,13 @@ export interface ActionMenuItemUser {
 
 interface ActionMenuProps {
   user: ActionMenuItemUser;
+  onManage?: (user: ActionMenuItemUser) => void;
   onView?: (user: ActionMenuItemUser) => void;
   onSecurity?: (user: ActionMenuItemUser) => void;
   onEdit?: (user: ActionMenuItemUser) => void;
   onSuccess?: () => void;
   onToggleStatus?: (user: ActionMenuItemUser) => Promise<void> | void;
   onDelete?: (user: ActionMenuItemUser) => Promise<void> | void;
-  onToggleNavigationSlider?: () => void;
   isPrimaryAdmin?: boolean;
   isAdmin?: boolean;
   disabled?: boolean;
@@ -35,13 +35,13 @@ interface ActionMenuProps {
 
 export default function ActionMenu({
   user,
+  onManage,
   onView,
   onSecurity,
   onEdit,
   onSuccess,
   onToggleStatus,
   onDelete,
-  onToggleNavigationSlider,
   isPrimaryAdmin = false,
   isAdmin = true,
   disabled = false
@@ -82,33 +82,18 @@ export default function ActionMenu({
 
   const handleThreeDotsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    // Toggle dropdown overlay without touching or collapsing the navigation slider
     setIsOpen(prev => !prev);
   };
 
-  const handleViewClick = (e: React.MouseEvent) => {
+  const handleManageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsOpen(false); // Hide the three dots menu
-    if (onView) {
-      onView(user);
-    }
-  };
-
-  const handleSecurityClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsOpen(false); // Hide the three dots menu
-    if (onSecurity) {
-      onSecurity(user);
+    setIsOpen(false);
+    if (onManage) {
+      onManage(user);
     } else if (onEdit) {
       onEdit(user);
-    }
-  };
-
-  const handleEditClick = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setIsOpen(false); // Hide the three dots menu
-    if (onEdit) {
-      onEdit(user);
+    } else if (onView) {
+      onView(user);
     }
   };
 
@@ -266,43 +251,26 @@ export default function ActionMenu({
           className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[60] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
           role="menu"
         >
-          {/* View Profile Option */}
+          {/* View Profile Action */}
           <div className="py-1">
             <button
               type="button"
-              onClick={handleViewClick}
-              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors text-left"
+              onClick={handleManageClick}
+              className="w-full px-3.5 py-2.5 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors text-left"
               role="menuitem"
             >
-              <Eye size={14} className="text-blue-600 shrink-0" />
-              <span>View Profile</span>
+              <User size={15} className="text-blue-600 shrink-0" />
+              <div>
+                <span className="block font-bold">View Profile</span>
+                <span className="block text-[10px] text-slate-400 font-normal">
+                  Account details, role & security
+                </span>
+              </div>
             </button>
-
-            {isAdmin && (
-              <button
-                type="button"
-                onClick={handleSecurityClick}
-                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-indigo-50 hover:text-indigo-700 flex items-center gap-2.5 transition-colors text-left"
-                role="menuitem"
-              >
-                <ShieldCheck size={14} className="text-indigo-600 shrink-0" />
-                <span>Security & Reset</span>
-              </button>
-            )}
           </div>
 
           {isAdmin && (
             <div className="py-1">
-              <button
-                type="button"
-                onClick={handleEditClick}
-                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 hover:text-slate-900 flex items-center gap-2.5 transition-colors text-left"
-                role="menuitem"
-              >
-                <Edit2 size={14} className="text-slate-600 shrink-0" />
-                <span>Edit Account</span>
-              </button>
-
               <button
                 type="button"
                 onClick={handleToggleStatusClick}

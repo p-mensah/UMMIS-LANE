@@ -21,6 +21,11 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
     ...options.headers,
   };
 
+  // If body is FormData or already binary, let fetch set boundary
+  if (options.body && typeof FormData !== 'undefined' && options.body instanceof FormData) {
+    delete (headers as Record<string, string>)['Content-Type'];
+  }
+
   if (token) {
     const bearer = token.startsWith('Bearer ') ? token : `Bearer ${token}`;
     (headers as Record<string, string>)['Authorization'] = bearer;
@@ -97,7 +102,7 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
       return text;
     }
   } catch (err: any) {
-    if (err.name === 'TypeError' && err.message.includes('fetch')) {
+    if ((err.name === 'TypeError' && /fetch/i.test(err.message)) || err.message?.includes('Failed to fetch')) {
       throw new Error('Unable to connect to the server. Please check your network or server status.');
     }
     throw err;

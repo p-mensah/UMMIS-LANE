@@ -32,36 +32,53 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Check Supabase session first
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      if (session?.user) {
-        const email = session.user.email || '';
-        const role = email.includes('admin') ? 'admin' : (session.user.user_metadata?.role || 'staff');
-        const authUser: User = {
-          id: session.user.id,
-          name: session.user.user_metadata?.name || email.split('@')[0],
-          email,
-          role: role as 'admin' | 'staff'
-        };
-        setUser(authUser);
-        setToken(session.access_token);
-        localStorage.setItem('user', JSON.stringify(authUser));
-        localStorage.setItem('token', session.access_token);
-      } else {
-        const savedUser = localStorage.getItem('user');
-        const savedToken = localStorage.getItem('token');
-        if (savedUser && savedToken) {
-          try {
-            setUser(JSON.parse(savedUser));
-            setToken(savedToken);
-          } catch {}
-        }
+    // Restore session from localStorage immediately
+    const savedUser = localStorage.getItem('user');
+    const savedToken = localStorage.getItem('token');
+    if (savedUser && savedToken) {
+      try {
+        const parsed = JSON.parse(savedUser);
+        setUser(parsed);
+        setToken(savedToken);
+      } catch (e) {
+        console.warn('Could not parse stored session user:', e);
       }
-    }).catch(() => {
+    }
+
+    // If Supabase session is available, sync with it safely
+    try {
+      if (typeof supabase?.auth?.getSession === 'function') {
+        supabase.auth.getSession()
+          .then(({ data }: any) => {
+            const session = data?.session;
+            if (session?.user) {
+              const email = session.user.email || '';
+              const role = email.includes('admin') ? 'admin' : (session.user.user_metadata?.role || 'staff');
+              const authUser: User = {
+                id: session.user.id,
+                name: session.user.user_metadata?.name || email.split('@')[0],
+                email,
+                role: role as 'admin' | 'staff'
+              };
+              setUser(authUser);
+              setToken(session.access_token);
+              localStorage.setItem('user', JSON.stringify(authUser));
+              localStorage.setItem('token', session.access_token);
+            }
+          })
+          .catch((err: any) => {
+            console.warn('[AuthContext] Supabase session check notice:', err?.message || err);
+          })
+          .finally(() => {
+            setLoading(false);
+          });
+        return;
+      }
+    } catch (e) {
       // ignore
-    }).finally(() => {
-      setLoading(false);
-    });
+    }
+
+    setLoading(false);
   }, []);
 
   const login = (newToken: string, newUser: User) => {

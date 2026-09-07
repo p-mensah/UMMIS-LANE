@@ -1314,10 +1314,16 @@ const requireAdmin = (req: any, res: any, next: any) => {
 
 // --- API Routes ---
 
+// Health check endpoint
+app.get('/api/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 // Auth
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body;
-  const user: any = db.prepare('SELECT * FROM users WHERE email = ?').get(email);
+  const cleanEmail = (email || '').trim().toLowerCase();
+  const user: any = db.prepare('SELECT * FROM users WHERE LOWER(email) = ?').get(cleanEmail);
   if (!user || !bcrypt.compareSync(password, user.password)) {
     logAuditEvent(null, email || 'Unknown', 'Failed Login Attempt', 'auth', `Failed login attempt with email: ${email}`, getClientIp(req));
     return res.status(401).json({ error: 'Invalid credentials' });
@@ -4084,7 +4090,7 @@ app.get('/api/settings/backup', authenticate, requireAdmin, (req: any, res) => {
 
 // Audit Logs API
 app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
-  const { category, user_id, search, startDate, endDate, limit } = req.query;
+  const { category, sub_category, actor_role, user_id, search, startDate, endDate, limit, terminal } = req.query;
   let query = "SELECT * FROM audit_logs WHERE 1=1";
   const params: any[] = [];
 
@@ -4093,9 +4099,24 @@ app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
     params.push(category);
   }
 
+  if (sub_category && sub_category !== 'all') {
+    query += " AND sub_category = ?";
+    params.push(sub_category);
+  }
+
+  if (actor_role && actor_role !== 'all') {
+    query += " AND actor_role = ?";
+    params.push(actor_role);
+  }
+
   if (user_id && user_id !== 'all') {
     query += " AND user_id = ?";
     params.push(user_id);
+  }
+
+  if (terminal && terminal !== 'all') {
+    query += " AND device_terminal = ?";
+    params.push(terminal);
   }
 
   if (startDate) {
@@ -4109,9 +4130,19 @@ app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
   }
 
   if (search) {
-    query += " AND (action LIKE ? OR details LIKE ? OR user_name LIKE ? OR ip_address LIKE ?)";
+    query += ` AND (
+      action LIKE ? OR 
+      details LIKE ? OR 
+      user_name LIKE ? OR 
+      ip_address LIKE ? OR 
+      actor_role LIKE ? OR 
+      sub_category LIKE ? OR 
+      delta LIKE ? OR 
+      device_terminal LIKE ? OR 
+      location LIKE ?
+    )`;
     const term = `%${search}%`;
-    params.push(term, term, term, term);
+    params.push(term, term, term, term, term, term, term, term, term);
   }
 
   const queryLimit = limit ? Math.min(parseInt(limit as string, 10) || 500, 2000) : 500;
@@ -4216,7 +4247,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (req, res) => {
+    app.get('*', (req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

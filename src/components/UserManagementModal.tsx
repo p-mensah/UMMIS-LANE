@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
-  X, Shield, User, Mail, AlertCircle, Loader2, KeyRound, Eye, EyeOff, 
-  Camera, Upload, Sparkles, RefreshCw, CheckCircle2, ShieldAlert,
-  Clock, Globe, LogOut, History, Lock, ShieldCheck, Copy, Check
+  X, User, Mail, AlertCircle, Loader2, KeyRound, Eye, EyeOff, 
+  Camera, Upload, Sparkles, CheckCircle2, ShieldAlert,
+  Clock, LogOut, ShieldCheck, Copy, Check, Calendar, Globe
 } from 'lucide-react';
 import { assignRole } from '../lib/adminApi';
 import { fetchApi, ApiError } from '../lib/api';
@@ -31,13 +31,6 @@ interface UserManagementModalProps {
   onSuccess: () => void;
 }
 
-interface SecurityDetailsData {
-  user: any;
-  loginHistory: any[];
-  securityAuditHistory: any[];
-  totalLogins: number;
-}
-
 export default function UserManagementModal({
   user,
   isOpen,
@@ -48,15 +41,16 @@ export default function UserManagementModal({
   const { addToast } = useNotifications();
   const [activeTab, setActiveTab] = useState<'profile' | 'security'>('profile');
 
-  // Profile tab fields
+  // Profile fields
   const [name, setName] = useState('');
   const [role, setRole] = useState<'admin' | 'staff' | 'supplier'>('staff');
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [emailCopied, setEmailCopied] = useState(false);
 
-  // Security tab fields
+  // Security fields
   const [forcePassword, setForcePassword] = useState('');
   const [showForcePassword, setShowForcePassword] = useState(false);
   const [requireChangeOnLogin, setRequireChangeOnLogin] = useState(false);
@@ -65,11 +59,22 @@ export default function UserManagementModal({
   const [isRevokingSessions, setIsRevokingSessions] = useState(false);
   const [passwordCopied, setPasswordCopied] = useState(false);
 
-  // Live security audit details
-  const [securityDetails, setSecurityDetails] = useState<SecurityDetailsData | null>(null);
-  const [isLoadingSecurity, setIsLoadingSecurity] = useState(false);
-
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Scroll lock & Escape key dismissal
+  useEffect(() => {
+    if (isOpen) {
+      document.body.style.overflow = 'hidden';
+      const handleKeyDown = (e: KeyboardEvent) => {
+        if (e.key === 'Escape') onClose();
+      };
+      window.addEventListener('keydown', handleKeyDown);
+      return () => {
+        document.body.style.overflow = '';
+        window.removeEventListener('keydown', handleKeyDown);
+      };
+    }
+  }, [isOpen, onClose]);
 
   useEffect(() => {
     if (user && isOpen) {
@@ -83,23 +88,10 @@ export default function UserManagementModal({
       setRequireChangeOnLogin(Boolean(user.force_password_reset));
       setErrorMessage(null);
       setSuccessMessage(null);
-
-      // Load live audit security details
-      loadSecurityDetails(user.id);
+      setEmailCopied(false);
+      setPasswordCopied(false);
     }
   }, [user, isOpen, initialTab]);
-
-  const loadSecurityDetails = async (userId: string | number) => {
-    setIsLoadingSecurity(true);
-    try {
-      const data = await fetchApi(`/users/${userId}/security-details`);
-      setSecurityDetails(data);
-    } catch (err: any) {
-      console.warn('Could not fetch security details:', err);
-    } finally {
-      setIsLoadingSecurity(false);
-    }
-  };
 
   if (!isOpen || !user) return null;
 
@@ -132,12 +124,18 @@ export default function UserManagementModal({
     setShowForcePassword(true);
     navigator.clipboard.writeText(pwd);
     setPasswordCopied(true);
-    setTimeout(() => setPasswordCopied(false), 3000);
+    setTimeout(() => setPasswordCopied(false), 2500);
     addToast({
       title: 'Strong Password Generated',
-      message: 'Password copied to clipboard automatically.',
+      message: 'Generated password copied to clipboard.',
       type: 'info'
     });
+  };
+
+  const handleCopyEmail = () => {
+    navigator.clipboard.writeText(user.email);
+    setEmailCopied(true);
+    setTimeout(() => setEmailCopied(false), 2000);
   };
 
   // Handle general profile submission
@@ -148,18 +146,15 @@ export default function UserManagementModal({
     setIsSaving(true);
 
     try {
-      // 1. Connect 'Save' action to the 'assign_role' admin edge function if configured
       try {
         await assignRole(user.id, role, { name: name.trim() });
       } catch (edgeErr: any) {
-        console.warn('[UserManagementModal] assign_role edge function notice:', edgeErr.message);
         if (edgeErr instanceof ApiError && edgeErr.status === 403) {
           throw edgeErr;
         }
       }
 
-      // 2. Synchronize SQLite backend database
-      const payload: any = {
+      const payload = {
         name: name.trim(),
         role,
         profile_picture: profilePicture
@@ -172,43 +167,34 @@ export default function UserManagementModal({
 
       addToast({
         title: 'Profile Updated',
-        message: `Updated profile details and assigned role "${role.toUpperCase()}" for ${user.email}.`,
+        message: `Profile changes saved for ${user.email}.`,
         type: 'success'
       });
 
       onSuccess();
       onClose();
     } catch (err: any) {
-      console.error('[UserManagementModal] Error updating user:', err);
       const is403 = 
         err?.status === 403 || 
         err?.message?.includes('403') || 
         err?.message?.toLowerCase().includes('forbidden') || 
-        err?.message?.toLowerCase().includes('not authorized') ||
         err?.message?.toLowerCase().includes('permission');
 
       const message = is403
-        ? '403 Forbidden: Administrator permissions are required to assign roles or edit users.'
-        : (err?.message || 'Failed to update user details.');
+        ? '403 Forbidden: Administrator clearance required to modify user profiles.'
+        : (err?.message || 'Failed to update user profile.');
 
       setErrorMessage(message);
-
-      addToast({
-        title: is403 ? 'Access Forbidden (403)' : 'Update Failed',
-        message,
-        type: 'danger',
-        duration: is403 ? 8000 : 5000
-      });
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Handle Admin Forced Password Reset
+  // Handle Password Reset
   const handleForcePasswordReset = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forcePassword.trim()) {
-      setErrorMessage('Please provide a new password or click Generate to create one.');
+      setErrorMessage('Please enter a new password or click Generate to create one.');
       return;
     }
     if (forcePassword.trim().length < 6) {
@@ -230,31 +216,25 @@ export default function UserManagementModal({
         })
       });
 
-      setSuccessMessage(`Password reset successfully enforced for ${user.name} (${user.email}).`);
+      setSuccessMessage(`Password successfully updated for ${user.name}.`);
       addToast({
-        title: 'Password Reset Enforced',
-        message: `User must use the new password. All prior sessions were terminated.`,
+        title: 'Password Updated',
+        message: `New password applied for ${user.email}.`,
         type: 'success'
       });
 
       setForcePassword('');
-      loadSecurityDetails(user.id);
       onSuccess();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to force password reset.');
-      addToast({
-        title: 'Reset Failed',
-        message: err.message || 'Failed to force password reset.',
-        type: 'danger'
-      });
+      setErrorMessage(err.message || 'Failed to update password.');
     } finally {
       setIsForcingReset(false);
     }
   };
 
-  // Handle Revoke Active Sessions
+  // Handle Revoke Sessions
   const handleRevokeSessions = async () => {
-    if (!confirm(`Revoke all active login sessions and access tokens for ${user.name} (${user.email})? They will be immediately signed out from all devices.`)) {
+    if (!confirm(`Revoke all active sessions for ${user.name} (${user.email})? They will be signed out from all devices immediately.`)) {
       return;
     }
 
@@ -267,28 +247,22 @@ export default function UserManagementModal({
         method: 'POST'
       });
 
-      setSuccessMessage(`All active sessions for ${user.name} have been revoked and logged in the Security Audit Trail.`);
+      setSuccessMessage(`All active sessions for ${user.name} have been revoked.`);
       addToast({
         title: 'Sessions Revoked',
-        message: `User ${user.email} was terminated from all active sessions.`,
+        message: `User ${user.email} signed out from all active sessions.`,
         type: 'warning'
       });
 
-      loadSecurityDetails(user.id);
       onSuccess();
     } catch (err: any) {
-      setErrorMessage(err.message || 'Failed to revoke active sessions.');
-      addToast({
-        title: 'Revocation Failed',
-        message: err.message || 'Failed to revoke active sessions.',
-        type: 'danger'
-      });
+      setErrorMessage(err.message || 'Failed to revoke sessions.');
     } finally {
       setIsRevokingSessions(false);
     }
   };
 
-  const formatDateTime = (dateStr: string | null) => {
+  const formatDateTime = (dateStr: string | null | undefined) => {
     if (!dateStr) return 'Never recorded';
     try {
       const d = new Date(dateStr);
@@ -304,59 +278,58 @@ export default function UserManagementModal({
     }
   };
 
+  const getRoleBadge = (roleName: string) => {
+    switch (roleName) {
+      case 'admin':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
+            Administrator
+          </span>
+        );
+      case 'supplier':
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
+            Supplier Vendor
+          </span>
+        );
+      default:
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
+            Staff Member
+          </span>
+        );
+    }
+  };
+
+  const isActive = user.is_active !== 0;
+
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-in fade-in duration-150">
-      <div className="bg-white rounded-2xl max-w-xl w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
-        
+    <div 
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 z-[999] overflow-hidden animate-in fade-in duration-150"
+      onClick={onClose}
+    >
+      <div 
+        className="bg-white rounded-2xl max-w-lg w-full max-h-[calc(100dvh-2.5rem)] flex flex-col border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+        onClick={(e) => e.stopPropagation()}
+      >
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
-          <div className="flex items-center gap-3">
-            <div className="relative">
-              {profilePicture ? (
-                <img 
-                  src={profilePicture} 
-                  alt={user.name} 
-                  className="w-10 h-10 rounded-full object-cover border border-slate-300 shadow-xs"
-                />
-              ) : (
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center font-bold text-sm uppercase ${
-                  user.role === 'admin'
-                    ? 'bg-indigo-100 text-indigo-700'
-                    : user.role === 'supplier'
-                    ? 'bg-emerald-100 text-emerald-700'
-                    : 'bg-blue-100 text-blue-700'
-                }`}>
-                  {user.name?.charAt(0) || 'U'}
-                </div>
-              )}
-            </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-bold text-slate-900">{user.name}</h2>
-                <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider ${
-                  user.role === 'admin' 
-                    ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' 
-                    : user.role === 'supplier'
-                    ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
-                    : 'bg-slate-100 text-slate-700 border border-slate-200'
-                }`}>
-                  {user.role}
-                </span>
-              </div>
-              <p className="text-[11px] text-slate-500 font-mono">{user.email}</p>
-            </div>
+        <div className="shrink-0 px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/70">
+          <div>
+            <h2 className="text-sm font-bold text-slate-900">View Profile</h2>
+            <p className="text-[11px] text-slate-500">Account overview, system role, and access credentials</p>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded-lg transition-colors"
+            className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 rounded-lg transition-colors"
+            title="Close view (Esc)"
           >
             <X size={18} />
           </button>
         </div>
 
-        {/* Tab Switcher Header */}
-        <div className="flex border-b border-slate-200 bg-white px-6">
+        {/* Tab Navigation (Flat, card-free text tabs) */}
+        <div className="shrink-0 flex border-b border-slate-200 bg-white px-6">
           <button
             type="button"
             onClick={() => setActiveTab('profile')}
@@ -367,7 +340,7 @@ export default function UserManagementModal({
             }`}
           >
             <User size={15} />
-            <span>Profile & Account</span>
+            <span>Profile Details</span>
           </button>
 
           <button
@@ -375,206 +348,194 @@ export default function UserManagementModal({
             onClick={() => setActiveTab('security')}
             className={`py-3 px-4 text-xs font-bold border-b-2 flex items-center gap-2 transition-colors ${
               activeTab === 'security'
-                ? 'border-indigo-600 text-indigo-600'
+                ? 'border-blue-600 text-blue-600'
                 : 'border-transparent text-slate-500 hover:text-slate-800'
             }`}
           >
-            <ShieldCheck size={15} />
-            <span>Security & Sessions</span>
-            <span className="px-1.5 py-0.2 rounded-full text-[9px] font-extrabold bg-indigo-50 text-indigo-700 border border-indigo-200">
-              Audit
-            </span>
+            <KeyRound size={15} />
+            <span>Security & Access</span>
           </button>
         </div>
 
-        {/* Feedback Messages */}
+        {/* Status Alerts */}
         {errorMessage && (
-          <div className="mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-700 animate-in fade-in">
-            <AlertCircle size={16} className="shrink-0 mt-0.5 text-rose-600" />
+          <div className="shrink-0 mx-6 mt-4 p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-start gap-2.5 text-xs text-rose-700 animate-in fade-in">
+            <AlertCircle size={15} className="shrink-0 mt-0.5 text-rose-600" />
             <span className="font-medium leading-relaxed">{errorMessage}</span>
           </div>
         )}
 
         {successMessage && (
-          <div className="mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-xs text-emerald-800 animate-in fade-in">
-            <CheckCircle2 size={16} className="shrink-0 mt-0.5 text-emerald-600" />
+          <div className="shrink-0 mx-6 mt-4 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2.5 text-xs text-emerald-800 animate-in fade-in">
+            <CheckCircle2 size={15} className="shrink-0 mt-0.5 text-emerald-600" />
             <span className="font-medium leading-relaxed">{successMessage}</span>
           </div>
         )}
 
-        {/* Scrollable Tab Body */}
-        <div className="overflow-y-auto p-6 flex-1 custom-scrollbar">
+        {/* Modal Body (Scrollable and Card-Free) */}
+        <div className="flex-1 overflow-y-auto p-6 custom-scrollbar text-xs">
           {activeTab === 'profile' ? (
-            /* TAB 1: Profile & Roles */
-            <form onSubmit={handleProfileSubmit} className="space-y-4">
-              {/* Profile Picture Upload Section */}
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  User Profile Picture
-                </label>
-                <div className="flex items-center gap-4 p-3.5 bg-slate-50 border border-slate-200 rounded-2xl">
-                  <div className="relative group shrink-0">
-                    {profilePicture ? (
-                      <img 
-                        src={profilePicture} 
-                        alt="Profile Preview" 
-                        className="w-16 h-16 rounded-full object-cover border-2 border-white shadow-md"
-                      />
-                    ) : (
-                      <div className="w-16 h-16 rounded-full bg-slate-200 flex items-center justify-center text-slate-500 font-bold text-lg border-2 border-white shadow-xs uppercase">
-                        {name?.charAt(0) || 'U'}
-                      </div>
-                    )}
+            /* TAB 1: Profile Details (No Cards) */
+            <form onSubmit={handleProfileSubmit} className="space-y-6">
+              
+              {/* Identity & Avatar Section */}
+              <div className="flex items-center gap-4 pb-5 border-b border-slate-100">
+                <div className="relative group shrink-0">
+                  {profilePicture ? (
+                    <img 
+                      src={profilePicture} 
+                      alt={user.name} 
+                      className="w-16 h-16 rounded-full object-cover border border-slate-200 shadow-2xs"
+                    />
+                  ) : (
+                    <div className="w-16 h-16 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-bold text-xl uppercase">
+                      {name?.charAt(0) || user.name?.charAt(0) || 'U'}
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="absolute inset-0 bg-slate-900/40 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
+                    title="Change profile photo"
+                  >
+                    <Camera size={16} />
+                  </button>
+                </div>
+
+                <div className="flex-1 min-w-0 space-y-1">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-bold text-slate-900 truncate">
+                      {name || user.name}
+                    </h3>
+                    {getRoleBadge(role)}
+                    <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                      isActive 
+                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
+                        : 'bg-amber-50 text-amber-700 border border-amber-200'
+                    }`}>
+                      {isActive ? 'Active' : 'Suspended'}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 text-slate-500">
+                    <span className="font-mono text-xs">{user.email}</span>
                     <button
                       type="button"
-                      onClick={() => fileInputRef.current?.click()}
-                      className="absolute inset-0 bg-slate-900/50 rounded-full opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white"
-                      title="Upload new picture"
+                      onClick={handleCopyEmail}
+                      className="text-slate-400 hover:text-slate-700 p-0.5 rounded transition"
+                      title="Copy email"
                     >
-                      <Camera size={18} />
+                      {emailCopied ? <Check size={13} className="text-emerald-600" /> : <Copy size={13} />}
                     </button>
                   </div>
 
-                  <div className="flex-1 min-w-0 space-y-1.5">
-                    <div className="flex items-center gap-2">
-                      <input 
-                        type="file" 
-                        ref={fileInputRef} 
-                        accept="image/*" 
-                        onChange={handleImageFileChange} 
-                        className="hidden" 
-                      />
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 rounded-xl text-xs font-semibold text-slate-700 transition flex items-center gap-1.5 shadow-2xs"
-                      >
-                        <Upload size={13} />
-                        <span>Upload Photo</span>
-                      </button>
-
-                      {profilePicture && (
+                  {/* Photo Actions */}
+                  <div className="flex items-center gap-2 pt-0.5">
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      accept="image/*" 
+                      onChange={handleImageFileChange} 
+                      className="hidden" 
+                    />
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="text-[11px] font-semibold text-blue-600 hover:text-blue-700 hover:underline"
+                    >
+                      Change Photo
+                    </button>
+                    {profilePicture && (
+                      <>
+                        <span className="text-slate-300">•</span>
                         <button
                           type="button"
                           onClick={() => setProfilePicture(null)}
-                          className="px-2.5 py-1.5 text-xs text-rose-600 hover:bg-rose-50 rounded-xl font-medium transition"
+                          className="text-[11px] font-medium text-rose-600 hover:text-rose-700 hover:underline"
                         >
-                          Remove
+                          Remove Photo
                         </button>
-                      )}
-                    </div>
-                    <p className="text-[11px] text-slate-500 leading-tight">
-                      Supported formats: JPG, PNG, WebP (Max 2MB).
-                    </p>
+                      </>
+                    )}
                   </div>
                 </div>
               </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Full Name
-                </label>
-                <div className="relative">
-                  <User size={15} className="absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+              {/* Editable Fields (Flat Layout) */}
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Full Name
+                  </label>
                   <input
                     required
                     type="text"
                     value={name}
                     onChange={e => setName(e.target.value)}
-                    placeholder="User display name"
-                    className="w-full pl-9 pr-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
+                    placeholder="User full display name"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
                   />
                 </div>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Email Address (Account ID)
-                </label>
-                <div className="relative">
-                  <Mail size={15} className="absolute left-3.5 top-3 text-slate-400 pointer-events-none" />
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Email Address
+                  </label>
                   <input
                     disabled
                     type="email"
                     value={user.email}
-                    className="w-full pl-9 pr-3.5 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs font-mono text-slate-500 cursor-not-allowed"
+                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-500 cursor-not-allowed"
                   />
                 </div>
-                <span className="text-[10px] text-slate-400 mt-1 block">Account emails are immutable identifiers.</span>
-              </div>
 
-              <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Assigned Security Role
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <label 
-                    className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
-                      role === 'staff' 
-                        ? 'border-blue-600 bg-blue-50/40 text-blue-900 ring-1 ring-blue-600' 
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold">Staff</span>
-                      <input
-                        type="radio"
-                        name="modal_role"
-                        value="staff"
-                        checked={role === 'staff'}
-                        onChange={() => setRole('staff')}
-                        className="text-blue-600 focus:ring-0"
-                      />
-                    </div>
-                    <span className="text-[10px] text-slate-500 leading-tight">POS sales & inventory</span>
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                    Assigned Security Role
                   </label>
-
-                  <label 
-                    className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
-                      role === 'admin' 
-                        ? 'border-indigo-600 bg-indigo-50/40 text-indigo-900 ring-1 ring-indigo-600' 
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
+                  <select
+                    value={role}
+                    onChange={e => setRole(e.target.value as any)}
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
                   >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold">Admin</span>
-                      <input
-                        type="radio"
-                        name="modal_role"
-                        value="admin"
-                        checked={role === 'admin'}
-                        onChange={() => setRole('admin')}
-                        className="text-indigo-600 focus:ring-0"
-                      />
-                    </div>
-                    <span className="text-[10px] text-slate-500 leading-tight">Full store control</span>
-                  </label>
-
-                  <label 
-                    className={`flex flex-col p-2.5 rounded-xl border cursor-pointer transition ${
-                      role === 'supplier' 
-                        ? 'border-emerald-600 bg-emerald-50/40 text-emerald-900 ring-1 ring-emerald-600' 
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold">Supplier</span>
-                      <input
-                        type="radio"
-                        name="modal_role"
-                        value="supplier"
-                        checked={role === 'supplier'}
-                        onChange={() => setRole('supplier')}
-                        className="text-emerald-600 focus:ring-0"
-                      />
-                    </div>
-                    <span className="text-[10px] text-slate-500 leading-tight">Vendor PO portal</span>
-                  </label>
+                    <option value="staff">Staff Member (POS transactions & inventory access)</option>
+                    <option value="admin">Administrator (Full system controls & user management)</option>
+                    <option value="supplier">Supplier Vendor (Vendor portal & purchase order access)</option>
+                  </select>
                 </div>
               </div>
 
-              {/* Action Buttons */}
-              <div className="pt-4 flex items-center justify-end gap-2.5 border-t border-slate-100">
+              {/* Account Provenance Metadata (Card-Free list) */}
+              <div className="pt-4 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between text-slate-600 py-1">
+                  <span className="flex items-center gap-1.5 text-slate-500">
+                    <Calendar size={13} className="text-slate-400" /> Member Since:
+                  </span>
+                  <span className="font-semibold text-slate-800">
+                    {formatDateTime(user.created_at)}
+                  </span>
+                </div>
+
+                <div className="flex items-center justify-between text-slate-600 py-1">
+                  <span className="flex items-center gap-1.5 text-slate-500">
+                    <Clock size={13} className="text-slate-400" /> Last Sign In:
+                  </span>
+                  <div className="text-right">
+                    <span className="font-semibold text-slate-800">
+                      {formatDateTime(user.last_login_at)}
+                    </span>
+                    {user.last_login_ip && (
+                      <span className="font-mono text-[10px] text-slate-400 ml-1.5">
+                        ({user.last_login_ip})
+                      </span>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              {/* Save Button for Profile */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end gap-2.5">
                 <button
                   type="button"
                   onClick={onClose}
@@ -591,34 +552,33 @@ export default function UserManagementModal({
                   {isSaving ? (
                     <>
                       <Loader2 size={13} className="animate-spin" />
-                      <span>Saving Profile...</span>
+                      <span>Saving...</span>
                     </>
                   ) : (
-                    <span>Save Profile Changes</span>
+                    <span>Save Changes</span>
                   )}
                 </button>
               </div>
             </form>
           ) : (
-            /* TAB 2: Security, Forced Password Reset, Active Sessions, and Audit Log */
+            /* TAB 2: Security & Credentials (No Cards) */
             <div className="space-y-6">
-              {/* Force Password Reset Section */}
-              <div className="bg-slate-50/80 border border-slate-200 rounded-2xl p-4.5 space-y-4">
+              
+              {/* Password Reset Section */}
+              <div className="space-y-3 pb-6 border-b border-slate-100">
                 <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-indigo-100 text-indigo-700 rounded-lg">
-                      <KeyRound size={16} />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-slate-900">Force Password Reset</h3>
-                      <p className="text-[10px] text-slate-500">Overrule credentials and establish mandatory password</p>
-                    </div>
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Password Management
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Assign a new password or generate a secure credential
+                    </p>
                   </div>
-
                   <button
                     type="button"
                     onClick={generateStrongPassword}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:bg-slate-100 text-indigo-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition shadow-2xs"
+                    className="px-2.5 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                   >
                     <Sparkles size={13} />
                     <span>Generate Strong</span>
@@ -629,10 +589,10 @@ export default function UserManagementModal({
                   <div className="relative">
                     <input
                       type={showForcePassword ? 'text' : 'password'}
-                      placeholder="Enter new forced password"
+                      placeholder="Enter new password (minimum 6 characters)"
                       value={forcePassword}
                       onChange={e => setForcePassword(e.target.value)}
-                      className="w-full pl-3.5 pr-20 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-600 transition"
+                      className="w-full pl-3.5 pr-20 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
                     />
                     <div className="absolute right-2 top-2 flex items-center gap-1">
                       {forcePassword && (
@@ -644,7 +604,7 @@ export default function UserManagementModal({
                             setTimeout(() => setPasswordCopied(false), 2000);
                           }}
                           className="p-1 text-slate-400 hover:text-slate-700 rounded"
-                          title="Copy to clipboard"
+                          title="Copy password"
                         >
                           {passwordCopied ? <Check size={14} className="text-emerald-600" /> : <Copy size={14} />}
                         </button>
@@ -653,6 +613,7 @@ export default function UserManagementModal({
                         type="button"
                         onClick={() => setShowForcePassword(!showForcePassword)}
                         className="p-1 text-slate-400 hover:text-slate-700 rounded"
+                        title={showForcePassword ? 'Hide password' : 'Show password'}
                       >
                         {showForcePassword ? <EyeOff size={14} /> : <Eye size={14} />}
                       </button>
@@ -665,9 +626,9 @@ export default function UserManagementModal({
                         type="checkbox"
                         checked={requireChangeOnLogin}
                         onChange={e => setRequireChangeOnLogin(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                        className="rounded text-blue-600 focus:ring-blue-500"
                       />
-                      <span>Require user to change password at next login</span>
+                      <span>Require user to change password at next sign in</span>
                     </label>
 
                     <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-700">
@@ -675,7 +636,7 @@ export default function UserManagementModal({
                         type="checkbox"
                         checked={revokeSessionsOnReset}
                         onChange={e => setRevokeSessionsOnReset(e.target.checked)}
-                        className="rounded text-indigo-600 focus:ring-indigo-500"
+                        className="rounded text-blue-600 focus:ring-blue-500"
                       />
                       <span>Revoke all existing sessions immediately</span>
                     </label>
@@ -684,150 +645,65 @@ export default function UserManagementModal({
                   <button
                     type="submit"
                     disabled={isForcingReset || !forcePassword}
-                    className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-500/20 disabled:opacity-50"
+                    className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-sm disabled:opacity-50"
                   >
                     {isForcingReset ? (
                       <>
                         <Loader2 size={13} className="animate-spin" />
-                        <span>Applying Reset & Logging...</span>
+                        <span>Updating Password...</span>
                       </>
                     ) : (
-                      <>
-                        <Lock size={13} />
-                        <span>Enforce Password Reset</span>
-                      </>
+                      <span>Apply New Password</span>
                     )}
                   </button>
                 </form>
               </div>
 
-              {/* Revoke Active Sessions Section */}
-              <div className="bg-rose-50/50 border border-rose-200/80 rounded-2xl p-4.5 space-y-3">
-                <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-center gap-2">
-                    <div className="p-1.5 bg-rose-100 text-rose-700 rounded-lg">
-                      <LogOut size={16} />
-                    </div>
-                    <div>
-                      <h3 className="text-xs font-bold text-rose-900">Active Session Revocation</h3>
-                      <p className="text-[10px] text-rose-700">Invalidate active JWT tokens and force immediate sign-out</p>
-                    </div>
+              {/* Active Sessions Revocation Section (Card-Free) */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
+                      Active Device Sessions
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Invalidate access tokens and force sign-out across all devices
+                    </p>
                   </div>
 
                   <button
                     type="button"
                     onClick={handleRevokeSessions}
                     disabled={isRevokingSessions}
-                    className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-sm shadow-rose-500/20 disabled:opacity-50 shrink-0"
+                    className="px-3.5 py-1.5 border border-rose-200 text-rose-700 hover:bg-rose-50 rounded-xl text-xs font-bold transition flex items-center gap-1.5 disabled:opacity-50 shrink-0"
                   >
                     {isRevokingSessions ? (
                       <Loader2 size={13} className="animate-spin" />
                     ) : (
-                      <ShieldAlert size={13} />
+                      <LogOut size={13} />
                     )}
                     <span>Revoke All Sessions</span>
                   </button>
                 </div>
 
-                <div className="text-[11px] text-rose-800 bg-white/70 p-2.5 rounded-xl border border-rose-100 flex items-center justify-between">
-                  <span>Last Session Invalidation:</span>
-                  <span className="font-mono font-bold">
-                    {formatDateTime(securityDetails?.user?.session_revoked_at || user.session_revoked_at || null)}
-                  </span>
-                </div>
+                {user.session_revoked_at && (
+                  <div className="text-[11px] text-slate-500 pt-1">
+                    Last session invalidation: <span className="font-semibold text-slate-700">{formatDateTime(user.session_revoked_at)}</span>
+                  </div>
+                )}
               </div>
 
-              {/* Audit Log Handled Login & Origin Details */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-1.5">
-                    <History size={15} className="text-slate-500" />
-                    <h3 className="text-xs font-bold text-slate-900">Audit Security Log Trail</h3>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => loadSecurityDetails(user.id)}
-                    className="text-[11px] text-blue-600 hover:underline flex items-center gap-1"
-                  >
-                    <RefreshCw size={11} className={isLoadingSecurity ? 'animate-spin' : ''} />
-                    <span>Refresh Logs</span>
-                  </button>
-                </div>
-
-                {/* Grid of Verified Audit Stats */}
-                <div className="grid grid-cols-2 gap-2.5">
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
-                      <Clock size={11} /> Last Login (Audit Verified)
-                    </div>
-                    <div className="text-xs font-bold text-slate-800 font-mono">
-                      {formatDateTime(securityDetails?.user?.last_login_at || user.last_login_at || null)}
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      IP: <span className="font-mono">{securityDetails?.user?.last_login_ip || user.last_login_ip || 'Local Network'}</span>
-                    </div>
-                  </div>
-
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
-                    <div className="text-[10px] uppercase font-bold text-slate-500 flex items-center gap-1">
-                      <ShieldCheck size={11} /> Created Date (Audit Genesis)
-                    </div>
-                    <div className="text-xs font-bold text-slate-800 font-mono">
-                      {formatDateTime(securityDetails?.user?.created_at || user.created_at || null)}
-                    </div>
-                    <div className="text-[10px] text-slate-500">
-                      By: <span className="font-semibold text-slate-700">{securityDetails?.user?.created_by || user.created_by || 'Store Admin'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Recent Login Audit Records */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
-                  <div className="px-3 py-2 bg-slate-50 border-b border-slate-200 text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
-                    <span>Recent Security Audit Events ({securityDetails?.securityAuditHistory?.length || 0})</span>
-                    <span className="text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] font-extrabold border border-emerald-200">Live Sync</span>
-                  </div>
-
-                  <div className="max-h-48 overflow-y-auto divide-y divide-slate-100 text-xs">
-                    {isLoadingSecurity ? (
-                      <div className="p-4 text-center text-slate-400 flex items-center justify-center gap-2">
-                        <Loader2 size={14} className="animate-spin text-blue-600" />
-                        <span>Querying audit security log...</span>
-                      </div>
-                    ) : securityDetails?.securityAuditHistory?.length ? (
-                      securityDetails.securityAuditHistory.map((item: any) => (
-                        <div key={item.id} className="p-2.5 hover:bg-slate-50/70 transition-colors flex items-start justify-between gap-3">
-                          <div className="min-w-0">
-                            <div className="font-semibold text-slate-800 text-[11px] truncate flex items-center gap-1.5">
-                              <span className={`w-1.5 h-1.5 rounded-full ${
-                                item.action.toLowerCase().includes('failed') || item.action.toLowerCase().includes('blocked')
-                                  ? 'bg-rose-500'
-                                  : item.action.toLowerCase().includes('revoked') || item.action.toLowerCase().includes('reset')
-                                  ? 'bg-amber-500'
-                                  : 'bg-blue-500'
-                              }`} />
-                              <span>{item.action}</span>
-                            </div>
-                            <p className="text-[10px] text-slate-500 truncate mt-0.5">{item.details}</p>
-                          </div>
-                          <div className="text-right shrink-0">
-                            <span className="text-[10px] font-mono text-slate-400 block">{formatDateTime(item.created_at)}</span>
-                            {item.ip_address && (
-                              <span className="text-[9px] font-mono text-slate-500 bg-slate-100 px-1 rounded">
-                                {item.ip_address}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      ))
-                    ) : (
-                      <div className="p-4 text-center text-slate-400 text-xs italic">
-                        No security audit logs recorded yet for this account.
-                      </div>
-                    )}
-                  </div>
-                </div>
+              {/* Close Button for Security Tab */}
+              <div className="pt-4 border-t border-slate-100 flex items-center justify-end">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+                >
+                  Close View
+                </button>
               </div>
+
             </div>
           )}
         </div>

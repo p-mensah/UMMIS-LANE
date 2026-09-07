@@ -135,10 +135,11 @@ export default function Settings() {
   const handleDownloadBackup = async () => {
     setDownloadingBackup(true);
     try {
-      const token = localStorage.getItem('pos_token') || sessionStorage.getItem('pos_token');
+      const token = localStorage.getItem('token') || localStorage.getItem('pos_token') || sessionStorage.getItem('pos_token');
+      const authHeader = token ? (token.startsWith('Bearer ') ? token : `Bearer ${token}`) : '';
       const response = await fetch('/api/settings/backup', {
         headers: {
-          ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+          ...(authHeader ? { 'Authorization': authHeader } : {})
         }
       });
       if (!response.ok) {

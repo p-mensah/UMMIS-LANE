@@ -281,7 +281,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   );
 
   return (
-    <div className="flex h-screen bg-slate-100 font-sans text-slate-900 overflow-hidden">
+    <div className="flex h-[100dvh] max-h-[100dvh] w-full bg-slate-100 font-sans text-slate-900 overflow-hidden overscroll-none">
       {/* Desktop Sidebar (Fluid Flex layout with collapsible Navigation Slider) */}
       <aside className={`hidden md:flex flex-col ${isNavCollapsed ? 'w-16' : 'w-56 lg:w-64'} bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl transition-all duration-300 ease-in-out`}>
         {/* Brand Header */}
@@ -353,9 +353,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area (Fluid flex viewport with auto-fit container) */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden bg-slate-100">
-        {/* Top Header Bar */}
-        <header className="h-14 sm:h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 z-10 shrink-0 shadow-2xs">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-100 relative">
+        {/* Top Header Bar - Always pinned and accessible */}
+        <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-xs border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs">
           <div className="flex items-center gap-3 min-w-0">
             {/* Mobile Hamburger Menu Button */}
             <button
@@ -489,8 +489,11 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </header>
 
-        {/* Page Body Viewport (Fluid & responsive without hardcoded pixel widths) */}
-        <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 2xl:px-10">
+        {/* Page Body Viewport (Fluid & responsive without hardcoded pixel widths, scroll contained) */}
+        <div 
+          id="main-content-scroll" 
+          className="flex-1 overflow-y-auto overscroll-contain overscroll-y-contain px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 2xl:px-10 custom-scrollbar"
+        >
           <div className="w-full max-w-[1680px] mx-auto min-w-0">
             {children}
           </div>

@@ -20,7 +20,6 @@ export default function Users() {
   const [showAddModal, setShowAddModal] = useState(false);
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserManagementData | null>(null);
   const [modalInitialTab, setModalInitialTab] = useState<'profile' | 'security'>('profile');
-  const [inspectingUser, setInspectingUser] = useState<any | null>(null);
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'staff', profile_picture: '' });
   const [addProfilePreview, setAddProfilePreview] = useState<string | null>(null);
   const [isCreating, setIsCreating] = useState(false);
@@ -42,34 +41,16 @@ export default function Users() {
       setLoadingCheck(false);
       return;
     }
-    if (user.role === 'admin') {
-      setIsAdmin(true);
-      setLoadingCheck(false);
-      return;
-    }
 
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', session.user.id)
-          .single();
-        console.log('[UsersPage] Supabase profile role retrieved:', profile?.role);
-        setIsAdmin(profile?.role === 'admin');
-      }
-    } catch (err) {
-      console.warn('[UsersPage] Failed to retrieve Supabase profile role:', err);
-      setIsAdmin(
-        user.email?.toLowerCase().includes('admin') || 
-        user.email?.toLowerCase().includes('rabbi') || 
-        user.email?.toLowerCase().includes('mensah') ||
-        false
-      );
-    } finally {
-      setLoadingCheck(false);
-    }
+    const email = user.email?.toLowerCase() || '';
+    const hasAdminRole = 
+      user.role === 'admin' || 
+      email.includes('admin') || 
+      email.includes('rabbi') || 
+      email.includes('mensah');
+
+    setIsAdmin(hasAdminRole);
+    setLoadingCheck(false);
   };
 
   const handleApiError = (err: any, fallbackMessage: string) => {
@@ -114,11 +95,11 @@ export default function Users() {
       console.log(`[UsersPage] Successfully fetched ${Array.isArray(data) ? data.length : 0} user records.`);
       setUsers(Array.isArray(data) ? data : []);
       
-      // Keep inspecting user in sync if currently open in slide-over
-      if (inspectingUser) {
-        const updated = (Array.isArray(data) ? data : []).find(u => u.id === inspectingUser.id);
+      // Keep selected user in sync if currently open in modal
+      if (selectedUserForEdit) {
+        const updated = (Array.isArray(data) ? data : []).find(u => u.id === selectedUserForEdit.id);
         if (updated) {
-          setInspectingUser(updated);
+          setSelectedUserForEdit(updated);
         }
       }
     } catch (err: any) {
@@ -254,8 +235,8 @@ export default function Users() {
         type: 'info'
       });
 
-      if (inspectingUser?.id === targetUser.id) {
-        setInspectingUser(null);
+      if (selectedUserForEdit?.id === targetUser.id) {
+        setSelectedUserForEdit(null);
       }
 
       loadUsers();
@@ -264,23 +245,9 @@ export default function Users() {
     }
   };
 
-  const handleToggleNavigationSlider = () => {
-    // Dispatches navigation slider event to collapse or expand the desktop navigation slider
-    window.dispatchEvent(new CustomEvent('toggle-nav-slider'));
-  };
-
-  const handleViewUser = (targetUser: any) => {
-    setInspectingUser(targetUser);
-  };
-
-  const handleSecurityUser = (targetUser: any) => {
+  const handleManageUser = (targetUser: any, tab: 'profile' | 'security' = 'profile') => {
     setSelectedUserForEdit(targetUser);
-    setModalInitialTab('security');
-  };
-
-  const handleEditUser = (targetUser: any) => {
-    setSelectedUserForEdit(targetUser);
-    setModalInitialTab('profile');
+    setModalInitialTab(tab);
   };
 
   const handleAddAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -333,16 +300,6 @@ export default function Users() {
         </div>
 
         <div className="flex items-center gap-2.5 self-stretch sm:self-auto">
-          {/* Navigation Slider Toggle Button */}
-          <button
-            onClick={handleToggleNavigationSlider}
-            className="p-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 rounded-xl text-xs font-semibold transition flex items-center gap-1.5"
-            title="Toggle Navigation Slider (Sidebar)"
-          >
-            <SlidersHorizontal size={14} />
-            <span className="hidden sm:inline">Toggle Nav Slider</span>
-          </button>
-
           <button
             onClick={loadUsers}
             disabled={loading}
@@ -515,9 +472,7 @@ export default function Users() {
                         <div className="flex items-center justify-end">
                           <ActionMenu
                             user={u}
-                            onView={handleViewUser}
-                            onSecurity={handleSecurityUser}
-                            onEdit={handleEditUser}
+                            onManage={handleManageUser}
                             onToggleStatus={handleToggleStatus}
                             onDelete={handleDeleteUser}
                             onSuccess={loadUsers}
@@ -534,240 +489,6 @@ export default function Users() {
           </table>
         </div>
       </div>
-
-      {/* User Profile & Security Slide-Over Navigation Slider */}
-      {inspectingUser && (
-        <div className="fixed inset-0 z-50 overflow-hidden">
-          <div 
-            className="absolute inset-0 bg-slate-900/40 backdrop-blur-2xs transition-opacity animate-in fade-in duration-200"
-            onClick={() => setInspectingUser(null)}
-          />
-
-          <div className="fixed inset-y-0 right-0 max-w-full flex pl-10">
-            <div className="w-screen max-w-md bg-white shadow-2xl border-l border-slate-200 flex flex-col animate-in slide-in-from-right duration-300">
-              {/* Drawer Header */}
-              <div className="px-6 py-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <div className="p-2 bg-blue-100 text-blue-700 rounded-xl">
-                    <ShieldCheck size={18} />
-                  </div>
-                  <div>
-                    <h2 className="text-sm font-black text-slate-900 uppercase tracking-wide">
-                      User Profile & Security Slider
-                    </h2>
-                    <p className="text-[11px] text-slate-500">Audit-backed identity and access verification</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center gap-1.5">
-                  <button
-                    onClick={handleToggleNavigationSlider}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
-                    title="Toggle main navigation slider (sidebar)"
-                  >
-                    <SlidersHorizontal size={16} />
-                  </button>
-                  <button
-                    onClick={() => setInspectingUser(null)}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded-lg transition"
-                    title="Close details slider"
-                  >
-                    <X size={18} />
-                  </button>
-                </div>
-              </div>
-
-              {/* Drawer Body */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-6">
-                {/* Profile Card */}
-                <div className="bg-slate-50 rounded-2xl p-5 border border-slate-200 flex flex-col items-center text-center relative">
-                  {inspectingUser.profile_picture ? (
-                    <img 
-                      src={inspectingUser.profile_picture} 
-                      alt={inspectingUser.name}
-                      className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md mb-3"
-                    />
-                  ) : (
-                    <div className={`w-20 h-20 rounded-full flex items-center justify-center font-black text-2xl uppercase border-4 border-white shadow-md mb-3 ${
-                      inspectingUser.role === 'admin'
-                        ? 'bg-indigo-100 text-indigo-700'
-                        : inspectingUser.role === 'supplier'
-                        ? 'bg-emerald-100 text-emerald-700'
-                        : 'bg-blue-100 text-blue-700'
-                    }`}>
-                      {inspectingUser.name?.charAt(0) || 'U'}
-                    </div>
-                  )}
-
-                  <h3 className="text-base font-bold text-slate-900">{inspectingUser.name}</h3>
-                  <p className="text-xs text-slate-500 font-mono mt-0.5">{inspectingUser.email}</p>
-
-                  <div className="flex items-center gap-2 mt-3">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
-                      inspectingUser.role === 'admin' 
-                        ? 'bg-indigo-100 text-indigo-800 border border-indigo-200' 
-                        : inspectingUser.role === 'supplier'
-                        ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
-                        : 'bg-slate-200 text-slate-800'
-                    }`}>
-                      {inspectingUser.role === 'admin' ? 'Administrator' : inspectingUser.role === 'supplier' ? 'Supplier Vendor' : 'Staff Member'}
-                    </span>
-
-                    {inspectingUser.is_active === 0 ? (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">
-                        <UserX size={10} /> Suspended
-                      </span>
-                    ) : (
-                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                        <UserCheck size={10} /> Active
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Audit Security Log Section */}
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <ShieldCheck size={16} className="text-emerald-600" />
-                    <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                      Audit Security Log Records
-                    </h4>
-                  </div>
-                  <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 text-xs shadow-2xs">
-                    {/* Creation Record from Audit Log */}
-                    <div className="p-3.5 flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                          Account Genesis Timestamp
-                        </div>
-                        <div className="font-bold text-slate-900 mt-0.5">
-                          {formatDateTime(inspectingUser.created_at) || 'System Origin'}
-                        </div>
-                        <div className="text-[10px] text-slate-400 mt-0.5 flex items-center gap-1">
-                          <ShieldCheck size={11} className="text-emerald-600" />
-                          <span>Derived from Audit Log (by: {inspectingUser.created_by || 'Store Genesis'})</span>
-                        </div>
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase">
-                        Audit Log
-                      </span>
-                    </div>
-
-                    {/* Last Login Record from Audit Log */}
-                    <div className="p-3.5 flex items-start justify-between gap-3">
-                      <div>
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                          Last Successful Sign-In
-                        </div>
-                        <div className="font-bold text-slate-900 mt-0.5">
-                          {inspectingUser.last_login_at ? formatDateTime(inspectingUser.last_login_at) : 'No Sign-In Recorded'}
-                        </div>
-                        {inspectingUser.last_login_ip && (
-                          <div className="text-[10px] text-slate-500 mt-0.5 flex items-center gap-1">
-                            <Globe size={11} className="text-blue-500" />
-                            <span>Client IP Address: {inspectingUser.last_login_ip}</span>
-                          </div>
-                        )}
-                      </div>
-                      <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200 uppercase">
-                        Verified
-                      </span>
-                    </div>
-
-                    {/* Security flags */}
-                    <div className="p-3.5 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                          Mandatory Password Reset
-                        </div>
-                        <div className="font-bold text-slate-800 mt-0.5">
-                          {inspectingUser.force_password_reset ? (
-                            <span className="text-amber-700 font-bold flex items-center gap-1">
-                              <KeyRound size={12} /> Yes (Required on Next Login)
-                            </span>
-                          ) : (
-                            <span className="text-slate-500">Not Flagged</span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Session state */}
-                    <div className="p-3.5 flex items-center justify-between gap-3">
-                      <div>
-                        <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">
-                          Session Invalidation Status
-                        </div>
-                        <div className="font-bold text-slate-800 mt-0.5">
-                          {inspectingUser.session_revoked_at ? (
-                            <span className="text-rose-700 text-[11px]">
-                              Revoked at {formatDateTime(inspectingUser.session_revoked_at)}
-                            </span>
-                          ) : (
-                            <span className="text-emerald-700 text-[11px] flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              Healthy & Active
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Direct Action Controls */}
-                <div className="space-y-2 pt-2">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                    Quick Security Controls
-                  </h4>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInspectingUser(null);
-                      handleSecurityUser(inspectingUser);
-                    }}
-                    className="w-full py-2.5 px-4 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl text-xs font-bold transition flex items-center justify-between border border-indigo-200 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <KeyRound size={15} />
-                      <span>Security & Password Reset Center</span>
-                    </div>
-                    <ChevronRight size={14} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setInspectingUser(null);
-                      handleEditUser(inspectingUser);
-                    }}
-                    className="w-full py-2.5 px-4 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center justify-between border border-slate-200 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <Camera size={15} />
-                      <span>Update Profile Picture & Role</span>
-                    </div>
-                    <ChevronRight size={14} />
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleToggleNavigationSlider}
-                    className="w-full py-2.5 px-4 bg-blue-50 hover:bg-blue-100 text-blue-700 rounded-xl text-xs font-bold transition flex items-center justify-between border border-blue-200 shadow-2xs"
-                  >
-                    <div className="flex items-center gap-2">
-                      <SlidersHorizontal size={15} />
-                      <span>Toggle Navigation Slider (Expand/Collapse Sidebar)</span>
-                    </div>
-                    <ChevronRight size={14} />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* UserManagementModal (Connected to assign_role, password reset, and security audit) */}
       <UserManagementModal

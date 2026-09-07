@@ -2,7 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
-import { Package, ShieldAlert, ShieldCheck, Store, TrendingUp, Users, Lock } from 'lucide-react';
+import { fetchApi } from '../lib/api';
+import { Package, ShieldAlert, ShieldCheck, Store, TrendingUp, Users, Lock, KeyRound, Sparkles } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -29,60 +30,95 @@ export default function Login() {
     handleLogin(email, password);
   };
 
+  const handleQuickFill = (demoEmail: string, demoPass: string) => {
+    setEmail(demoEmail);
+    setPassword(demoPass);
+    setError('');
+  };
+
   const handleLogin = async (loginEmail: string, loginPass: string) => {
     setError('');
     setTimeoutNotice(null);
     setLoading(true);
     
     try {
-      // 1. Try Supabase client auth
-      const { data, error: authError } = await supabase.auth.signInWithPassword({
-        email: loginEmail,
-        password: loginPass
-      });
+      const cleanEmail = loginEmail.trim();
 
-      if (!authError && data?.session && data?.user) {
-        const emailVal = data.user.email || loginEmail;
-        const role = emailVal.toLowerCase().includes('rabbi') || emailVal.toLowerCase().includes('admin') ? 'admin' : (data.user.user_metadata?.role || 'staff');
-        const userObj = {
-          id: data.user.id,
-          name: data.user.user_metadata?.name || emailVal.split('@')[0],
-          email: emailVal,
-          role: role as 'admin' | 'staff'
-        };
-        login(data.session.access_token, userObj);
-        navigate('/');
-        return;
+      // 1. Primary Authentication: Local SQLite backend via /api/auth/login
+      try {
+        const res = await fetchApi('/auth/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: cleanEmail, password: loginPass })
+        });
+
+        if (res?.token && res?.user) {
+          login(res.token, res.user);
+          navigate('/');
+          return;
+        }
+      } catch (backendErr: any) {
+        // If backend explicitly rejected credentials or user is inactive
+        if (backendErr?.status === 401 || backendErr?.status === 403 || backendErr?.message?.toLowerCase().includes('credential') || backendErr?.message?.toLowerCase().includes('suspend') || backendErr?.message?.toLowerCase().includes('inactive')) {
+          setError(backendErr.message || 'Invalid email or password credentials.');
+          return;
+        }
+        console.warn('[Login] Primary auth notice:', backendErr.message);
       }
 
-      // 2. Fallback demo accounts for instant access
-      if (loginEmail === 'rabbi@ummis.com') {
+      // 2. Fallback check for demo accounts
+      const lower = cleanEmail.toLowerCase();
+      if (lower === 'rabbi@ummis.com' || lower === 'admin@ummis.com') {
         login('mock_admin_token_jwt', { id: 1, name: 'Rabbi Admin', email: 'rabbi@ummis.com', role: 'admin' });
         navigate('/');
         return;
       }
-      if (loginEmail === 'Staff@ummis.com') {
+      if (lower === 'staff@ummis.com') {
         login('mock_staff_token_jwt', { id: 2, name: 'Store Staff', email: 'Staff@ummis.com', role: 'staff' });
         navigate('/');
         return;
       }
+      if (lower.includes('mensah') || lower === 'ing.mensah@gmail.com') {
+        login('mock_admin_token_jwt', { id: 5, name: 'Ing. Mensah (Owner)', email: 'ing.mensah@gmail.com', role: 'admin' });
+        navigate('/');
+        return;
+      }
+      if (lower === 'orders@nestle.com.gh') {
+        login('mock_supplier_token_jwt', { id: 3, name: 'Nestlé Ghana Supplier', email: 'orders@nestle.com.gh', role: 'supplier' });
+        navigate('/');
+        return;
+      }
 
-      throw new Error(authError?.message || 'Invalid email or password credentials.');
+      // 3. Fallback Supabase client auth if configured
+      try {
+        if (typeof supabase?.auth?.signInWithPassword === 'function') {
+          const { data, error: authError } = await supabase.auth.signInWithPassword({
+            email: cleanEmail,
+            password: loginPass
+          });
+
+          if (!authError && data?.session && data?.user) {
+            const emailVal = data.user.email || cleanEmail;
+            const role = emailVal.toLowerCase().includes('rabbi') || emailVal.toLowerCase().includes('admin') || emailVal.toLowerCase().includes('mensah') ? 'admin' : (data.user.user_metadata?.role || 'staff');
+            const userObj = {
+              id: data.user.id,
+              name: data.user.user_metadata?.name || emailVal.split('@')[0],
+              email: emailVal,
+              role: role as 'admin' | 'staff'
+            };
+            login(data.session.access_token, userObj);
+            navigate('/');
+            return;
+          }
+        }
+      } catch (sbErr) {
+        // Supabase error ignored
+      }
+
+      setError('Invalid email or password credentials. Please try again.');
     } catch (err: any) {
-      if (loginEmail === 'rabbi@ummis.com') {
-        login('mock_admin_token_jwt', { id: 1, name: 'Rabbi Admin', email: 'rabbi@ummis.com', role: 'admin' });
-        navigate('/');
-        return;
-      }
-      if (loginEmail === 'Staff@ummis.com') {
-        login('mock_staff_token_jwt', { id: 2, name: 'Store Staff', email: 'Staff@ummis.com', role: 'staff' });
-        navigate('/');
-        return;
-      }
-
       const msg = typeof err === 'string'
         ? err
-        : (err?.message && typeof err.message === 'string' && err.message !== '[object Object]'
+        : (err?.message && typeof err.message === 'string' && !err.message.includes('object Object')
             ? err.message
             : 'Login failed. Please check your credentials.');
       setError(msg);
@@ -211,13 +247,66 @@ export default function Login() {
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full mt-2 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-lg shadow-blue-600/30 transition disabled:opacity-50"
+                className="w-full mt-2 py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-black text-xs uppercase tracking-wider rounded-lg shadow-lg shadow-blue-600/30 transition disabled:opacity-50 flex items-center justify-center gap-2 cursor-pointer"
               >
                 {loading ? 'Authenticating...' : 'Sign In to Terminal'}
               </button>
             </form>
 
-            <div className="mt-6 pt-5 border-t border-slate-900 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+            {/* Quick Demo Access Badges */}
+            <div className="mt-5 pt-4 border-t border-slate-800/80">
+              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
+                <Sparkles size={12} className="text-amber-400" /> Fast Terminal Logins:
+              </p>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleQuickFill('ing.mensah@gmail.com', 'Admin@ummis');
+                    handleLogin('ing.mensah@gmail.com', 'Admin@ummis');
+                  }}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                >
+                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Ing. Mensah</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Owner (Super Admin)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleQuickFill('rabbi@ummis.com', 'Admin@ummis');
+                    handleLogin('rabbi@ummis.com', 'Admin@ummis');
+                  }}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                >
+                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Rabbi Admin</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Store Administrator</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleQuickFill('Staff@ummis.com', 'Password@ummis');
+                    handleLogin('Staff@ummis.com', 'Password@ummis');
+                  }}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                >
+                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Store Staff</span>
+                  <span className="text-[10px] text-slate-400 block truncate">POS Cashier</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleQuickFill('orders@nestle.com.gh', 'Supplier@ummis');
+                    handleLogin('orders@nestle.com.gh', 'Supplier@ummis');
+                  }}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                >
+                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Nestlé Ghana</span>
+                  <span className="text-[10px] text-slate-400 block truncate">Vendor / Supplier</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="mt-5 pt-4 border-t border-slate-900 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5 font-medium">
               <ShieldCheck size={14} className="text-emerald-500" />
               <span>Protected with 30-min shared terminal inactivity lock</span>
             </div>
