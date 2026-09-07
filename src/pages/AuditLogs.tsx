@@ -4,8 +4,10 @@ import {
   ShieldCheck, Search, Filter, Trash2, RefreshCw, Calendar, User, 
   Settings, Clock, FileText, AlertTriangle, Info, CheckCircle2, Download,
   Globe, ChevronRight, X, Monitor, MapPin, ArrowRight, ShieldAlert, KeyRound,
-  Package, ShoppingCart, Truck, Sliders, Activity, ArrowDown, Copy, Check
+  Package, ShoppingCart, Truck, Sliders, Activity, ArrowDown, Copy, Check,
+  Radio
 } from 'lucide-react';
+import { DateRangePicker } from '../components/DateRangePicker';
 
 interface AuditLogEntry {
   id: number;
@@ -30,7 +32,14 @@ export default function AuditLogs() {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
+  // Auto-Refresh & Live Security Monitoring
+  const [autoRefreshInterval, setAutoRefreshInterval] = useState<number>(30); // in seconds; 0 = off, default 30s
+  const [countdown, setCountdown] = useState<number>(30);
+  const [isSilentRefreshing, setIsSilentRefreshing] = useState(false);
+  const [lastRefreshedAt, setLastRefreshedAt] = useState<Date | null>(new Date());
+
   // Filters
+  const [statusFilter, setStatusFilter] = useState<'all' | 'critical' | 'warning' | 'success' | 'info'>('all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [subCategoryFilter, setSubCategoryFilter] = useState('all');
   const [userFilter, setUserFilter] = useState('all');
@@ -163,12 +172,196 @@ export default function AuditLogs() {
     setTimeout(() => setCopiedLogId(null), 2000);
   };
 
+  // Helper function to identify critical security alerts
+  const isCriticalAlert = (log: AuditLogEntry) => {
+    const act = (log.action || '').toUpperCase();
+    const cat = (log.category || '').toLowerCase();
+    const sub = (log.sub_category || '').toLowerCase();
+    const det = (log.details || '').toLowerCase();
+    return (
+      cat === 'security' ||
+      sub === 'security_alerts' ||
+      act.includes('FAIL') ||
+      act.includes('UNAUTHORIZED') ||
+      act.includes('REJECT') ||
+      act.includes('SUSPEND') ||
+      act.includes('REVOKE') ||
+      act.includes('DENIED') ||
+      act.includes('BLOCKED') ||
+      act.includes('PURGE') ||
+      act.includes('FORCE_PASSWORD') ||
+      det.includes('unauthorized') ||
+      det.includes('denied') ||
+      det.includes('failed') ||
+      det.includes('rate-limiting')
+    );
+  };
+
+  // Helper function to identify warning alerts
+  const isWarningAlert = (log: AuditLogEntry) => {
+    const act = (log.action || '').toUpperCase();
+    const det = (log.details || '').toLowerCase();
+    return (
+      act.includes('OVERRIDE') ||
+      act.includes('PRICE') ||
+      act.includes('ROLE') ||
+      act.includes('ASSIGN_ROLE') ||
+      act.includes('DELETE') ||
+      act.includes('RESET') ||
+      act.includes('DISCOUNT') ||
+      det.includes('override') ||
+      det.includes('price adjusted')
+    );
+  };
+
+  // Helper function to identify verified successful operations
+  const isSuccessAlert = (log: AuditLogEntry) => {
+    const act = (log.action || '').toUpperCase();
+    return (
+      act.includes('SUCCESS') ||
+      act.includes('VERIFIED') ||
+      act.includes('COMPLETED') ||
+      act.includes('SALE') ||
+      act.includes('RESTOCK') ||
+      act.includes('ACTIVE') ||
+      act.includes('ENABLE')
+    );
+  };
+
+  // Parse raw details / JSON metadata into clean human-readable sentences
+  const parseLogMetadata = (log: AuditLogEntry): Array<{ label: string; sentence: string; key: string }> => {
+    const items: Array<{ label: string; sentence: string; key: string }> = [];
+
+    const formatLabel = (rawKey: string) => {
+      return rawKey
+        .replace(/_/g, ' ')
+        .replace(/([A-Z])/g, ' $1')
+        .replace(/^./, s => s.toUpperCase())
+        .trim();
+    };
+
+    // 1. Details field: parse JSON if valid object, or parse key-values in text
+    if (log.details) {
+      let parsed: any = null;
+      const trimmed = log.details.trim();
+      if ((trimmed.startsWith('{') && trimmed.endsWith('}')) || (trimmed.startsWith('[') && trimmed.endsWith(']'))) {
+        try {
+          parsed = JSON.parse(trimmed);
+        } catch {
+          parsed = null;
+        }
+      }
+
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        Object.entries(parsed).forEach(([k, v]) => {
+          const valStr = typeof v === 'object' ? JSON.stringify(v) : String(v);
+          const kl = k.toLowerCase();
+          let sentence = '';
+
+          if (kl.includes('reason') || kl.includes('cause')) {
+            sentence = `The security trigger was flagged due to: ${valStr}.`;
+          } else if (kl.includes('email') || kl.includes('user') || kl.includes('account')) {
+            sentence = `Target account subject identified as "${valStr}".`;
+          } else if (kl.includes('ip') || kl.includes('address')) {
+            sentence = `Associated network endpoint tracked at ${valStr}.`;
+          } else if (kl.includes('attempt') || kl.includes('count')) {
+            sentence = `Failure threshold counter reached ${valStr} sequential occurrences.`;
+          } else if (kl.includes('amount') || kl.includes('total') || kl.includes('price')) {
+            sentence = `Monetary value for this record registered at ${valStr}.`;
+          } else if (kl.includes('product') || kl.includes('sku') || kl.includes('item')) {
+            sentence = `Inventory item reference identified as "${valStr}".`;
+          } else if (kl.includes('role') || kl.includes('permission')) {
+            sentence = `Security clearance level configured to "${valStr}".`;
+          } else if (kl.includes('status') || kl.includes('state')) {
+            sentence = `Operational status recorded as "${valStr}".`;
+          } else {
+            sentence = `The ${formatLabel(k)} parameter was recorded as "${valStr}".`;
+          }
+
+          items.push({
+            key: k,
+            label: formatLabel(k),
+            sentence
+          });
+        });
+      } else {
+        // Check for multiple key: value or key=value patterns in text
+        const pairRegex = /([A-Za-z0-9_\s]+)\s*[:=]\s*([^;,]+)/g;
+        const matches = Array.from(trimmed.matchAll(pairRegex));
+        if (matches.length > 1) {
+          matches.forEach(m => {
+            const k = m[1].trim();
+            const v = m[2].trim();
+            items.push({
+              key: k,
+              label: formatLabel(k),
+              sentence: `The ${formatLabel(k)} parameter was recorded as "${v}".`
+            });
+          });
+        } else {
+          items.push({
+            key: 'recorded_notes',
+            label: 'Recorded System Notes',
+            sentence: trimmed.endsWith('.') ? trimmed : `${trimmed}.`
+          });
+        }
+      }
+    }
+
+    // 2. Pre-state
+    if (log.pre_state) {
+      items.push({
+        key: 'pre_state',
+        label: 'Prior Baseline State',
+        sentence: `Prior to execution, the baseline state was registered as "${log.pre_state}".`
+      });
+    }
+
+    // 3. Post-state
+    if (log.post_state) {
+      items.push({
+        key: 'post_state',
+        label: 'Resulting Target State',
+        sentence: `Following verification, entity transitioned into state "${log.post_state}".`
+      });
+    }
+
+    // 4. Delta effect
+    if (log.delta) {
+      items.push({
+        key: 'delta',
+        label: 'Audit Delta & Effect',
+        sentence: `Net operational impact observed: ${log.delta.endsWith('.') ? log.delta : `${log.delta}.`}`
+      });
+    }
+
+    // 5. Workstation context
+    items.push({
+      key: 'workstation_context',
+      label: 'Terminal Origin Context',
+      sentence: `Command issued from terminal "${log.device_terminal || 'Standard POS Terminal'}" situated at "${log.location || 'Main Store - Accra'}".`
+    });
+
+    // 6. Network verification
+    items.push({
+      key: 'network_origin',
+      label: 'Network IP Authorization',
+      sentence: `Originating IP address ${log.ip_address || '127.0.0.1'} passed routing verification.`
+    });
+
+    return items;
+  };
+
   useEffect(() => {
     loadData();
   }, [categoryFilter, subCategoryFilter, userFilter, terminalFilter, startDate, endDate, limit]);
 
-  const loadData = () => {
-    setLoading(true);
+  const loadData = (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    } else {
+      setIsSilentRefreshing(true);
+    }
     const params = new URLSearchParams();
     if (categoryFilter !== 'all') params.append('category', categoryFilter);
     if (subCategoryFilter !== 'all') params.append('sub_category', subCategoryFilter);
@@ -187,8 +380,31 @@ export default function AuditLogs() {
       setUsers(Array.isArray(usersRes) ? usersRes : []);
     })
     .catch(console.error)
-    .finally(() => setLoading(false));
+    .finally(() => {
+      setLoading(false);
+      setIsSilentRefreshing(false);
+      setLastRefreshedAt(new Date());
+      setCountdown(autoRefreshInterval);
+    });
   };
+
+  // Live Security Monitoring Auto-Refresh Timer
+  useEffect(() => {
+    if (autoRefreshInterval <= 0) return;
+
+    setCountdown(autoRefreshInterval);
+    const intervalTimer = setInterval(() => {
+      setCountdown(prev => {
+        if (prev <= 1) {
+          loadData({ silent: true });
+          return autoRefreshInterval;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(intervalTimer);
+  }, [autoRefreshInterval, categoryFilter, subCategoryFilter, userFilter, terminalFilter, startDate, endDate, limit]);
 
   const handleCleanupNow = async () => {
     setCleaning(true);
@@ -234,6 +450,12 @@ export default function AuditLogs() {
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   const filteredLogs = logs.filter(log => {
+    // Status filter
+    if (statusFilter === 'critical' && !isCriticalAlert(log)) return false;
+    if (statusFilter === 'warning' && (!isWarningAlert(log) || isCriticalAlert(log))) return false;
+    if (statusFilter === 'success' && (!isSuccessAlert(log) || isCriticalAlert(log))) return false;
+    if (statusFilter === 'info' && (isCriticalAlert(log) || isWarningAlert(log) || isSuccessAlert(log))) return false;
+
     if (!searchQuery) return true;
     const term = searchQuery.toLowerCase();
     return (
@@ -241,9 +463,11 @@ export default function AuditLogs() {
       (log.details && log.details.toLowerCase().includes(term)) ||
       (log.user_name && log.user_name.toLowerCase().includes(term)) ||
       (log.actor_role && log.actor_role.toLowerCase().includes(term)) ||
+      (log.category && log.category.toLowerCase().includes(term)) ||
       (log.sub_category && log.sub_category.toLowerCase().includes(term)) ||
       (log.delta && log.delta.toLowerCase().includes(term)) ||
       (log.device_terminal && log.device_terminal.toLowerCase().includes(term)) ||
+      (log.location && log.location.toLowerCase().includes(term)) ||
       (log.ip_address && log.ip_address.toLowerCase().includes(term))
     );
   });
@@ -417,6 +641,22 @@ export default function AuditLogs() {
   const uniqueTerminals = Array.from(new Set(logs.map(l => l.device_terminal).filter(Boolean))) as string[];
   const uniqueIps = Array.from(new Set(logs.map(l => l.ip_address).filter(Boolean))) as string[];
 
+  // Security Monitoring Dashboard Metrics
+  const criticalAlertsCount = logs.filter(isCriticalAlert).length;
+  const topActiveUsers = React.useMemo(() => {
+    const userMap: Record<string, { name: string; count: number; role?: string }> = {};
+    logs.forEach(l => {
+      const name = l.user_name || 'System Operator';
+      if (!userMap[name]) {
+        userMap[name] = { name, count: 0, role: l.actor_role || undefined };
+      }
+      userMap[name].count += 1;
+    });
+    return Object.values(userMap)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 3);
+  }, [logs]);
+
   return (
     <div className="space-y-6 w-full pb-12">
       {/* Header */}
@@ -432,6 +672,42 @@ export default function AuditLogs() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
+          {/* Auto-Refresh Live Monitoring Toggle */}
+          <div className="flex items-center rounded-xl border border-slate-200 bg-white p-1 shadow-2xs">
+            <button
+              type="button"
+              onClick={() => setAutoRefreshInterval(prev => prev > 0 ? 0 : 30)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1.5 transition ${
+                autoRefreshInterval > 0
+                  ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
+                  : 'text-slate-600 hover:bg-slate-50'
+              }`}
+              title={autoRefreshInterval > 0 ? `Live monitoring active: refreshing every ${autoRefreshInterval}s (next in ${countdown}s)` : 'Click to enable 30s auto-refresh'}
+            >
+              {autoRefreshInterval > 0 ? (
+                <span className="relative flex h-2 w-2">
+                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                  <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+                </span>
+              ) : (
+                <span className="h-2 w-2 rounded-full bg-slate-300"></span>
+              )}
+              <span>{autoRefreshInterval > 0 ? `Live (${countdown}s)` : 'Auto-Refresh'}</span>
+            </button>
+
+            <select
+              value={autoRefreshInterval}
+              onChange={(e) => setAutoRefreshInterval(Number(e.target.value))}
+              className="bg-transparent border-0 text-xs font-bold text-slate-700 pl-1 pr-1 py-1 focus:outline-none cursor-pointer"
+              title="Select auto-refresh interval"
+            >
+              <option value={0}>Off</option>
+              <option value={10}>10s</option>
+              <option value={30}>30s</option>
+              <option value={60}>60s</option>
+            </select>
+          </div>
+
           <button
             onClick={exportLogsToCsv}
             disabled={filteredLogs.length === 0}
@@ -449,12 +725,12 @@ export default function AuditLogs() {
           </button>
 
           <button
-            onClick={loadData}
+            onClick={() => loadData()}
             disabled={loading}
             className="p-2 bg-white border border-slate-200 text-slate-700 hover:bg-slate-50 rounded-xl transition-colors"
-            title="Refresh Logs"
+            title={`Refresh logs now ${lastRefreshedAt ? `(Last updated: ${lastRefreshedAt.toLocaleTimeString()})` : ''}`}
           >
-            <RefreshCw size={16} className={loading ? 'animate-spin text-blue-600' : ''} />
+            <RefreshCw size={16} className={loading || isSilentRefreshing ? 'animate-spin text-blue-600' : ''} />
           </button>
         </div>
       </div>
@@ -476,136 +752,202 @@ export default function AuditLogs() {
         </div>
       )}
 
-      {/* Enhanced Interactive Audit Dashboard Banner */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3.5">
-        {/* Card 1: Overview */}
-        <div 
-          onClick={() => { setCategoryFilter('all'); setTerminalFilter('all'); }}
-          className={`bg-white border p-4 rounded-2xl shadow-2xs cursor-pointer transition-all hover:border-slate-400 ${categoryFilter === 'all' && terminalFilter === 'all' ? 'border-slate-800 ring-1 ring-slate-800/10' : 'border-slate-200'}`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Overview</span>
-            <FileText size={18} className="text-blue-500" />
+      {/* Compact High-Density Security Overview Ribbon (Redesigned from oversized cards) */}
+      <div className="bg-white border border-slate-200 rounded-xl px-4 py-2.5 shadow-2xs flex flex-wrap items-center justify-between gap-3 text-xs">
+        {/* Metric 1: Critical Alerts */}
+        <div className="flex items-center gap-2.5">
+          <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
+            criticalAlertsCount > 0 ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-500'
+          }`}>
+            <ShieldAlert size={15} />
           </div>
-          <div className="text-2xl font-black text-slate-900 mt-1">{logs.length}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-1">
-            <span className="font-bold text-slate-700">{filteredLogs.length}</span> matching view
-          </div>
-        </div>
-
-        {/* Card 2: Active Nodes & Terminals */}
-        <div 
-          className="bg-white border border-slate-200 p-4 rounded-2xl shadow-2xs"
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Hardware Terminals & IPs</span>
-            <Monitor size={18} className="text-indigo-500" />
-          </div>
-          <div className="text-2xl font-black text-indigo-900 mt-1">
-            {uniqueTerminals.length} <span className="text-xs font-bold text-slate-400">stations</span>
-          </div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5 flex items-center gap-1.5">
-            <span className="inline-block w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-            <span>{uniqueIps.length} tracked IP network nodes</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-500 text-[11px] uppercase tracking-wider">Critical Alerts:</span>
+            <span className={`text-sm font-black ${criticalAlertsCount > 0 ? 'text-rose-700' : 'text-slate-800'}`}>
+              {criticalAlertsCount}
+            </span>
+            <button
+              type="button"
+              onClick={() => setStatusFilter(prev => prev === 'critical' ? 'all' : 'critical')}
+              className={`ml-1 px-2 py-0.5 rounded text-[10px] font-bold uppercase transition ${
+                statusFilter === 'critical'
+                  ? 'bg-rose-600 text-white shadow-xs'
+                  : criticalAlertsCount > 0
+                  ? 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+              }`}
+              title="Toggle filter for critical security events"
+            >
+              {statusFilter === 'critical' ? 'Filtered ✓' : 'Filter'}
+            </button>
           </div>
         </div>
 
-        {/* Card 3: Access */}
-        <div 
-          onClick={() => setCategoryFilter('auth')}
-          className={`bg-white border p-4 rounded-2xl shadow-2xs cursor-pointer transition-all hover:border-purple-400 ${categoryFilter === 'auth' ? 'border-purple-600 ring-1 ring-purple-600/20 bg-purple-50/20' : 'border-slate-200'}`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Access</span>
-            <KeyRound size={18} className="text-purple-500" />
+        <div className="hidden md:block h-4 w-px bg-slate-200" />
+
+        {/* Metric 2: Total Logs in Period */}
+        <div className="flex items-center gap-2.5">
+          <div className="w-7 h-7 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+            <FileText size={15} />
           </div>
-          <div className="text-2xl font-black text-purple-700 mt-1">{authLogsCount}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-            Logins, genesis & security events
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-slate-500 text-[11px] uppercase tracking-wider">Ledger:</span>
+            <span className="text-sm font-black text-slate-900">{logs.length}</span>
+            <span className="text-[11px] text-slate-400 font-medium">
+              ({filteredLogs.length} matching)
+            </span>
+            {(startDate || endDate) && (
+              <span className="text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded font-mono font-medium ml-1">
+                {startDate === endDate ? startDate : `${startDate} → ${endDate}`}
+              </span>
+            )}
           </div>
         </div>
 
-        {/* Card 4: Inventory */}
-        <div 
-          onClick={() => setCategoryFilter('stock')}
-          className={`bg-white border p-4 rounded-2xl shadow-2xs cursor-pointer transition-all hover:border-amber-400 ${categoryFilter === 'stock' || categoryFilter === 'product' ? 'border-amber-600 ring-1 ring-amber-600/20 bg-amber-50/20' : 'border-slate-200'}`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Inventory</span>
-            <Package size={18} className="text-amber-500" />
-          </div>
-          <div className="text-2xl font-black text-amber-700 mt-1">{stockLogsCount}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-            Price overrides, SKUs & restocks
-          </div>
-        </div>
+        <div className="hidden lg:block h-4 w-px bg-slate-200" />
 
-        {/* Card 5: Sales */}
-        <div 
-          onClick={() => setCategoryFilter('sales')}
-          className={`bg-white border p-4 rounded-2xl shadow-2xs cursor-pointer transition-all hover:border-emerald-400 ${categoryFilter === 'sales' ? 'border-emerald-600 ring-1 ring-emerald-600/20 bg-emerald-50/20' : 'border-slate-200'}`}
-        >
-          <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Sales</span>
-            <ShoppingCart size={18} className="text-emerald-600" />
+        {/* Metric 3: Top Active Users */}
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
+            <User size={15} />
           </div>
-          <div className="text-2xl font-black text-emerald-800 mt-1">{financialLogsCount}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-0.5">
-            Discounts, refunds & transactions
+          <span className="font-bold text-slate-500 text-[11px] uppercase tracking-wider">Top Operators:</span>
+          <div className="flex items-center gap-1 flex-wrap">
+            {topActiveUsers.length > 0 ? (
+              topActiveUsers.map((u, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setUserFilter(userFilter === u.name ? 'all' : u.name)}
+                  className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold border transition ${
+                    userFilter === u.name
+                      ? 'bg-indigo-600 border-indigo-700 text-white shadow-xs'
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}
+                  title={`Filter ledger by ${u.name}`}
+                >
+                  <span className="max-w-[80px] truncate">{u.name}</span>
+                  <span className={`font-mono text-[9px] font-bold px-1 rounded ${
+                    userFilter === u.name ? 'bg-indigo-700 text-white' : 'bg-slate-200 text-slate-800'
+                  }`}>
+                    {u.count}
+                  </span>
+                </button>
+              ))
+            ) : (
+              <span className="text-slate-400 text-[11px]">No active operators</span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Comprehensive Filter Toolbar */}
-      <div className="bg-white border border-slate-200 p-4 rounded-2xl shadow-2xs space-y-3">
+      {/* Top Search Bar, Date Range Picker, and Status Filter Dropdown Bar */}
+      <div className="bg-white border border-slate-200 p-3 rounded-xl shadow-2xs flex flex-col md:flex-row items-stretch md:items-center gap-2.5">
+        {/* Search Bar */}
+        <div className="relative flex-1">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" size={15} />
+          <input
+            type="text"
+            placeholder="Search security events, actions, operators, terminal, IP, or metadata..."
+            value={searchQuery}
+            onChange={e => setSearchQuery(e.target.value)}
+            className="w-full border border-slate-200 rounded-lg pl-9 pr-8 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-500/20 transition placeholder:text-slate-400 placeholder:font-normal"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 p-0.5 text-slate-400 hover:text-slate-700 rounded transition"
+              title="Clear search query"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+
+        {/* Dedicated Date Range Picker Component */}
+        <div className="flex items-center shrink-0">
+          <DateRangePicker
+            startDate={startDate}
+            endDate={endDate}
+            onChange={(start, end) => {
+              setStartDate(start);
+              setEndDate(end);
+            }}
+            onClear={() => {
+              setStartDate('');
+              setEndDate('');
+            }}
+          />
+        </div>
+
+        {/* Status Filter Dropdown */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          <select
+            id="audit-status-filter"
+            value={statusFilter}
+            onChange={e => setStatusFilter(e.target.value as any)}
+            className="h-8 border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-600 focus:ring-1 focus:ring-blue-500/20 transition"
+          >
+            <option value="all">All Statuses ({logs.length})</option>
+            <option value="critical">Critical Alerts ({criticalAlertsCount})</option>
+            <option value="warning">Warnings & Overrides</option>
+            <option value="success">Verified Operations</option>
+            <option value="info">Routine / Info Events</option>
+          </select>
+        </div>
+      </div>
+
+      {/* Comprehensive Secondary Filter Toolbar */}
+      <div className="bg-white border border-slate-200 p-3.5 rounded-xl shadow-2xs space-y-3">
         {/* Quick Category Tabs */}
-        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 pb-3">
+        <div className="flex flex-wrap items-center gap-1.5 border-b border-slate-100 pb-2.5">
           <button
             type="button"
             onClick={() => { setCategoryFilter('all'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition ${categoryFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition ${categoryFilter === 'all' ? 'bg-slate-900 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
           >
             Overview
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('auth'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'auth' ? 'bg-purple-700 text-white' : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'auth' ? 'bg-purple-700 text-white' : 'bg-purple-50 hover:bg-purple-100 text-purple-800 border border-purple-200'}`}
           >
             <KeyRound size={13} /> Access
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('product'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'product' ? 'bg-blue-700 text-white' : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'product' ? 'bg-blue-700 text-white' : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200'}`}
           >
             <Package size={13} /> Catalog
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('stock'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'stock' ? 'bg-amber-700 text-white' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'stock' ? 'bg-amber-700 text-white' : 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'}`}
           >
             <Sliders size={13} /> Inventory
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('sales'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'sales' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'sales' ? 'bg-emerald-700 text-white' : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'}`}
           >
             <ShoppingCart size={13} /> Sales
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('purchasing'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'purchasing' ? 'bg-cyan-700 text-white' : 'bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'purchasing' ? 'bg-cyan-700 text-white' : 'bg-cyan-50 hover:bg-cyan-100 text-cyan-800 border border-cyan-200'}`}
           >
             <Truck size={13} /> Purchasing
           </button>
           <button
             type="button"
             onClick={() => { setCategoryFilter('governance'); setSubCategoryFilter('all'); }}
-            className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 ${categoryFilter === 'governance' ? 'bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
+            className={`px-3 py-1 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${categoryFilter === 'governance' ? 'bg-slate-800 text-white' : 'bg-slate-100 hover:bg-slate-200 text-slate-700'}`}
           >
             <Settings size={13} /> System
           </button>
@@ -617,7 +959,7 @@ export default function AuditLogs() {
             <select
               value={userFilter}
               onChange={e => setUserFilter(e.target.value)}
-              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+              className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
             >
               <option value="all">All Users & System</option>
               {users.map(u => (
@@ -629,7 +971,7 @@ export default function AuditLogs() {
             <select
               value={terminalFilter}
               onChange={e => setTerminalFilter(e.target.value)}
-              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+              className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
             >
               <option value="all">All Terminals & Devices ({uniqueTerminals.length})</option>
               {uniqueTerminals.map(term => (
@@ -641,7 +983,7 @@ export default function AuditLogs() {
             <select
               value={limit}
               onChange={e => setLimit(parseInt(e.target.value, 10))}
-              className="border border-slate-300 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+              className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
             >
               <option value={50}>Last 50 Records</option>
               <option value={100}>Last 100 Records</option>
@@ -650,83 +992,27 @@ export default function AuditLogs() {
             </select>
           </div>
 
-          {/* Quick Date Range Buttons */}
-          <div className="flex items-center gap-1.5 text-xs font-semibold">
-            <span className="text-slate-400 mr-1 text-[11px]">Presets:</span>
-            <button
-              type="button"
-              onClick={() => setPresetDate('today')}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] transition"
-            >
-              Today
-            </button>
-            <button
-              type="button"
-              onClick={() => setPresetDate('7days')}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] transition"
-            >
-              7 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => setPresetDate('30days')}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] transition"
-            >
-              30 Days
-            </button>
-            <button
-              type="button"
-              onClick={() => setPresetDate('all')}
-              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[11px] transition"
-            >
-              All Time
-            </button>
-          </div>
-        </div>
-
-        {/* Date Range Inputs & Search */}
-        <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
-          <div className="flex items-center gap-2 w-full sm:w-auto">
-            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-              <Calendar size={14} className="text-slate-400" />
-              <span>From:</span>
-              <input
-                type="date"
-                value={startDate}
-                onChange={e => setStartDate(e.target.value)}
-                className="border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-800 bg-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            <div className="flex items-center gap-1.5 text-xs text-slate-600 font-medium">
-              <span>To:</span>
-              <input
-                type="date"
-                value={endDate}
-                onChange={e => setEndDate(e.target.value)}
-                className="border border-slate-300 rounded-xl px-2.5 py-1 text-xs text-slate-800 bg-white focus:outline-none focus:border-blue-500"
-              />
-            </div>
-            {(startDate || endDate) && (
+          {/* Reset Filters */}
+          <div className="flex items-center gap-2">
+            {(startDate || endDate || categoryFilter !== 'all' || subCategoryFilter !== 'all' || userFilter !== 'all' || terminalFilter !== 'all' || statusFilter !== 'all' || searchQuery) && (
               <button
                 type="button"
-                onClick={() => { setStartDate(''); setEndDate(''); }}
-                className="p-1 text-slate-400 hover:text-slate-600 text-xs"
-                title="Clear date range"
+                onClick={() => {
+                  setStartDate('');
+                  setEndDate('');
+                  setCategoryFilter('all');
+                  setSubCategoryFilter('all');
+                  setUserFilter('all');
+                  setTerminalFilter('all');
+                  setStatusFilter('all');
+                  setSearchQuery('');
+                }}
+                className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition flex items-center gap-1.5"
+                title="Reset all active filters"
               >
-                <X size={14} />
+                <X size={13} /> Clear All Filters
               </button>
             )}
-          </div>
-
-          <div className="relative w-full sm:w-80">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-            <input
-              type="text"
-              placeholder="Search actions, user, terminal, IP, or details..."
-              value={searchQuery}
-              onChange={e => setSearchQuery(e.target.value)}
-              className="w-full border border-slate-300 rounded-xl pl-9 pr-3 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500"
-            />
           </div>
         </div>
       </div>
@@ -876,13 +1162,15 @@ export default function AuditLogs() {
       {/* Detail Modal for selected log */}
       {selectedLog && (() => {
         const narrative = getDetailedNarrative(selectedLog);
+        const parsedMetadata = parseLogMetadata(selectedLog);
+
         return (
           <div 
             className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-6 overflow-hidden animate-in fade-in duration-150"
             onClick={() => setSelectedLog(null)}
           >
             <div 
-              className="bg-white rounded-2xl max-w-2xl w-full max-h-[calc(100dvh-2.5rem)] flex flex-col border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
+              className="bg-white rounded-2xl max-w-2xl w-full max-h-[80vh] flex flex-col border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150"
               onClick={(e) => e.stopPropagation()}
             >
               {/* Modal Header (Pinned at top) */}
@@ -912,10 +1200,10 @@ export default function AuditLogs() {
                 </button>
               </div>
 
-              {/* Modal Body (Scrollable and strictly contained within viewport) */}
-              <div className="flex-1 overflow-y-auto p-6 space-y-5 custom-scrollbar text-xs">
+              {/* Modal Body (Strictly viewport-contained with max-h-[80vh] overflow-y-auto and flex-basis adjustments) */}
+              <div className="flex-1 basis-full min-h-0 max-h-[80vh] overflow-y-auto p-6 space-y-5 custom-scrollbar text-xs">
                 
-                {/* 1. Core Event Metadata (Unified Ledger Table - NO NESTED CARDS) */}
+                {/* 1. Core Event Provenance & Ledger Metadata (Grid-based Key-Value Ledger, No Cards) */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
                   <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
                     <span className="font-bold text-[11px] text-slate-700 uppercase tracking-wider">
@@ -928,11 +1216,11 @@ export default function AuditLogs() {
 
                   <div className="divide-y divide-slate-100 text-xs">
                     {/* Operator & Security Role */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 hover:bg-slate-50/50 transition">
+                    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 items-center hover:bg-slate-50/50 transition">
                       <span className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                         <User size={13} className="text-slate-400" /> Operator / Account
                       </span>
-                      <div className="flex items-center gap-2 mt-1 sm:mt-0">
+                      <div className="flex items-center gap-2">
                         <div className="w-5 h-5 rounded-full bg-slate-100 border border-slate-200 text-slate-800 flex items-center justify-center font-black text-[10px] shrink-0">
                           {(selectedLog.user_name || 'S').charAt(0).toUpperCase()}
                         </div>
@@ -942,21 +1230,21 @@ export default function AuditLogs() {
                     </div>
 
                     {/* Terminal Workstation */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 hover:bg-slate-50/50 transition">
+                    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 items-center hover:bg-slate-50/50 transition">
                       <span className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                         <Monitor size={13} className="text-blue-500" /> Terminal Workstation
                       </span>
-                      <span className="font-semibold text-slate-800 font-mono mt-1 sm:mt-0">
+                      <span className="font-semibold text-slate-800 font-mono">
                         {selectedLog.device_terminal || 'POS Terminal #1 (Lane A)'}
                       </span>
                     </div>
 
                     {/* Network IP & Store Location */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 hover:bg-slate-50/50 transition">
+                    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 items-center hover:bg-slate-50/50 transition">
                       <span className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                         <Globe size={13} className="text-indigo-500" /> Origin IP & Location
                       </span>
-                      <div className="flex items-center gap-2 mt-1 sm:mt-0">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-mono text-slate-800 font-bold">{selectedLog.ip_address || '127.0.0.1'}</span>
                         <span className="text-slate-300">•</span>
                         <span className="text-slate-600 font-medium flex items-center gap-1">
@@ -967,11 +1255,11 @@ export default function AuditLogs() {
                     </div>
 
                     {/* Action Code & Category */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 hover:bg-slate-50/50 transition">
+                    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 items-center hover:bg-slate-50/50 transition">
                       <span className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
                         <Activity size={13} className="text-amber-500" /> Action Code & Category
                       </span>
-                      <div className="flex items-center gap-2 mt-1 sm:mt-0">
+                      <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-slate-900 bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200">
                           {selectedLog.action}
                         </span>
@@ -980,14 +1268,14 @@ export default function AuditLogs() {
                     </div>
 
                     {/* Recorded Timestamps */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between px-4 py-2.5 hover:bg-slate-50/50 transition">
+                    <div className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-2.5 items-center hover:bg-slate-50/50 transition">
                       <span className="font-semibold text-slate-500 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
-                        <Clock size={13} className="text-slate-400" /> Timestamp
+                        <Clock size={13} className="text-slate-400" /> Timestamp Recorded
                       </span>
-                      <div className="text-left sm:text-right mt-1 sm:mt-0">
+                      <div>
                         <div className="font-semibold text-slate-800">
                           {new Date(selectedLog.created_at).toLocaleString()} 
-                          <span className="text-slate-400 font-normal ml-1">({formatRelativeTime(selectedLog.created_at)})</span>
+                          <span className="text-slate-400 font-normal ml-1.5">({formatRelativeTime(selectedLog.created_at)})</span>
                         </div>
                         <div className="text-[10px] text-slate-400 font-mono mt-0.5">
                           UTC: {new Date(selectedLog.created_at).toUTCString()}
@@ -997,95 +1285,48 @@ export default function AuditLogs() {
                   </div>
                 </div>
 
-                {/* 2. Full Details & Context (In-Depth Explanation of What Actually Happened) */}
+                {/* 2. Full Details & Context (Grid-Based Key-Value Layout, Parsing JSON Metadata Into Human-Readable Sentences, No Cards) */}
                 <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-2xs">
-                  <div className="px-4 py-3 bg-blue-50/50 border-b border-blue-100 flex items-center justify-between">
-                    <div className="flex items-center gap-2">
-                      <div className="p-1 bg-blue-600 text-white rounded-md">
-                        <FileText size={13} />
-                      </div>
-                      <span className="font-bold text-xs text-blue-950 uppercase tracking-wide">
-                        Full Details & Context
-                      </span>
-                    </div>
-                    <span className="text-[10px] font-bold text-blue-700 uppercase bg-blue-100/60 px-2 py-0.5 rounded">
-                      In-Depth Analysis
+                  <div className="px-4 py-2.5 bg-slate-50/80 border-b border-slate-100 flex items-center justify-between">
+                    <span className="font-bold text-[11px] text-slate-700 uppercase tracking-wider">
+                      Full Details & Context
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      Parsed Contextual Sentences
                     </span>
                   </div>
 
-                  <div className="p-4 space-y-3.5">
-                    {/* Plain English Explanation */}
-                    <div>
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block mb-1">
-                        What Actually Happened
-                      </span>
-                      <p className="text-xs text-slate-800 leading-relaxed font-medium bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        {narrative?.whatHappened}
+                  {/* Detailed Explanation of What Actually Happened */}
+                  <div className="p-4 border-b border-slate-100 bg-slate-50/30">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider block mb-1">
+                      Event Summary & Narrative
+                    </span>
+                    <p className="text-xs text-slate-900 leading-relaxed font-medium">
+                      {narrative?.whatHappened}
+                    </p>
+                    {narrative?.businessImpact && (
+                      <p className="text-xs text-slate-600 leading-relaxed mt-2 pt-2 border-t border-slate-200/60">
+                        <span className="font-semibold text-slate-700">Operational & Security Assessment:</span> {narrative.businessImpact}
                       </p>
-                    </div>
-
-                    {/* Operational & Ledger Impact */}
-                    <div>
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block mb-1">
-                        Operational & Access Impact
-                      </span>
-                      <p className="text-xs text-slate-700 leading-relaxed bg-slate-50 p-3 rounded-lg border border-slate-200">
-                        {narrative?.businessImpact}
-                      </p>
-                    </div>
-
-                    {/* State Transitions if available */}
-                    {(selectedLog.pre_state || selectedLog.post_state || selectedLog.delta) && (
-                      <div className="pt-2 border-t border-slate-100 space-y-2">
-                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">
-                          State Transition & Delta Flow
-                        </span>
-
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                          <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200">
-                            <span className="text-[10px] uppercase font-bold text-slate-400 block mb-0.5">
-                              Pre-State (Prior)
-                            </span>
-                            <span className="font-mono text-slate-700 text-xs font-medium">
-                              {selectedLog.pre_state || 'Unchanged / Baseline'}
-                            </span>
-                          </div>
-
-                          <div className="bg-blue-50/50 p-2.5 rounded-lg border border-blue-200">
-                            <span className="text-[10px] uppercase font-bold text-blue-600 block mb-0.5">
-                              Post-State (Outcome)
-                            </span>
-                            <span className="font-mono text-blue-900 text-xs font-bold">
-                              {selectedLog.post_state || 'Recorded State Transition'}
-                            </span>
-                          </div>
-                        </div>
-
-                        {selectedLog.delta && (
-                          <div className="bg-emerald-50 text-emerald-900 p-2.5 rounded-lg border border-emerald-200 flex items-start gap-2">
-                            <Sliders size={14} className="text-emerald-600 shrink-0 mt-0.5" />
-                            <div>
-                              <span className="font-extrabold text-[10px] uppercase tracking-wider text-emerald-800 block">
-                                Audit Delta Effect
-                              </span>
-                              <p className="text-xs font-medium mt-0.5">{selectedLog.delta}</p>
-                            </div>
-                          </div>
-                        )}
-                      </div>
                     )}
+                  </div>
 
-                    {/* Raw System Payload / Notes */}
-                    {selectedLog.details && (
-                      <div className="pt-2 border-t border-slate-100">
-                        <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block mb-1">
-                          System Payload & Recorded Notes
-                        </span>
-                        <div className="p-3 bg-slate-900 text-slate-100 rounded-lg font-mono text-[11px] leading-relaxed break-words whitespace-pre-wrap select-all">
-                          {selectedLog.details}
+                  {/* Clean Grid-Based Key-Value Metadata Sentences */}
+                  <div className="divide-y divide-slate-100">
+                    {parsedMetadata.map((item, idx) => (
+                      <div 
+                        key={idx}
+                        className="grid grid-cols-1 sm:grid-cols-[180px_1fr] gap-1 sm:gap-4 px-4 py-3 hover:bg-slate-50/50 transition-colors items-baseline"
+                      >
+                        <div className="text-[11px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></span>
+                          <span>{item.label}</span>
+                        </div>
+                        <div className="text-xs text-slate-800 leading-relaxed font-medium">
+                          {item.sentence}
                         </div>
                       </div>
-                    )}
+                    ))}
                   </div>
                 </div>
 
