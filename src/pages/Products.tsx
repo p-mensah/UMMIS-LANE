@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
 
@@ -23,13 +23,34 @@ interface Product {
 
 export default function Products() {
   const { user } = useAuth();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const categoryParam = searchParams.get('category') || '';
+
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeActionMenuId, setActiveActionMenuId] = useState<number | null>(null);
+
+  // Sync category from URL parameter whenever it changes
+  useEffect(() => {
+    const cat = searchParams.get('category') || '';
+    setSelectedCategory(cat);
+  }, [searchParams]);
+
+  const handleCategoryChange = (categoryName: string) => {
+    setSelectedCategory(categoryName);
+    const nextParams = new URLSearchParams(searchParams);
+    if (categoryName && categoryName !== 'ALL') {
+      nextParams.set('category', categoryName);
+    } else {
+      nextParams.delete('category');
+    }
+    setSearchParams(nextParams);
+  };
   
   const [showAdjustModal, setShowAdjustModal] = useState(false);
   const [adjustingProduct, setAdjustingProduct] = useState<Product | null>(null);
@@ -388,20 +409,54 @@ export default function Products() {
   };
 
   const filteredProducts = products.filter(p => {
-    const q = searchQuery.toLowerCase();
-    return (
-      p.name.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q))
+    const q = searchQuery.toLowerCase().trim();
+    const matchesSearch = !q || (
+      (p.name && p.name.toLowerCase().includes(q)) ||
+      (p.sku && p.sku.toLowerCase().includes(q)) ||
+      (p.barcode && p.barcode.toLowerCase().includes(q)) ||
+      (p.brand && p.brand.toLowerCase().includes(q))
     );
+
+    const matchesCategory = !selectedCategory || selectedCategory === 'ALL' ||
+      (p.category && p.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase());
+
+    return matchesSearch && matchesCategory;
   });
 
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Products Catalog</h1>
-        <div className="flex flex-col sm:flex-row items-center gap-4 w-full sm:w-auto">
-          <div className="relative w-full sm:w-80 group">
+        <div>
+          <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Products Catalog</h1>
+          <p className="text-[12px] text-slate-500 font-medium mt-0.5">
+            Showing <strong className="text-slate-800">{filteredProducts.length}</strong> of <strong className="text-slate-800">{products.length}</strong> total products
+            {selectedCategory && selectedCategory !== 'ALL' && (
+              <span className="text-blue-600 font-bold ml-1">in category "{selectedCategory}"</span>
+            )}
+          </p>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+          {/* Category Filter Selector */}
+          <div className="relative w-full sm:w-auto">
+            <select
+              value={selectedCategory || 'ALL'}
+              onChange={(e) => handleCategoryChange(e.target.value)}
+              className="w-full sm:w-auto border border-slate-200 rounded-sm pl-8 pr-7 py-2 text-[13px] font-bold text-slate-700 bg-white shadow-sm focus:outline-none focus:border-blue-500 cursor-pointer hover:bg-slate-50 transition-colors"
+            >
+              <option value="ALL">All Categories ({products.length})</option>
+              {categories.map((c) => {
+                const count = products.filter(p => p.category && p.category.trim().toLowerCase() === c.name.trim().toLowerCase()).length;
+                return (
+                  <option key={c.id} value={c.name}>
+                    {c.name} ({count})
+                  </option>
+                );
+              })}
+            </select>
+            <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          <div className="relative w-full sm:w-72 group">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={16} />
             <input
               type="text"
@@ -429,7 +484,7 @@ export default function Products() {
                 className="flex items-center justify-center px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300 rounded-sm font-bold text-[13px] transition shadow-xs w-full sm:w-auto"
                 title="Upload or paste structured product list to quickly populate catalog"
               >
-                <Table size={15} className="mr-1.5 text-blue-600" /> Import Structured List
+                <Table size={15} className="mr-1.5 text-blue-600" /> Import List
               </button>
               <button 
                 type="button"
@@ -450,7 +505,7 @@ export default function Products() {
                 }}
                 className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-sm font-bold text-[13px] hover:bg-blue-700 transition shadow-sm w-full sm:w-auto"
               >
-                <Upload size={16} className="mr-2" /> Bulk CSV Update
+                <Upload size={16} className="mr-2" /> Bulk Update
               </button>
               <button 
                 onClick={openNew} 
@@ -462,6 +517,28 @@ export default function Products() {
           )}
         </div>
       </div>
+
+      {/* Active Category Filter Callout */}
+      {selectedCategory && selectedCategory !== 'ALL' && (
+        <div className="bg-blue-50 border border-blue-200/90 rounded px-3.5 py-2 flex items-center justify-between text-xs text-blue-900">
+          <div className="flex items-center gap-2 flex-wrap">
+            <Tag size={14} className="text-blue-600" />
+            <span className="font-semibold text-blue-800">Active Category:</span>
+            <span className="px-2.5 py-0.5 bg-blue-600 text-white rounded font-black uppercase tracking-wide text-[11px] shadow-2xs">
+              {selectedCategory}
+            </span>
+            <span className="text-blue-700 font-bold ml-1">
+              — Displaying {filteredProducts.length} matching product(s)
+            </span>
+          </div>
+          <button
+            onClick={() => handleCategoryChange('ALL')}
+            className="px-2.5 py-1 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded font-bold text-[11px] transition flex items-center gap-1 shadow-2xs cursor-pointer"
+          >
+            <X size={12} /> Clear Category Filter
+          </button>
+        </div>
+      )}
 
       <div className="bg-white border border-slate-200 rounded-sm overflow-x-auto min-h-[300px]">
         <table className="min-w-full divide-y divide-slate-200">
@@ -508,61 +585,70 @@ export default function Products() {
                   </span>
                 </td>
                 <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
-                  <div className="relative inline-block text-left">
-                    <button 
-                      id={`product-action-btn-${p.id}`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setActiveActionMenuId(activeActionMenuId === p.id ? null : p.id);
-                      }} 
-                      className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none"
-                      title="Actions"
-                    >
-                      <MoreVertical size={16} />
-                    </button>
-
-                    {activeActionMenuId === p.id && (
-                      <div 
-                        className="absolute right-0 mt-1 w-32 bg-white rounded border border-slate-200 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
-                        onClick={(e) => e.stopPropagation()}
+                  {user?.role === 'admin' ? (
+                    <div className="relative inline-block text-left">
+                      <button 
+                        id={`product-action-btn-${p.id}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveActionMenuId(activeActionMenuId === p.id ? null : p.id);
+                        }} 
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none"
+                        title="Actions"
                       >
-                        <button 
-                          id={`action-adjust-${p.id}`}
-                          onClick={() => {
-                            setActiveActionMenuId(null);
-                            openAdjust(p);
-                          }} 
-                          className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors"
+                        <MoreVertical size={16} />
+                      </button>
+
+                      {activeActionMenuId === p.id && (
+                        <div 
+                          className="absolute right-0 mt-1 w-32 bg-white rounded border border-slate-200 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <SlidersHorizontal size={14} className="text-amber-500" />
-                          <span>Adjust</span>
-                        </button>
-                        <button 
-                          id={`action-edit-${p.id}`}
-                          onClick={() => {
-                            setActiveActionMenuId(null);
-                            handleEdit(p);
-                          }} 
-                          className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
-                        >
-                          <Edit size={14} className="text-blue-500" />
-                          <span>Edit</span>
-                        </button>
-                        <div className="border-t border-slate-100 my-0.5" />
-                        <button 
-                          id={`action-delete-${p.id}`}
-                          onClick={() => {
-                            setActiveActionMenuId(null);
-                            setDeletingProductId(p.id);
-                          }} 
-                          className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
-                        >
-                          <Trash2 size={14} className="text-rose-500" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                          <button 
+                            id={`action-adjust-${p.id}`}
+                            onClick={() => {
+                              setActiveActionMenuId(null);
+                              openAdjust(p);
+                            }} 
+                            className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors"
+                          >
+                            <SlidersHorizontal size={14} className="text-amber-500" />
+                            <span>Adjust</span>
+                          </button>
+                          <button 
+                            id={`action-edit-${p.id}`}
+                            onClick={() => {
+                              setActiveActionMenuId(null);
+                              handleEdit(p);
+                            }} 
+                            className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
+                          >
+                            <Edit size={14} className="text-blue-500" />
+                            <span>Edit</span>
+                          </button>
+                          <div className="border-t border-slate-100 my-0.5" />
+                          <button 
+                            id={`action-delete-${p.id}`}
+                            onClick={() => {
+                              setActiveActionMenuId(null);
+                              setDeletingProductId(p.id);
+                            }} 
+                            className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
+                          >
+                            <Trash2 size={14} className="text-rose-500" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <Link
+                      to={`/products/${p.id}`}
+                      className="text-blue-600 hover:text-blue-800 text-xs font-bold hover:underline"
+                    >
+                      View
+                    </Link>
+                  )}
                 </td>
               </tr>
             ))}
@@ -570,7 +656,18 @@ export default function Products() {
               <tr>
                 <td colSpan={10} className="px-5 py-8 text-center text-slate-500 text-[13px] italic">
                    {searchQuery ? (
-                     <span>No products found matching <strong className="text-slate-900 font-black">"{searchQuery}"</strong></span>
+                     <span>No products found matching <strong className="text-slate-900 font-black">"{searchQuery}"</strong>{selectedCategory && selectedCategory !== 'ALL' ? ` in category "${selectedCategory}"` : ''}</span>
+                   ) : selectedCategory && selectedCategory !== 'ALL' ? (
+                     <div className="space-y-2">
+                       <p>No products assigned to category <strong className="text-slate-900 font-bold">"{selectedCategory}"</strong> yet.</p>
+                       <button
+                         type="button"
+                         onClick={() => handleCategoryChange('ALL')}
+                         className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-xs inline-block transition-colors"
+                       >
+                         Show All Categories ({products.length})
+                       </button>
+                     </div>
                    ) : (
                      "No products found in catalog. Click 'Add Product' to begin."
                    )}

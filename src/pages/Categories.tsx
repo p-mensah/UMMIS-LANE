@@ -381,9 +381,13 @@ export default function Categories() {
                       )}
                     </td>
                     <td className="px-4 py-3 text-center font-bold text-slate-800">
-                      <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-800 rounded font-black text-[11px]">
+                      <Link
+                        to={`/products?category=${encodeURIComponent(cat.name)}`}
+                        className="px-2 py-0.5 bg-slate-100 hover:bg-blue-100 hover:text-blue-800 border border-slate-200 text-slate-800 rounded font-black text-[11px] transition inline-flex items-center gap-1"
+                        title={`View ${cat.product_count || 0} products in ${cat.name}`}
+                      >
                         {cat.product_count || 0} SKU(s)
-                      </span>
+                      </Link>
                     </td>
                     <td className="px-4 py-3 text-center font-black text-emerald-700">
                       {cat.total_stock || 0} units
@@ -392,29 +396,31 @@ export default function Categories() {
                       {formatGHS(cat.total_value || 0)}
                     </td>
                     <td className="px-4 py-3 text-right">
-                      {user?.role === 'admin' ? (
-                        <div className="space-x-2 inline-flex">
-                          <button
-                            onClick={() => handleEdit(cat)}
-                            className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
-                          >
-                            Edit
-                          </button>
-                          <button
-                            onClick={() => handleDelete(cat.id, cat.name)}
-                            className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
-                          >
-                            Delete
-                          </button>
-                        </div>
-                      ) : (
+                      <div className="space-x-1.5 inline-flex items-center">
                         <Link
                           to={`/products?category=${encodeURIComponent(cat.name)}`}
-                          className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-600 font-bold rounded text-[11px] transition inline-flex items-center gap-1"
+                          className="px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition inline-flex items-center gap-1"
+                          title={`View ${cat.name} products`}
                         >
-                          View SKUs <ChevronRight size={12} />
+                          Products <ChevronRight size={11} />
                         </Link>
-                      )}
+                        {user?.role === 'admin' && (
+                          <>
+                            <button
+                              onClick={() => handleEdit(cat)}
+                              className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => handleDelete(cat.id, cat.name)}
+                              className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
+                            >
+                              Delete
+                            </button>
+                          </>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}

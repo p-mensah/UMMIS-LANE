@@ -411,7 +411,7 @@ export default function LowStockAlertIndicator({
                       </div>
                     </div>
 
-                    {/* Action buttons */}
+                    {/* Action buttons - Restricted to Admin; Staff has no edit or adjust controls */}
                     <div className="mt-3 pt-2.5 border-t border-slate-200/60 flex items-center gap-2">
                       {isAdmin ? (
                         <>
@@ -435,19 +435,10 @@ export default function LowStockAlertIndicator({
                           )}
                         </>
                       ) : (
-                        /* Staff view */
-                        allowStaffAdjustments && onQuickRestock ? (
-                          <button
-                            onClick={() => onQuickRestock(prod)}
-                            className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[10px] font-black uppercase tracking-wider transition flex items-center justify-center gap-1"
-                          >
-                            + Record Restock
-                          </button>
-                        ) : (
-                          <div className="w-full py-1 text-center text-[10px] font-bold text-slate-500 bg-slate-100 rounded border border-slate-200">
-                            Notify Manager to Reorder
-                          </div>
-                        )
+                        /* Staff view - strictly read-only advisory without any adjust/edit features */
+                        <div className="w-full py-1.5 px-2 text-center text-[10px] font-bold text-slate-600 bg-slate-100 rounded border border-slate-200">
+                          Low Stock Alert • Contact Manager
+                        </div>
                       )}
                     </div>
                   </div>

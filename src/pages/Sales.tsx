@@ -771,10 +771,10 @@ export default function Sales() {
                     <div className="flex items-center justify-end gap-2">
                       <button 
                         onClick={() => handleReprint(s.id)} 
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-600 font-bold text-[11px] rounded border border-slate-200 transition-colors flex items-center gap-1"
-                        title="Print Official Invoice / Receipt"
+                        className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold text-[11px] rounded border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
+                        title="Print Official Sales Receipt"
                       >
-                        <Printer size={13} /> Invoice
+                        <Printer size={13} /> Print Receipt
                       </button>
                     </div>
                   </td>

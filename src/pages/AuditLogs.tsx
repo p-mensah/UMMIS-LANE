@@ -1,11 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { fetchApi } from '../lib/api';
 import { 
   ShieldCheck, Search, Filter, Trash2, RefreshCw, Calendar, User, 
   Settings, Clock, FileText, AlertTriangle, Info, CheckCircle2, Download,
-  Globe, ChevronRight, X, Monitor, MapPin, ArrowRight, ShieldAlert, KeyRound,
+  Globe, ChevronRight, ChevronDown, X, Monitor, MapPin, ArrowRight, ShieldAlert, KeyRound,
   Package, ShoppingCart, Truck, Sliders, Activity, ArrowDown, Copy, Check,
-  Radio
+  Radio, Layers, List
 } from 'lucide-react';
 import { DateRangePicker } from '../components/DateRangePicker';
 
@@ -48,6 +48,24 @@ export default function AuditLogs() {
   const [endDate, setEndDate] = useState('');
   const [limit, setLimit] = useState(100);
   const [searchQuery, setSearchQuery] = useState('');
+
+  // Grouping Mode: 'none' (flat), 'user' (grouped by actor), 'action' (grouped by action type)
+  const [groupMode, setGroupMode] = useState<'none' | 'user' | 'action'>('none');
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (key: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
+  const expandAllGroups = () => {
+    setCollapsedGroups({});
+  };
+
+  const collapseAllGroups = (keys: string[]) => {
+    const next: Record<string, boolean> = {};
+    keys.forEach(k => { next[k] = true; });
+    setCollapsedGroups(next);
+  };
   
   // Modal states
   const [selectedLog, setSelectedLog] = useState<AuditLogEntry | null>(null);
@@ -657,6 +675,107 @@ export default function AuditLogs() {
       .slice(0, 3);
   }, [logs]);
 
+  // Grouped logs calculation
+  const groupedLogs = useMemo(() => {
+    if (groupMode === 'none') return [];
+    const map = new Map<string, AuditLogEntry[]>();
+    filteredLogs.forEach(log => {
+      let key = '';
+      if (groupMode === 'user') {
+        key = log.user_name || 'System Process / Automated';
+      } else {
+        key = log.action || 'General Event';
+      }
+      if (!map.has(key)) map.set(key, []);
+      map.get(key)!.push(log);
+    });
+
+    return Array.from(map.entries()).map(([groupTitle, items]) => ({
+      groupKey: groupTitle,
+      title: groupTitle,
+      count: items.length,
+      items,
+      latest: items[0]?.created_at,
+      category: items[0]?.category,
+      actor_role: items[0]?.actor_role,
+      user_id: items[0]?.user_id
+    }));
+  }, [filteredLogs, groupMode]);
+
+  const renderLogRow = (log: AuditLogEntry) => (
+    <tr 
+      key={log.id} 
+      onClick={() => setSelectedLog(log)}
+      title="Click row to inspect audit ledger record"
+      className="hover:bg-slate-50/90 transition-colors cursor-pointer group"
+    >
+      {/* Timestamp: Relative human-readable format with exact UTC tooltip */}
+      <td className="px-5 py-4 whitespace-nowrap text-xs text-slate-500 font-medium">
+        <div 
+          title={`Exact UTC: ${new Date(log.created_at).toUTCString()}`}
+          className="font-bold text-slate-800 flex items-center gap-1.5 cursor-help"
+        >
+          <Clock size={12} className="text-slate-400 shrink-0" />
+          <span className="hover:text-blue-600 transition-colors border-b border-dotted border-slate-300">
+            {formatRelativeTime(log.created_at)}
+          </span>
+        </div>
+        <div 
+          title={`Exact UTC: ${new Date(log.created_at).toUTCString()}`}
+          className="text-[11px] font-mono text-slate-400 pl-4 mt-0.5 cursor-help"
+        >
+          {new Date(log.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+        </div>
+      </td>
+
+      {/* User: Name Only without Role badge */}
+      <td className="px-5 py-4 whitespace-nowrap text-xs">
+        <div className="flex items-center gap-2">
+          <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-black text-[11px] shrink-0">
+            {(log.user_name || 'S').charAt(0).toUpperCase()}
+          </div>
+          <span className="font-bold text-slate-900">{log.user_name || 'System Process'}</span>
+        </div>
+      </td>
+
+      {/* Action: Title Only without Category badge */}
+      <td className="px-5 py-4 whitespace-nowrap text-xs">
+        <div className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
+          {log.action}
+        </div>
+      </td>
+
+      {/* Terminal & IP: Completely Visible, Never Truncated */}
+      <td className="px-5 py-4 whitespace-nowrap text-xs">
+        <div className="flex flex-col gap-1">
+          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-800 rounded-lg font-semibold text-xs transition-colors w-fit">
+            <Monitor size={13} className="text-blue-600 shrink-0" />
+            <span>{log.device_terminal || 'POS Terminal #1 (Lane A)'}</span>
+          </div>
+          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 pl-0.5">
+            <span className="flex items-center gap-1">
+              <Globe size={11} className="text-slate-400 shrink-0" />
+              <span className="text-slate-700 font-medium">{log.ip_address || '127.0.0.1'}</span>
+            </span>
+            {log.location && (
+              <span className="flex items-center gap-0.5 text-[10px] font-sans text-slate-400 font-medium">
+                <MapPin size={10} className="shrink-0 text-slate-400" />
+                <span>{log.location}</span>
+              </span>
+            )}
+          </div>
+        </div>
+      </td>
+
+      {/* Details: Concise Text without Delta badge */}
+      <td className="px-5 py-4 text-xs text-slate-600 font-medium min-w-[200px] max-w-md">
+        <div className="line-clamp-2 leading-relaxed text-slate-700" title={log.details || ''}>
+          {log.details || '—'}
+        </div>
+      </td>
+    </tr>
+  );
+
   return (
     <div className="space-y-6 w-full pb-12">
       {/* Header */}
@@ -1018,8 +1137,8 @@ export default function AuditLogs() {
       </div>
 
       {/* Table Control & Export Subheader */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1">
-        <div className="flex items-center gap-2 text-xs font-bold text-slate-700">
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 px-1">
+        <div className="flex items-center gap-2 text-xs font-bold text-slate-700 flex-wrap">
           <span>Active Ledger Entries:</span>
           <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 rounded-md font-mono text-slate-900">{filteredLogs.length}</span>
           {categoryFilter !== 'all' && (
@@ -1028,17 +1147,91 @@ export default function AuditLogs() {
           {searchQuery && (
             <span className="text-[11px] text-slate-500 font-medium">matching <span className="font-semibold text-slate-700">"{searchQuery}"</span></span>
           )}
+          {groupMode !== 'none' && (
+            <span className="text-[11px] text-blue-700 font-bold bg-blue-50 border border-blue-200 px-2 py-0.5 rounded">
+              Grouped into {groupedLogs.length} block(s)
+            </span>
+          )}
         </div>
-        <button
-          type="button"
-          onClick={exportLogsToCsv}
-          disabled={filteredLogs.length === 0}
-          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed w-fit"
-          title="Export current filtered view to CSV file"
-        >
-          <Download size={13} className="text-slate-500" />
-          <span>Export View (CSV)</span>
-        </button>
+
+        <div className="flex items-center gap-2.5 flex-wrap">
+          {/* Grouping Toggle: Flat, By User, By Action Type */}
+          <div className="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1.5 hidden sm:inline">Group:</span>
+            <button
+              type="button"
+              onClick={() => setGroupMode('none')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                groupMode === 'none' 
+                  ? 'bg-white text-blue-700 shadow-2xs font-black' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="View flat chronological event stream"
+            >
+              <List size={13} />
+              <span>Flat</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupMode('user')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                groupMode === 'user' 
+                  ? 'bg-white text-blue-700 shadow-2xs font-black' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Group events by User / Operator"
+            >
+              <User size={13} />
+              <span>By User</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setGroupMode('action')}
+              className={`px-2.5 py-1 text-xs font-bold rounded-lg transition-all flex items-center gap-1.5 ${
+                groupMode === 'action' 
+                  ? 'bg-white text-blue-700 shadow-2xs font-black' 
+                  : 'text-slate-600 hover:text-slate-900'
+              }`}
+              title="Group events by Action Type"
+            >
+              <Layers size={13} />
+              <span>By Action Type</span>
+            </button>
+          </div>
+
+          {/* Quick Collapse / Expand buttons when grouping is enabled */}
+          {groupMode !== 'none' && groupedLogs.length > 0 && (
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={expandAllGroups}
+                className="px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:text-blue-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition shadow-2xs cursor-pointer"
+                title="Expand all categorized blocks"
+              >
+                Expand All
+              </button>
+              <button
+                type="button"
+                onClick={() => collapseAllGroups(groupedLogs.map(g => g.groupKey))}
+                className="px-2.5 py-1 text-[11px] font-bold text-slate-700 hover:text-blue-700 bg-white hover:bg-slate-50 border border-slate-200 rounded-lg transition shadow-2xs cursor-pointer"
+                title="Collapse all categorized blocks"
+              >
+                Collapse All
+              </button>
+            </div>
+          )}
+
+          <button
+            type="button"
+            onClick={exportLogsToCsv}
+            disabled={filteredLogs.length === 0}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-xl transition shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed w-fit cursor-pointer"
+            title="Export current filtered view to CSV file"
+          >
+            <Download size={13} className="text-slate-500" />
+            <span>Export View (CSV)</span>
+          </button>
+        </div>
       </div>
 
       {/* Logs Table with Fully Visible Terminal & IP */}
@@ -1061,86 +1254,79 @@ export default function AuditLogs() {
                 </tr>
               </thead>
               <tbody className="bg-white divide-y divide-slate-100">
-                {filteredLogs.length > 0 ? (
-                  filteredLogs.map(log => (
-                    <tr 
-                      key={log.id} 
-                      onClick={() => setSelectedLog(log)}
-                      title="Click row to inspect audit ledger record"
-                      className="hover:bg-slate-50/90 transition-colors cursor-pointer group"
-                    >
-                      {/* Timestamp: Relative human-readable format with exact UTC tooltip */}
-                      <td className="px-5 py-4 whitespace-nowrap text-xs text-slate-500 font-medium">
-                        <div 
-                          title={`Exact UTC: ${new Date(log.created_at).toUTCString()}`}
-                          className="font-bold text-slate-800 flex items-center gap-1.5 cursor-help"
-                        >
-                          <Clock size={12} className="text-slate-400 shrink-0" />
-                          <span className="hover:text-blue-600 transition-colors border-b border-dotted border-slate-300">
-                            {formatRelativeTime(log.created_at)}
-                          </span>
-                        </div>
-                        <div 
-                          title={`Exact UTC: ${new Date(log.created_at).toUTCString()}`}
-                          className="text-[11px] font-mono text-slate-400 pl-4 mt-0.5 cursor-help"
-                        >
-                          {new Date(log.created_at).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                        </div>
-                      </td>
-
-                      {/* User: Name Only without Role badge */}
-                      <td className="px-5 py-4 whitespace-nowrap text-xs">
-                        <div className="flex items-center gap-2">
-                          <div className="w-7 h-7 rounded-full bg-slate-100 border border-slate-200 text-slate-700 flex items-center justify-center font-black text-[11px] shrink-0">
-                            {(log.user_name || 'S').charAt(0).toUpperCase()}
-                          </div>
-                          <span className="font-bold text-slate-900">{log.user_name || 'System Process'}</span>
-                        </div>
-                      </td>
-
-                      {/* Action: Title Only without Category badge */}
-                      <td className="px-5 py-4 whitespace-nowrap text-xs">
-                        <div className="font-bold text-slate-900 group-hover:text-blue-600 transition-colors">
-                          {log.action}
-                        </div>
-                      </td>
-
-                      {/* Terminal & IP: Completely Visible, Never Truncated */}
-                      <td className="px-5 py-4 whitespace-nowrap text-xs">
-                        <div className="flex flex-col gap-1">
-                          <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-slate-100 hover:bg-slate-200/80 border border-slate-200 text-slate-800 rounded-lg font-semibold text-xs transition-colors w-fit">
-                            <Monitor size={13} className="text-blue-600 shrink-0" />
-                            <span>{log.device_terminal || 'POS Terminal #1 (Lane A)'}</span>
-                          </div>
-                          <div className="flex items-center gap-2 text-[11px] font-mono text-slate-500 pl-0.5">
-                            <span className="flex items-center gap-1">
-                              <Globe size={11} className="text-slate-400 shrink-0" />
-                              <span className="text-slate-700 font-medium">{log.ip_address || '127.0.0.1'}</span>
-                            </span>
-                            {log.location && (
-                              <span className="flex items-center gap-0.5 text-[10px] font-sans text-slate-400 font-medium">
-                                <MapPin size={10} className="shrink-0 text-slate-400" />
-                                <span>{log.location}</span>
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </td>
-
-                      {/* Details: Concise Text without Delta badge */}
-                      <td className="px-5 py-4 text-xs text-slate-600 font-medium min-w-[200px] max-w-md">
-                        <div className="line-clamp-2 leading-relaxed text-slate-700" title={log.details || ''}>
-                          {log.details || '—'}
-                        </div>
-                      </td>
-                    </tr>
-                  ))
-                ) : (
+                {filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-12 text-center text-slate-400 text-xs font-medium">
                       No audit records match your selected filters.
                     </td>
                   </tr>
+                ) : groupMode === 'none' ? (
+                  filteredLogs.map(log => renderLogRow(log))
+                ) : (
+                  groupedLogs.map(group => {
+                    const isCollapsed = !!collapsedGroups[group.groupKey];
+                    return (
+                      <React.Fragment key={group.groupKey}>
+                        {/* Categorized Group Header Block */}
+                        <tr 
+                          onClick={() => toggleGroup(group.groupKey)}
+                          className="bg-slate-100/90 hover:bg-slate-200/80 cursor-pointer border-t-2 border-b border-slate-200 transition-colors select-none"
+                          title="Click to expand or collapse this categorized block"
+                        >
+                          <td colSpan={5} className="px-5 py-3">
+                            <div className="flex items-center justify-between flex-wrap gap-2">
+                              <div className="flex items-center gap-2.5">
+                                <span className="w-6 h-6 flex items-center justify-center rounded-md bg-white border border-slate-300 text-slate-700 shadow-2xs shrink-0">
+                                  {isCollapsed ? <ChevronRight size={14} className="text-slate-600" /> : <ChevronDown size={14} className="text-blue-600" />}
+                                </span>
+                                {groupMode === 'user' ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center font-black text-[11px]">
+                                      {group.title.charAt(0).toUpperCase()}
+                                    </div>
+                                    <span className="font-black text-slate-900 text-xs sm:text-sm">
+                                      {group.title}
+                                    </span>
+                                    {group.actor_role && (
+                                      <span className="px-2 py-0.5 bg-slate-200/80 text-slate-700 rounded text-[10px] font-bold uppercase tracking-wider">
+                                        {group.actor_role}
+                                      </span>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="flex items-center gap-2">
+                                    <div className="p-1 rounded bg-blue-50 text-blue-700 border border-blue-200">
+                                      <Activity size={13} />
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-900 text-xs sm:text-sm">
+                                      {group.title}
+                                    </span>
+                                    {group.category && (
+                                      <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded text-[10px] font-bold uppercase tracking-wider">
+                                        {group.category}
+                                      </span>
+                                    )}
+                                  </div>
+                                )}
+                                <span className="px-2.5 py-0.5 bg-white border border-slate-300 text-slate-800 rounded-full font-bold text-xs shadow-2xs">
+                                  {group.count} {group.count === 1 ? 'event' : 'events'}
+                                </span>
+                              </div>
+                              <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
+                                <span>Latest: <strong className="text-slate-700">{formatRelativeTime(group.latest)}</strong></span>
+                                <span className="text-blue-600 hover:text-blue-700 font-bold underline decoration-blue-200 underline-offset-2">
+                                  {isCollapsed ? 'Click to Expand' : 'Click to Collapse'}
+                                </span>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Collapsible Children Rows */}
+                        {!isCollapsed && group.items.map(log => renderLogRow(log))}
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>

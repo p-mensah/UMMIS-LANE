@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { 
-  ResponsiveContainer, AreaChart, Area, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell
+  ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell
 } from 'recharts';
 import { 
   TrendingUp, ShoppingCart, DollarSign, Package, AlertTriangle, 
@@ -32,8 +32,8 @@ export default function Dashboard() {
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [salesTrends, setSalesTrends] = useState<any[]>([]);
-  const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('7days');
-  const [trendChartType, setTrendChartType] = useState<'area' | 'bar'>('area');
+  const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('30days');
+  const [trendChartType, setTrendChartType] = useState<'line' | 'area' | 'bar'>('line');
   const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
   const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
@@ -581,80 +581,80 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* REORDER POINT & LOW STOCK REPLENISHMENT WIDGET */}
-      <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-          <div>
-            <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-              <AlertTriangle size={16} className="text-amber-600" /> Inventory Reorder Points & Low Stock Replenishment
-            </h2>
-            <p className="text-xs text-slate-500">Products currently at or below their reorder point threshold requiring purchase or replenishment.</p>
-          </div>
-          <div className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded border border-amber-200">
-            {lowStockProducts.length} Item(s) Need Restocking
-          </div>
-        </div>
-
-        {lowStockProducts.length === 0 ? (
-          <div className="py-8 text-center text-slate-400 text-xs">
-            <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1" />
-            All inventory levels are currently above reorder point thresholds.
-          </div>
-        ) : (
-          <div className="overflow-x-auto max-h-[300px]">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-slate-50 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0">
-                <tr>
-                  <th className="p-2.5">Product Name</th>
-                  <th className="p-2.5">SKU / Barcode</th>
-                  <th className="p-2.5 text-right">In Stock</th>
-                  <th className="p-2.5 text-right">Reorder Level</th>
-                  <th className="p-2.5 text-center">Status</th>
-                  <th className="p-2.5 text-right">Action</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {lowStockProducts.map((p) => {
-                  const isOut = p.stock_quantity === 0;
-                  return (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                      <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
-                      <td className="p-2.5 text-slate-500 font-mono text-[11px]">{p.sku || p.barcode || 'N/A'}</td>
-                      <td className="p-2.5 text-right font-black text-slate-900">
-                        <span className={`px-2 py-0.5 rounded ${isOut ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
-                          {p.stock_quantity}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right text-slate-600">{p.min_stock_level || globalThreshold}</td>
-                      <td className="p-2.5 text-center">
-                        <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${isOut ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`}>
-                          {isOut ? 'Out of Stock' : 'Low Stock'}
-                        </span>
-                      </td>
-                      <td className="p-2.5 text-right">
-                        <button
-                          onClick={() => {
-                            setSelectedProductForRestock(p);
-                            setRestockQty(Math.max(10, (p.min_stock_level || 10) * 2 - p.stock_quantity));
-                            setShowRestockModal(true);
-                          }}
-                          className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[11px] uppercase tracking-wider transition"
-                        >
-                          Restock
-                        </button>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
         <>
+          {/* REORDER POINT & LOW STOCK REPLENISHMENT WIDGET (ADMIN ONLY) */}
+          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <AlertTriangle size={16} className="text-amber-600" /> Inventory Reorder Points & Low Stock Replenishment
+                </h2>
+                <p className="text-xs text-slate-500">Products currently at or below their reorder point threshold requiring purchase or replenishment.</p>
+              </div>
+              <div className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded border border-amber-200">
+                {lowStockProducts.length} Item(s) Need Restocking
+              </div>
+            </div>
+
+            {lowStockProducts.length === 0 ? (
+              <div className="py-8 text-center text-slate-400 text-xs">
+                <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1" />
+                All inventory levels are currently above reorder point thresholds.
+              </div>
+            ) : (
+              <div className="overflow-x-auto max-h-[300px]">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-50 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0">
+                    <tr>
+                      <th className="p-2.5">Product Name</th>
+                      <th className="p-2.5">SKU / Barcode</th>
+                      <th className="p-2.5 text-right">In Stock</th>
+                      <th className="p-2.5 text-right">Reorder Level</th>
+                      <th className="p-2.5 text-center">Status</th>
+                      <th className="p-2.5 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {lowStockProducts.map((p) => {
+                      const isOut = p.stock_quantity === 0;
+                      return (
+                        <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
+                          <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
+                          <td className="p-2.5 text-slate-500 font-mono text-[11px]">{p.sku || p.barcode || 'N/A'}</td>
+                          <td className="p-2.5 text-right font-black text-slate-900">
+                            <span className={`px-2 py-0.5 rounded ${isOut ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
+                              {p.stock_quantity}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right text-slate-600">{p.min_stock_level || globalThreshold}</td>
+                          <td className="p-2.5 text-center">
+                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${isOut ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`}>
+                              {isOut ? 'Out of Stock' : 'Low Stock'}
+                            </span>
+                          </td>
+                          <td className="p-2.5 text-right">
+                            <button
+                              onClick={() => {
+                                setSelectedProductForRestock(p);
+                                setRestockQty(Math.max(10, (p.min_stock_level || 10) * 2 - p.stock_quantity));
+                                setShowRestockModal(true);
+                              }}
+                              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[11px] uppercase tracking-wider transition"
+                            >
+                              Restock
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
           {/* REAL-TIME AUTOMATED LOW-STOCK ALERT INDICATOR & GOVERNANCE WIDGET */}
           <LowStockAlertIndicator
             products={allProducts.length > 0 ? allProducts : lowStockProducts}
@@ -785,13 +785,24 @@ export default function Dashboard() {
                     ))}
                   </div>
 
-                  <button
-                    onClick={() => setTrendChartType(trendChartType === 'area' ? 'bar' : 'area')}
-                    className="p-1.5 text-xs bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded font-bold text-slate-700"
-                    title="Toggle Chart Type"
-                  >
-                    {trendChartType === 'area' ? 'Bar Chart' : 'Area Chart'}
-                  </button>
+                  <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200">
+                    {[
+                      { id: 'line', label: 'Line' },
+                      { id: 'area', label: 'Area' },
+                      { id: 'bar', label: 'Bar' }
+                    ].map(type => (
+                      <button
+                        key={type.id}
+                        onClick={() => setTrendChartType(type.id as any)}
+                        className={`px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded transition-all ${
+                          trendChartType === type.id ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
+                        }`}
+                        title={`${type.label} Chart`}
+                      >
+                        {type.label}
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
 
@@ -814,7 +825,26 @@ export default function Dashboard() {
               {/* Recharts Container */}
               <div className="h-[280px] w-full min-w-0 pt-2 relative">
                 <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250} initialDimension={{ width: 500, height: 260 }}>
-                  {trendChartType === 'area' ? (
+                  {trendChartType === 'line' ? (
+                    <LineChart data={salesTrends} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
+                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
+                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
+                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']}
+                        labelFormatter={(label: any) => `Timeline: ${label}`}
+                      />
+                      <Line 
+                        type="monotone" 
+                        dataKey="total" 
+                        stroke="#2563eb" 
+                        strokeWidth={2.5} 
+                        dot={{ r: 3, fill: '#2563eb', strokeWidth: 1.5, stroke: '#ffffff' }}
+                        activeDot={{ r: 6, fill: '#1d4ed8', stroke: '#bfdbfe', strokeWidth: 2 }} 
+                      />
+                    </LineChart>
+                  ) : trendChartType === 'area' ? (
                     <AreaChart data={salesTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
                       <defs>
                         <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
@@ -825,7 +855,10 @@ export default function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                       <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
-                      <Tooltip formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} 
+                      />
                       <Area type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
                     </AreaChart>
                   ) : (
@@ -833,7 +866,10 @@ export default function Dashboard() {
                       <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                       <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
                       <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
-                      <Tooltip formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} />
+                      <Tooltip 
+                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', fontSize: '12px' }}
+                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} 
+                      />
                       <Bar dataKey="total" fill="#2563eb" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   )}
@@ -1277,19 +1313,15 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
-          {/* STAFF LOW-STOCK REAL-TIME ALERT INDICATOR (IF ENABLED BY ADMIN) */}
+          {/* STAFF LOW-STOCK REAL-TIME ALERT INDICATOR (READ-ONLY FOR STAFF) */}
           {showStaffAlerts && (
             <LowStockAlertIndicator
               products={allProducts.length > 0 ? allProducts : lowStockProducts}
               globalThreshold={globalThreshold}
               userRole="staff"
-              allowStaffAdjustments={allowStaffAdjustments}
+              allowStaffAdjustments={false}
               showStaffAlerts={showStaffAlerts}
-              onQuickRestock={allowStaffAdjustments ? (prod) => {
-                setSelectedProductForRestock(prod);
-                setRestockQty(10);
-                setShowRestockModal(true);
-              } : undefined}
+              onQuickRestock={undefined}
               onRefresh={loadDashboardData}
               isLoading={loading}
             />

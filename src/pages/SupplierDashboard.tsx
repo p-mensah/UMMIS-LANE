@@ -22,8 +22,22 @@ import {
   ShieldAlert,
   Search,
   ExternalLink,
-  ChevronRight
+  ChevronRight,
+  Plus,
+  RotateCcw,
+  CreditCard,
+  BarChart3,
+  Sliders,
+  X
 } from 'lucide-react';
+
+import SupplierKPIs from '../components/supplier/SupplierKPIs';
+import POManagement from '../components/supplier/POManagement';
+import ReplenishmentTriggers from '../components/supplier/ReplenishmentTriggers';
+import SupplierMasterData from '../components/supplier/SupplierMasterData';
+import QualityControlRMA from '../components/supplier/QualityControlRMA';
+import FinancialSettlement from '../components/supplier/FinancialSettlement';
+import SupplierAnalytics from '../components/supplier/SupplierAnalytics';
 
 interface PurchaseItem {
   id: number;
@@ -42,7 +56,7 @@ interface PurchaseOrder {
   supplier_name: string;
   supplier_contact?: string;
   total_amount: number;
-  status: 'draft' | 'submitted' | 'ordered' | 'received' | 'cancelled';
+  status: 'draft' | 'pending' | 'in-transit' | 'received' | 'cancelled' | string;
   notes?: string;
   expected_date?: string;
   received_at?: string;
@@ -51,6 +65,15 @@ interface PurchaseOrder {
   item_count?: number;
   total_units?: number;
   items?: PurchaseItem[];
+  carrier?: string;
+  tracking_number?: string;
+  dispatched_at?: string;
+  acknowledged_at?: string;
+  acknowledged_by?: string;
+  acknowledgment_notes?: string;
+  attachments?: any;
+  invoice_number?: string;
+  invoice_status?: 'unpaid' | 'partially_paid' | 'approved' | 'paid';
 }
 
 interface SupplierInteraction {
@@ -65,22 +88,11 @@ interface SupplierInteraction {
   created_at: string;
 }
 
-interface SupplierProduct {
-  id: number;
-  name: string;
-  sku: string;
-  category: string;
-  brand?: string;
-  cost_price: number;
-  price: number;
-  stock_quantity: number;
-}
-
 export default function SupplierDashboard() {
   const { user } = useAuth();
   const { addToast, refreshNotifications } = useNotifications();
 
-  // Active supplier state (defaults to logged-in user or active vendor)
+  // Active supplier state
   const isActualSupplier = user?.role === 'supplier';
   const defaultSupplierName = isActualSupplier
     ? (user?.name || '').replace(/supplier/i, '').trim() || 'Nestlé Ghana Ltd'
@@ -88,23 +100,33 @@ export default function SupplierDashboard() {
 
   const [activeSupplier, setActiveSupplier] = useState<string>(defaultSupplierName);
   const [availableSuppliers, setAvailableSuppliers] = useState<string[]>([]);
+  const [suppliersListFull, setSuppliersListFull] = useState<any[]>([]);
 
-  // Tabs
-  const [activeTab, setActiveTab] = useState<'pending' | 'history' | 'workflow' | 'catalog'>('pending');
+  // Active module tab
+  const [activeTab, setActiveTab] = useState<
+    'pos' | 'replenishment' | 'master_data' | 'qc_rma' | 'financial' | 'analytics' | 'portal'
+  >('pos');
 
   // Data states
   const [loading, setLoading] = useState(true);
   const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
   const [interactions, setInteractions] = useState<SupplierInteraction[]>([]);
-  const [catalog, setCatalog] = useState<SupplierProduct[]>([]);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [catalog, setCatalog] = useState<any[]>([]);
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+  const [triggersData, setTriggersData] = useState<any>({ triggers: [], low_stock: [], out_of_stock: [] });
+  const [qcLogs, setQcLogs] = useState<any[]>([]);
+  const [rmas, setRmas] = useState<any[]>([]);
 
-  // Confirming state
-  const [updatingPoId, setUpdatingPoId] = useState<number | null>(null);
-
-  // Detail Modal
-  const [selectedPO, setSelectedPO] = useState<PurchaseOrder | null>(null);
-  const [loadingDetail, setLoadingDetail] = useState(false);
+  // Create PO Modal State
+  const [showCreatePoModal, setShowCreatePoModal] = useState(false);
+  const [poSelectedProductId, setPoSelectedProductId] = useState<number | ''>('');
+  const [poQuantity, setPoQuantity] = useState<number>(50);
+  const [poUnitPrice, setPoUnitPrice] = useState<number>(25.0);
+  const [poExpectedDate, setPoExpectedDate] = useState<string>(
+    new Date(Date.now() + 3 * 86400000).toISOString().slice(0, 10)
+  );
+  const [poNotes, setPoNotes] = useState<string>('Standard replenishment delivery to central warehouse dock.');
+  const [isCreatingPo, setIsCreatingPo] = useState(false);
 
   // Workflow messaging state
   const [newMessage, setNewMessage] = useState('');
@@ -112,22 +134,40 @@ export default function SupplierDashboard() {
   const [relatedPoId, setRelatedPoId] = useState<string>('');
   const [sendingMessage, setSendingMessage] = useState(false);
 
-  // Load all supplier data
+  // Fetch all supplier dashboard endpoints
   const loadSupplierData = async (suppName: string) => {
     setLoading(true);
     try {
-      const [posRes, interactionsRes, productsRes, suppliersRes] = await Promise.all([
+      const [
+        posRes,
+        interactionsRes,
+        productsRes,
+        suppliersRes,
+        analyticsRes,
+        triggersRes,
+        qcRes,
+        rmasRes
+      ] = await Promise.all([
         fetchApi(`/purchases?supplier=${encodeURIComponent(suppName)}`),
         fetchApi(`/supplier/interactions?supplier_name=${encodeURIComponent(suppName)}`),
         fetchApi(`/supplier/catalog?brand=${encodeURIComponent(suppName)}`),
-        fetchApi('/suppliers')
+        fetchApi('/suppliers'),
+        fetchApi(`/supplier/analytics?supplier_name=${encodeURIComponent(suppName)}`),
+        fetchApi(`/supplier/replenishment-triggers?supplier_name=${encodeURIComponent(suppName)}`),
+        fetchApi(`/supplier/qc-logs?supplier_name=${encodeURIComponent(suppName)}`),
+        fetchApi(`/supplier/rmas?supplier_name=${encodeURIComponent(suppName)}`)
       ]);
 
       setPurchases(posRes || []);
       setInteractions(interactionsRes || []);
       setCatalog(productsRes || []);
+      setAnalyticsData(analyticsRes || null);
+      setTriggersData(triggersRes || { triggers: [], low_stock: [], out_of_stock: [] });
+      setQcLogs(qcRes || []);
+      setRmas(rmasRes || []);
 
       if (suppliersRes && suppliersRes.length > 0) {
+        setSuppliersListFull(suppliersRes);
         const names = suppliersRes.map((s: any) => s.name);
         if (!names.includes('Nestlé Ghana Ltd')) names.push('Nestlé Ghana Ltd');
         if (!names.includes('Wilmar Africa Ltd')) names.push('Wilmar Africa Ltd');
@@ -146,47 +186,219 @@ export default function SupplierDashboard() {
     loadSupplierData(activeSupplier);
   }, [activeSupplier]);
 
-  // Handle PO Receipt / Confirmation
-  const handleConfirmReceipt = async (poId: number) => {
-    setUpdatingPoId(poId);
+  // Handler: Acknowledge PO
+  const handleAcknowledgePO = async (poId: number, notes: string) => {
+    await fetchApi(`/purchases/${poId}/acknowledge`, {
+      method: 'POST',
+      body: JSON.stringify({ notes })
+    });
+    addToast({
+      title: 'Order Acknowledged',
+      message: `Purchase Order #PO-${poId} acknowledgment confirmed.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Dispatch PO
+  const handleDispatchPO = async (poId: number, carrier: string, trackingNumber: string, notes: string) => {
+    await fetchApi(`/purchases/${poId}/dispatch`, {
+      method: 'POST',
+      body: JSON.stringify({ carrier, tracking_number: trackingNumber, notes })
+    });
+    addToast({
+      title: 'Shipment Dispatched! 🚚',
+      message: `PO #PO-${poId} marked as in-transit with carrier ${carrier}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Attach Document to PO
+  const handleUploadAttachment = async (poId: number, attachment: { name: string; type: string; size: string }) => {
+    await fetchApi(`/purchases/${poId}/attachments`, {
+      method: 'POST',
+      body: JSON.stringify(attachment)
+    });
+    addToast({
+      title: 'Document Attached',
+      message: `${attachment.name} successfully linked to PO #PO-${poId}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+  };
+
+  // Handler: Update PO Status (e.g. Received)
+  const handleUpdateStatus = async (poId: number, status: string) => {
+    if (status === 'received') {
+      await fetchApi(`/purchases/${poId}/confirm-receipt`, { method: 'POST' });
+      addToast({
+        title: 'Goods Received & Stocked',
+        message: `PO #PO-${poId} fulfilled and stock levels updated.`,
+        type: 'success'
+      });
+    } else {
+      await fetchApi(`/purchases/${poId}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({ status })
+      });
+      addToast({
+        title: 'Status Updated',
+        message: `PO #PO-${poId} status set to ${status.toUpperCase()}.`,
+        type: 'info'
+      });
+    }
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Update Logistics & Fulfillment Configuration
+  const handleUpdateLogistics = async (poId: number, logistics: any) => {
+    await fetchApi(`/purchases/${poId}/logistics`, {
+      method: 'PUT',
+      body: JSON.stringify(logistics)
+    });
+    addToast({
+      title: 'Logistics Saved',
+      message: `Logistics & fulfillment configuration updated for PO #PO-${poId}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Update Supplier Master Data
+  const handleSaveMasterData = async (updated: any) => {
+    const activeSupplierObj = suppliersListFull.find(
+      (s) => s.name.toLowerCase() === activeSupplier.toLowerCase()
+    );
+    const supplierId = activeSupplierObj?.id || 1;
+
+    await fetchApi(`/suppliers/${supplierId}/master-data`, {
+      method: 'PUT',
+      body: JSON.stringify(updated)
+    });
+    addToast({
+      title: 'Master Profile Updated',
+      message: 'Supplier profile, SLAs, bank details, and compliance terms saved.',
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+  };
+
+  // Handler: Log QC inspection
+  const handleCreateQCLog = async (data: any) => {
+    await fetchApi('/supplier/qc-logs', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    addToast({
+      title: 'QC Inspection Recorded',
+      message: `Goods receipt note inspection logged for PO #${data.po_id}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Initiate RMA
+  const handleCreateRMA = async (data: any) => {
+    await fetchApi('/supplier/rmas', {
+      method: 'POST',
+      body: JSON.stringify(data)
+    });
+    addToast({
+      title: 'RMA Ticket Filed',
+      message: `RMA return claim submitted for ${data.product_name}.`,
+      type: 'warning'
+    });
+    await loadSupplierData(activeSupplier);
+    await refreshNotifications();
+  };
+
+  // Handler: Update RMA status
+  const handleUpdateRMAStatus = async (rmaId: number, status: string, creditAmount?: number) => {
+    await fetchApi(`/supplier/rmas/${rmaId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status, credit_amount: creditAmount })
+    });
+    addToast({
+      title: 'RMA Status Updated',
+      message: `RMA #${rmaId} status updated to ${status.toUpperCase()}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+  };
+
+  // Handler: Update Invoice Status
+  const handleUpdateInvoiceStatus = async (poId: number, invoiceStatus: any, invoiceNo?: string) => {
+    await fetchApi(`/purchases/${poId}/invoice-status`, {
+      method: 'PUT',
+      body: JSON.stringify({ invoice_status: invoiceStatus, invoice_number: invoiceNo })
+    });
+    addToast({
+      title: 'Settlement Status Updated',
+      message: `PO #${poId} invoice status set to ${invoiceStatus.toUpperCase()}.`,
+      type: 'success'
+    });
+    await loadSupplierData(activeSupplier);
+  };
+
+  // Handler: Quick Restock from Replenishment triggers
+  const handleRestockItem = (item: any) => {
+    const suggestedUnits = Math.max((item.effective_rop || 10) * 3, 24);
+    setPoSelectedProductId(item.id);
+    setPoQuantity(suggestedUnits);
+    setPoUnitPrice(item.cost_price || 20);
+    setPoNotes(`Automated replenishment trigger: On-hand stock (${item.stock_quantity}) breached ROP.`);
+    setShowCreatePoModal(true);
+  };
+
+  // Handler: Create & Issue new PO
+  const handleCreatePoSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!poSelectedProductId) {
+      alert('Please select a product line for the purchase order.');
+      return;
+    }
+    const selectedProd = catalog.find((c) => c.id === Number(poSelectedProductId)) ||
+      triggersData.triggers?.find((t: any) => t.id === Number(poSelectedProductId));
+
+    setIsCreatingPo(true);
     try {
-      const res = await fetchApi(`/purchases/${poId}/confirm-receipt`, {
-        method: 'POST'
+      await fetchApi('/purchases', {
+        method: 'POST',
+        body: JSON.stringify({
+          supplier_name: activeSupplier,
+          supplier_contact: 'Procurement Desk',
+          status: 'ordered',
+          notes: poNotes,
+          expected_date: poExpectedDate,
+          items: [
+            {
+              product_id: Number(poSelectedProductId),
+              quantity: Number(poQuantity),
+              unit_price: Number(poUnitPrice)
+            }
+          ]
+        })
       });
 
       addToast({
-        title: 'Receipt Confirmed! 📦',
-        message: `PO #PO-${poId} confirmed as received. Stock inventory has been replenished.`,
+        title: 'Purchase Order Issued! 📋',
+        message: `PO successfully placed with ${activeSupplier} for ${poQuantity}x ${selectedProd?.name || 'items'}.`,
         type: 'success'
       });
 
-      // Update state locally
-      setPurchases(prev =>
-        prev.map(p => (p.id === poId ? { ...p, status: 'received', received_at: new Date().toISOString() } : p))
-      );
-      if (selectedPO && selectedPO.id === poId) {
-        setSelectedPO({ ...selectedPO, status: 'received', received_at: new Date().toISOString() });
-      }
-
+      setShowCreatePoModal(false);
       await loadSupplierData(activeSupplier);
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.message || 'Failed to confirm purchase order receipt');
+      alert(err.message || 'Failed to create purchase order');
     } finally {
-      setUpdatingPoId(null);
-    }
-  };
-
-  // Open PO details
-  const handleViewDetail = async (poId: number) => {
-    setLoadingDetail(true);
-    try {
-      const poData = await fetchApi(`/purchases/${poId}`);
-      setSelectedPO(poData);
-    } catch (err: any) {
-      alert(err.message || 'Failed to load purchase order details');
-    } finally {
-      setLoadingDetail(false);
+      setIsCreatingPo(false);
     }
   };
 
@@ -215,664 +427,470 @@ export default function SupplierDashboard() {
 
       setNewMessage('');
       setRelatedPoId('');
-      // Reload interactions
-      const freshInteractions = await fetchApi(`/supplier/interactions?supplier_name=${encodeURIComponent(activeSupplier)}`);
+      const freshInteractions = await fetchApi(
+        `/supplier/interactions?supplier_name=${encodeURIComponent(activeSupplier)}`
+      );
       setInteractions(freshInteractions || []);
     } catch (err: any) {
-      alert(err.message || 'Failed to send message');
+      alert(err.message || 'Failed to send communication update');
     } finally {
       setSendingMessage(false);
     }
   };
 
-  // Filtered lists
-  const pendingOrders = purchases.filter(
-    p => p.status === 'ordered' || p.status === 'submitted' || p.status === 'draft'
-  );
-  const fulfilledOrders = purchases.filter(p => p.status === 'received');
-  const totalSpend = purchases.reduce((acc, p) => acc + (p.total_amount || 0), 0);
-
-  const getStatusBadge = (status: string) => {
-    switch (status) {
-      case 'received':
-        return (
-          <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <CheckCircle2 size={12} className="text-emerald-600" /> Received
-          </span>
-        );
-      case 'ordered':
-      case 'submitted':
-        return (
-          <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <Clock size={12} className="text-amber-600" /> Pending Delivery
-          </span>
-        );
-      case 'cancelled':
-        return (
-          <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <AlertCircle size={12} className="text-rose-600" /> Cancelled
-          </span>
-        );
-      default:
-        return (
-          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-bold uppercase rounded-full">
-            {status}
-          </span>
-        );
-    }
-  };
+  const activeSupplierRecord =
+    suppliersListFull.find((s) => s.name.toLowerCase() === activeSupplier.toLowerCase()) || {
+      id: 1,
+      name: activeSupplier,
+      contact_person: 'Corporate Sales & Key Accounts Desk',
+      email: 'orders@vendor-gh.com',
+      phone: '+233 30 257 0191',
+      address: 'Plot 12 Industrial Area, Tema / Accra, Ghana',
+      tax_id: 'TIN-GH90218821',
+      business_license: 'BL-2024-99120',
+      payment_terms: 'Net 30',
+      currency: 'GHS',
+      bank_name: 'Ecobank Ghana PLC',
+      bank_account: '0182001928491',
+      bank_branch: 'High Street Branch, Accra',
+      lead_time_days: 3,
+      moq: 24,
+      certifications: 'ISO 9001:2015, Ghana FDA Registered, GSA Compliant',
+      tier_pricing: 'Tier 1: 50+ units (3%), Tier 2: 200+ units (7%)',
+      quality_score: 95
+    };
 
   return (
-    <div className="space-y-6 pb-12">
-      {/* Top Header Banner */}
-      <div className="bg-white border border-slate-200 p-6 rounded-sm shadow-2xs">
-        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5">
-            <div className="p-3 bg-blue-50 text-blue-700 rounded-lg border border-blue-200/60 shrink-0 mt-0.5">
-              <Building2 size={24} />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl font-black text-slate-900 tracking-tight">{activeSupplier}</h1>
-                <span className="px-2.5 py-0.5 bg-blue-100 text-blue-800 text-[11px] font-extrabold uppercase rounded-full">
-                  Supplier Portal
-                </span>
-                {isActualSupplier && (
-                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-bold uppercase rounded">
-                    Logged in as Vendor
-                  </span>
-                )}
-              </div>
-              <p className="text-xs text-slate-500 mt-1">
-                Purchase Order Tracking, Restocking & Supplier-to-Shop Workflow
-              </p>
-            </div>
+    <div className="space-y-5">
+      {/* 1. Header & Supplier Selector Bar */}
+      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div className="flex items-center gap-3">
+          <div className="p-2.5 bg-blue-600 text-white rounded-lg shadow-xs">
+            <Building2 size={22} />
           </div>
+          <div>
+            <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
+              Supplier Relationship & Procurement Operations
+            </h1>
+            <p className="text-xs text-slate-500 font-medium">
+              Real-time purchase order lifecycle, inventory triggers, vendor SLAs, and 3-way reconciliation
+            </p>
+          </div>
+        </div>
 
-          {/* Supplier Selector for Admin / Shop Owner */}
-          <div className="flex items-center gap-2.5 bg-slate-50 p-2 rounded-lg border border-slate-200">
-            <span className="text-[11px] font-bold uppercase text-slate-500 whitespace-nowrap">
-              Vendor View:
-            </span>
+        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
+          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
+            <span className="text-[11px] font-bold text-slate-500 uppercase">Vendor:</span>
             <select
               value={activeSupplier}
-              onChange={e => setActiveSupplier(e.target.value)}
-              className="bg-white border border-slate-300 rounded px-2.5 py-1 text-xs font-bold text-slate-800 focus:outline-none focus:border-blue-500"
+              onChange={(e) => setActiveSupplier(e.target.value)}
+              className="bg-transparent text-xs font-black text-slate-900 focus:outline-none cursor-pointer"
             >
-              {availableSuppliers.map(s => (
+              {availableSuppliers.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
               ))}
             </select>
-            <button
-              onClick={() => loadSupplierData(activeSupplier)}
-              className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-200 rounded transition"
-              title="Refresh Supplier Data"
-            >
-              <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-            </button>
-          </div>
-        </div>
-
-        {/* Metrics Grid */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">
-          <div className="bg-amber-50/60 border border-amber-200/80 p-3.5 rounded-lg">
-            <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider flex items-center gap-1">
-              <Clock size={12} /> Pending Orders
-            </span>
-            <div className="text-2xl font-black text-amber-900 mt-1">{pendingOrders.length}</div>
-            <span className="text-[10px] text-amber-600 font-medium">Awaiting delivery / receipt</span>
           </div>
 
-          <div className="bg-emerald-50/60 border border-emerald-200/80 p-3.5 rounded-lg">
-            <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider flex items-center gap-1">
-              <PackageCheck size={12} /> Received & Stocked
-            </span>
-            <div className="text-2xl font-black text-emerald-900 mt-1">{fulfilledOrders.length}</div>
-            <span className="text-[10px] text-emerald-600 font-medium">Restocked to store shelves</span>
-          </div>
+          <button
+            onClick={() => loadSupplierData(activeSupplier)}
+            className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded border border-slate-200 transition-colors"
+            title="Refresh All Supplier Feeds"
+          >
+            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+          </button>
 
-          <div className="bg-blue-50/60 border border-blue-200/80 p-3.5 rounded-lg">
-            <span className="text-[10px] font-black uppercase text-blue-700 tracking-wider flex items-center gap-1">
-              <Boxes size={12} /> Supplied Items
-            </span>
-            <div className="text-2xl font-black text-blue-900 mt-1">{catalog.length}</div>
-            <span className="text-[10px] text-blue-600 font-medium">Catalog product lines</span>
-          </div>
-
-          <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-lg">
-            <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
-              Total Order Volume
-            </span>
-            <div className="text-2xl font-black text-slate-900 mt-1">{formatGHS(totalSpend)}</div>
-            <span className="text-[10px] text-slate-500 font-medium">Cumulative purchase spend</span>
-          </div>
+          <button
+            onClick={() => {
+              if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
+              setShowCreatePoModal(true);
+            }}
+            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+          >
+            <Plus size={14} /> Create & Issue PO
+          </button>
         </div>
       </div>
 
-      {/* Navigation Tabs */}
-      <div className="flex border-b border-slate-200 bg-white px-4 rounded-sm shadow-2xs overflow-x-auto gap-2">
+      {/* 2. Top KPI Summary Grid */}
+      <SupplierKPIs kpis={analyticsData?.kpis} loading={loading} />
+
+      {/* 3. Navigation Tabs */}
+      <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-1 flex items-center gap-1 overflow-x-auto text-xs">
         <button
-          onClick={() => setActiveTab('pending')}
-          className={`py-3 px-4 font-bold text-xs uppercase tracking-wider border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'pending'
-              ? 'border-blue-600 text-blue-600 font-black'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          onClick={() => setActiveTab('pos')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'pos'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Clock size={15} />
-          Pending Orders ({pendingOrders.length})
+          <Truck size={14} />
+          <span>Purchase Orders ({purchases.length})</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('history')}
-          className={`py-3 px-4 font-bold text-xs uppercase tracking-wider border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'history'
-              ? 'border-blue-600 text-blue-600 font-black'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          onClick={() => setActiveTab('replenishment')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'replenishment'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <PackageCheck size={15} />
-          Order History ({fulfilledOrders.length})
+          <Boxes size={14} />
+          <span>ROP & Replenishment Triggers ({triggersData?.triggers?.length || 0})</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('workflow')}
-          className={`py-3 px-4 font-bold text-xs uppercase tracking-wider border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'workflow'
-              ? 'border-blue-600 text-blue-600 font-black'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          onClick={() => setActiveTab('master_data')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'master_data'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <MessageSquare size={15} />
-          Supplier-Owner Workflow ({interactions.length})
+          <Building2 size={14} />
+          <span>Directory & Master Data</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('catalog')}
-          className={`py-3 px-4 font-bold text-xs uppercase tracking-wider border-b-2 transition flex items-center gap-2 whitespace-nowrap ${
-            activeTab === 'catalog'
-              ? 'border-blue-600 text-blue-600 font-black'
-              : 'border-transparent text-slate-500 hover:text-slate-800'
+          onClick={() => setActiveTab('qc_rma')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'qc_rma'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
           }`}
         >
-          <Boxes size={15} />
-          Supplied Products ({catalog.length})
+          <RotateCcw size={14} />
+          <span>Inspection QC & RMAs ({qcLogs.length + rmas.length})</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('financial')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'financial'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <CreditCard size={14} />
+          <span>3-Way Settlement & Invoicing</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('analytics')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'analytics'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <BarChart3 size={14} />
+          <span>Analytics & Scorecard</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('portal')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'portal'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <MessageSquare size={14} />
+          <span>Supplier Messages ({interactions.length})</span>
         </button>
       </div>
 
-      {/* TAB 1: PENDING ORDERS */}
-      {activeTab === 'pending' && (
-        <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Pending Purchase Orders for {activeSupplier}
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Confirm receipt when items have been delivered to restock warehouse shelves
-              </p>
-            </div>
-            <span className="px-2.5 py-1 bg-amber-100 text-amber-800 text-xs font-bold rounded-full">
-              {pendingOrders.length} Pending
-            </span>
-          </div>
-
-          {loading ? (
-            <div className="p-12 text-center text-slate-400 text-xs">
-              <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-blue-600" />
-              Loading pending purchase orders...
-            </div>
-          ) : pendingOrders.length === 0 ? (
-            <div className="p-12 text-center text-slate-400">
-              <CheckCircle2 size={32} className="mx-auto mb-2 text-emerald-500" />
-              <p className="text-sm font-bold text-slate-700">All purchase orders are fulfilled!</p>
-              <p className="text-xs text-slate-500 mt-1">No pending deliveries from this supplier at this time.</p>
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                <thead className="bg-slate-50 text-[11px] font-black uppercase text-slate-400">
-                  <tr>
-                    <th className="px-5 py-3">PO Number</th>
-                    <th className="px-5 py-3">Date Ordered</th>
-                    <th className="px-5 py-3">Expected Date</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3">Total Value</th>
-                    <th className="px-5 py-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {pendingOrders.map(po => (
-                    <tr key={po.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-5 py-3.5 font-black text-slate-900">#PO-{po.id}</td>
-                      <td className="px-5 py-3.5 text-slate-500 font-medium">
-                        {new Date(po.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-700 font-semibold">
-                        {po.expected_date ? new Date(po.expected_date).toLocaleDateString() : 'Standard Delivery'}
-                      </td>
-                      <td className="px-5 py-3.5">{getStatusBadge(po.status)}</td>
-                      <td className="px-5 py-3.5 font-black text-red-600">{formatGHS(po.total_amount)}</td>
-                      <td className="px-5 py-3.5 text-right">
-                        <div className="flex items-center justify-end gap-2">
-                          <button
-                            onClick={() => handleConfirmReceipt(po.id)}
-                            disabled={updatingPoId === po.id}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-                          >
-                            {updatingPoId === po.id ? (
-                              <RefreshCw size={13} className="animate-spin" />
-                            ) : (
-                              <CheckCircle2 size={13} />
-                            )}
-                            <span>Confirm Receipt</span>
-                          </button>
-                          <button
-                            onClick={() => handleViewDetail(po.id)}
-                            className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition"
-                            title="View Items in PO"
-                          >
-                            <Eye size={14} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {/* 4. Active Tab Content Panels */}
+      {activeTab === 'pos' && (
+        <POManagement
+          purchases={purchases}
+          activeSupplier={activeSupplier}
+          onRefresh={() => loadSupplierData(activeSupplier)}
+          onAcknowledgePO={handleAcknowledgePO}
+          onDispatchPO={handleDispatchPO}
+          onUploadAttachment={handleUploadAttachment}
+          onUpdateStatus={handleUpdateStatus}
+          onUpdateLogistics={handleUpdateLogistics}
+          onCreatePO={() => setShowCreatePoModal(true)}
+          userRole={user?.role}
+        />
       )}
 
-      {/* TAB 2: ORDER HISTORY */}
-      {activeTab === 'history' && (
-        <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Fulfilled Purchase History
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Receipt-confirmed deliveries and stock fulfillment records for {activeSupplier}
-              </p>
-            </div>
-            <span className="px-2.5 py-1 bg-emerald-100 text-emerald-800 text-xs font-bold rounded-full">
-              {fulfilledOrders.length} Received
-            </span>
-          </div>
-
-          {fulfilledOrders.length === 0 ? (
-            <div className="p-12 text-center text-slate-400 text-xs font-medium">
-              No historical received orders recorded yet for this supplier.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-                <thead className="bg-slate-50 text-[11px] font-black uppercase text-slate-400">
-                  <tr>
-                    <th className="px-5 py-3">PO Number</th>
-                    <th className="px-5 py-3">Order Date</th>
-                    <th className="px-5 py-3">Received At</th>
-                    <th className="px-5 py-3">Confirmed By</th>
-                    <th className="px-5 py-3">Status</th>
-                    <th className="px-5 py-3">Amount</th>
-                    <th className="px-5 py-3 text-right">Details</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 bg-white">
-                  {fulfilledOrders.map(po => (
-                    <tr key={po.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-5 py-3.5 font-black text-slate-900">#PO-{po.id}</td>
-                      <td className="px-5 py-3.5 text-slate-500 font-medium">
-                        {new Date(po.created_at).toLocaleDateString()}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-700 font-medium">
-                        {po.received_at ? new Date(po.received_at).toLocaleDateString() : 'Received'}
-                      </td>
-                      <td className="px-5 py-3.5 text-slate-700 font-bold">
-                        {po.confirmed_by || po.user_name || 'Admin'}
-                      </td>
-                      <td className="px-5 py-3.5">{getStatusBadge(po.status)}</td>
-                      <td className="px-5 py-3.5 font-black text-slate-900">{formatGHS(po.total_amount)}</td>
-                      <td className="px-5 py-3.5 text-right">
-                        <button
-                          onClick={() => handleViewDetail(po.id)}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-xs inline-flex items-center gap-1 transition"
-                        >
-                          <Eye size={13} /> View Receipt
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+      {activeTab === 'replenishment' && (
+        <ReplenishmentTriggers
+          triggersData={triggersData}
+          onRestockItem={handleRestockItem}
+          onRefresh={() => loadSupplierData(activeSupplier)}
+          loading={loading}
+        />
       )}
 
-      {/* TAB 3: WORKFLOW & COMMUNICATION */}
-      {activeTab === 'workflow' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Post Message / Dispatch Update Form */}
-          <div className="bg-white border border-slate-200 p-5 rounded-sm shadow-2xs space-y-4">
-            <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
-              <MessageSquare size={18} className="text-blue-600" />
-              <div>
-                <h3 className="text-sm font-black text-slate-900">Supplier & Shop Communication</h3>
-                <p className="text-[11px] text-slate-500">Post dispatch notes, tracking numbers & restock updates</p>
-              </div>
-            </div>
+      {activeTab === 'master_data' && (
+        <SupplierMasterData
+          supplier={activeSupplierRecord}
+          onSaveMasterData={handleSaveMasterData}
+          userRole={user?.role}
+        />
+      )}
+
+      {activeTab === 'qc_rma' && (
+        <QualityControlRMA
+          qcLogs={qcLogs}
+          rmas={rmas}
+          activeSupplier={activeSupplier}
+          onRefresh={() => loadSupplierData(activeSupplier)}
+          onCreateQCLog={handleCreateQCLog}
+          onCreateRMA={handleCreateRMA}
+          onUpdateRMAStatus={handleUpdateRMAStatus}
+          purchasesList={purchases}
+        />
+      )}
+
+      {activeTab === 'financial' && (
+        <FinancialSettlement
+          purchases={purchases}
+          activeSupplier={activeSupplier}
+          onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+          userRole={user?.role}
+        />
+      )}
+
+      {activeTab === 'analytics' && (
+        <SupplierAnalytics
+          analyticsData={analyticsData}
+          activeSupplier={activeSupplier}
+        />
+      )}
+
+      {activeTab === 'portal' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-1 bg-white p-4 rounded-lg border border-slate-200 shadow-2xs space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+              <Send size={14} className="text-blue-600" />
+              Dispatch Collaboration Note
+            </h3>
 
             <form onSubmit={handleSendMessage} className="space-y-3 text-xs">
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Update Category
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">Message Type</label>
                 <select
                   value={messageType}
-                  onChange={e => setMessageType(e.target.value as any)}
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  onChange={(e: any) => setMessageType(e.target.value)}
+                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
                 >
-                  <option value="dispatch">🚚 Dispatch / Shipment Alert</option>
-                  <option value="note">📝 Delivery Instruction / Note</option>
-                  <option value="inquiry">❓ Restock Inquiry / Status Request</option>
+                  <option value="dispatch">Logistics Dispatch Notice</option>
+                  <option value="note">Internal Procurement Note</option>
+                  <option value="inquiry">Pricing & SLA Inquiry</option>
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Related Purchase Order (Optional)
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">Related Purchase Order (Optional)</label>
                 <select
                   value={relatedPoId}
-                  onChange={e => setRelatedPoId(e.target.value)}
-                  className="w-full border border-slate-300 rounded px-3 py-2 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+                  onChange={(e) => setRelatedPoId(e.target.value)}
+                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
                 >
                   <option value="">General Supplier Communication</option>
-                  {purchases.map(p => (
+                  {purchases.map((p) => (
                     <option key={p.id} value={p.id}>
-                      #PO-{p.id} ({p.status.toUpperCase()} - {formatGHS(p.total_amount)})
+                      PO #{p.id} - {formatGHS(p.total_amount)} ({p.status})
                     </option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1">
-                  Message Content / Tracking Details
-                </label>
+                <label className="font-bold text-slate-700 block mb-1">Message Content</label>
                 <textarea
                   rows={4}
                   required
-                  placeholder="e.g. Shipment #WAYBILL-8902 dispatched via delivery van. Expected delivery tomorrow morning..."
+                  placeholder="Type updates, container arrival times, invoice questions..."
                   value={newMessage}
-                  onChange={e => setNewMessage(e.target.value)}
-                  className="w-full border border-slate-300 rounded p-2.5 text-xs font-medium text-slate-800 focus:outline-none focus:border-blue-500 resize-none"
+                  onChange={(e) => setNewMessage(e.target.value)}
+                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <button
                 type="submit"
                 disabled={sendingMessage || !newMessage.trim()}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold rounded flex items-center justify-center gap-2 transition disabled:opacity-50 cursor-pointer"
+                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
               >
-                {sendingMessage ? <RefreshCw size={14} className="animate-spin" /> : <Send size={14} />}
-                Send to Workflow Thread
+                <Send size={13} />
+                <span>{sendingMessage ? 'Sending...' : 'Send to Workflow Thread'}</span>
               </button>
             </form>
           </div>
 
-          {/* Interaction Thread Log */}
-          <div className="lg:col-span-2 bg-white border border-slate-200 p-5 rounded-sm shadow-2xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-sm font-black text-slate-900">Workflow Timeline & Messages</h3>
-                <p className="text-[11px] text-slate-500">Live conversation and automatic delivery audit trail</p>
-              </div>
-              <span className="text-[11px] font-bold text-slate-400 uppercase">
-                {interactions.length} Events
-              </span>
-            </div>
+          <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 shadow-2xs p-4 flex flex-col justify-between space-y-3">
+            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+              <MessageSquare size={14} className="text-slate-600" />
+              Live Workflow & Collaboration Ledger ({activeSupplier})
+            </h3>
 
-            {interactions.length === 0 ? (
-              <div className="p-12 text-center text-slate-400 text-xs font-medium">
-                No interaction logs recorded yet for this supplier. Post a message to initiate workflow.
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
-                {interactions.map(item => {
-                  const isSupplierSender = item.sender_role === 'supplier';
-                  const isConfirmation = item.message_type === 'receipt_confirmation';
-
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-3.5 rounded-lg border text-xs transition ${
-                        isConfirmation
-                          ? 'bg-emerald-50/70 border-emerald-200/80 text-emerald-900'
-                          : isSupplierSender
-                          ? 'bg-blue-50/60 border-blue-200/70 text-blue-950'
-                          : 'bg-slate-50 border-slate-200 text-slate-800'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <div className="flex items-center gap-2">
-                          <span className="font-black text-slate-900">{item.sender_name}</span>
-                          <span
-                            className={`px-1.5 py-0.5 text-[9px] font-black uppercase rounded ${
-                              isSupplierSender
-                                ? 'bg-blue-200 text-blue-800'
-                                : 'bg-slate-200 text-slate-700'
-                            }`}
-                          >
-                            {item.sender_role}
-                          </span>
-                          {item.po_id && (
-                            <span className="px-1.5 py-0.5 bg-white border border-slate-300 text-[9px] font-bold rounded">
-                              #PO-{item.po_id}
-                            </span>
-                          )}
-                        </div>
-                        <span className="text-[10px] text-slate-400 font-mono">
-                          {new Date(item.created_at).toLocaleString()}
+            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1 text-xs">
+              {interactions.map((msg) => (
+                <div
+                  key={msg.id}
+                  className="p-3 rounded-lg border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="font-black text-slate-900">{msg.sender_name}</span>
+                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 uppercase">
+                        {msg.sender_role}
+                      </span>
+                      {msg.po_id && (
+                        <span className="text-[10px] font-mono font-bold text-blue-600">
+                          Ref: #PO-{msg.po_id}
                         </span>
-                      </div>
-                      <p className="font-medium leading-relaxed">{item.message}</p>
+                      )}
                     </div>
-                  );
-                })}
-              </div>
-            )}
+                    <span className="text-[10px] text-slate-400">
+                      {new Date(msg.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <p className="mt-1.5 text-slate-700 whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                </div>
+              ))}
+
+              {interactions.length === 0 && (
+                <div className="py-12 text-center text-slate-400 text-xs">
+                  <MessageSquare size={24} className="mx-auto mb-1.5 opacity-30" />
+                  No collaborative dispatch or status notes recorded for {activeSupplier} yet.
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* TAB 4: SUPPLIED PRODUCTS CATALOG */}
-      {activeTab === 'catalog' && (
-        <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                Products Supplied by {activeSupplier}
-              </h2>
-              <p className="text-[11px] text-slate-500">
-                Live inventory levels, cost pricing and stock status for items supplied by this vendor
-              </p>
-            </div>
-            <div className="relative w-full sm:w-64">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
-              <input
-                type="text"
-                placeholder="Search catalog..."
-                value={searchQuery}
-                onChange={e => setSearchQuery(e.target.value)}
-                className="w-full border border-slate-300 rounded pl-9 pr-3 py-1.5 text-xs font-medium focus:outline-none focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-left text-xs">
-              <thead className="bg-slate-50 text-[11px] font-black uppercase text-slate-400">
-                <tr>
-                  <th className="px-5 py-3">Product Name</th>
-                  <th className="px-5 py-3">SKU</th>
-                  <th className="px-5 py-3">Category</th>
-                  <th className="px-5 py-3">Cost Price</th>
-                  <th className="px-5 py-3">Selling Price</th>
-                  <th className="px-5 py-3">Current Stock</th>
-                  <th className="px-5 py-3">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 bg-white">
-                {catalog
-                  .filter(
-                    p =>
-                      !searchQuery ||
-                      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                      p.sku.toLowerCase().includes(searchQuery.toLowerCase())
-                  )
-                  .map(p => (
-                    <tr key={p.id} className="hover:bg-slate-50/80 transition">
-                      <td className="px-5 py-3.5 font-bold text-slate-900">{p.name}</td>
-                      <td className="px-5 py-3.5 font-mono text-[11px] text-slate-500">{p.sku}</td>
-                      <td className="px-5 py-3.5 text-slate-600 font-medium">{p.category}</td>
-                      <td className="px-5 py-3.5 font-bold text-slate-700">{formatGHS(p.cost_price)}</td>
-                      <td className="px-5 py-3.5 font-bold text-emerald-700">{formatGHS(p.price)}</td>
-                      <td className="px-5 py-3.5 font-black text-slate-900">{p.stock_quantity} units</td>
-                      <td className="px-5 py-3.5">
-                        {p.stock_quantity <= 5 ? (
-                          <span className="px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-200 text-[10px] font-black uppercase rounded">
-                            Restock Required
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-bold uppercase rounded">
-                            In Stock
-                          </span>
-                        )}
-                      </td>
-                    </tr>
-                  ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* PO Detail Modal */}
-      {selectedPO && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-lg border border-slate-200 shadow-xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="text-base font-black text-slate-900">Purchase Order Details</h3>
-                <span className="text-xs text-slate-400">
-                  Order ID: #PO-{selectedPO.id} &bull; Ordered on {new Date(selectedPO.created_at).toLocaleDateString()}
-                </span>
-              </div>
+      {/* 5. Create & Issue Purchase Order Modal */}
+      {showCreatePoModal && (
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-lg max-w-lg w-full p-5 border border-slate-200 shadow-xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
+              <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
+                <Plus size={16} className="text-blue-600" />
+                Issue New Purchase Order — {activeSupplier}
+              </h3>
               <button
-                onClick={() => setSelectedPO(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 text-xs"
+                onClick={() => setShowCreatePoModal(false)}
+                className="text-slate-400 hover:text-slate-600"
               >
-                ✕
+                <X size={16} />
               </button>
             </div>
 
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-slate-50 p-3 rounded border border-slate-200/60 text-xs">
+            <form onSubmit={handleCreatePoSubmit} className="space-y-3 text-xs">
               <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Supplier</span>
-                <span className="font-bold text-slate-800">{selectedPO.supplier_name}</span>
+                <label className="font-bold text-slate-700 block mb-1">Catalog Product Line</label>
+                <select
+                  value={poSelectedProductId}
+                  onChange={(e) => {
+                    const pid = Number(e.target.value);
+                    setPoSelectedProductId(pid);
+                    const prod = catalog.find((c) => c.id === pid) ||
+                      triggersData.triggers?.find((t: any) => t.id === pid);
+                    if (prod && prod.cost_price) {
+                      setPoUnitPrice(prod.cost_price);
+                    }
+                  }}
+                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
+                  required
+                >
+                  <option value="">-- Choose Product Line --</option>
+                  {catalog.map((c) => (
+                    <option key={c.id} value={c.id}>
+                      {c.name} (Stock: {c.stock_quantity}) - {formatGHS(c.cost_price || 0)}
+                    </option>
+                  ))}
+                  {/* Fallback to triggers if catalog is empty */}
+                  {catalog.length === 0 &&
+                    triggersData.triggers?.map((t: any) => (
+                      <option key={t.id} value={t.id}>
+                        {t.name} (Stock: {t.stock_quantity}) - {formatGHS(t.cost_price || 0)}
+                      </option>
+                    ))}
+                </select>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Status</span>
-                <div className="mt-1">{getStatusBadge(selectedPO.status)}</div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Order Quantity (Units)</label>
+                  <input
+                    type="number"
+                    min={1}
+                    required
+                    value={poQuantity}
+                    onChange={(e) => setPoQuantity(parseInt(e.target.value) || 1)}
+                    className="w-full border border-slate-200 rounded p-2"
+                  />
+                </div>
+                <div>
+                  <label className="font-bold text-slate-700 block mb-1">Unit Cost (GHS)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    required
+                    value={poUnitPrice}
+                    onChange={(e) => setPoUnitPrice(parseFloat(e.target.value) || 0)}
+                    className="w-full border border-slate-200 rounded p-2"
+                  />
+                </div>
               </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Purchaser</span>
-                <span className="font-bold text-slate-800">{selectedPO.user_name || 'Admin'}</span>
-              </div>
-              <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Expected Delivery</span>
-                <span className="font-bold text-slate-800">
-                  {selectedPO.expected_date ? new Date(selectedPO.expected_date).toLocaleDateString() : 'Immediate'}
+
+              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-600">Calculated PO Total:</span>
+                <span className="font-black text-blue-600 text-sm">
+                  {formatGHS(poQuantity * poUnitPrice)}
                 </span>
               </div>
-            </div>
 
-            {selectedPO.notes && (
-              <div className="p-3 bg-blue-50/50 border border-blue-100 rounded text-xs text-slate-700">
-                <span className="font-bold text-blue-900 block mb-0.5">PO Instructions:</span>
-                {selectedPO.notes}
-              </div>
-            )}
-
-            <div>
-              <h4 className="text-xs font-black uppercase text-slate-600 tracking-wider mb-2">Order Line Items</h4>
-              <table className="min-w-full divide-y divide-slate-100 text-xs border border-slate-100 rounded overflow-hidden">
-                <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[10px]">
-                  <tr>
-                    <th className="px-3 py-2 text-left">Product</th>
-                    <th className="px-3 py-2 text-center">Qty</th>
-                    <th className="px-3 py-2 text-right">Unit Price</th>
-                    <th className="px-3 py-2 text-right">Subtotal</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {selectedPO.items?.map((item: any) => (
-                    <tr key={item.id}>
-                      <td className="px-3 py-2 font-bold text-slate-900">
-                        {item.product_name} <span className="text-[10px] font-mono text-slate-400">({item.sku})</span>
-                      </td>
-                      <td className="px-3 py-2 text-center font-bold text-slate-800">{item.quantity}</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{formatGHS(item.unit_price)}</td>
-                      <td className="px-3 py-2 text-right font-black text-slate-900">
-                        {formatGHS(item.quantity * item.unit_price)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-slate-100 pt-3">
               <div>
-                <span className="text-[10px] text-slate-400 uppercase font-bold block">Total Amount</span>
-                <span className="text-base font-black text-red-600">{formatGHS(selectedPO.total_amount)}</span>
+                <label className="font-bold text-slate-700 block mb-1">Expected Delivery Date (SLA)</label>
+                <input
+                  type="date"
+                  required
+                  value={poExpectedDate}
+                  onChange={(e) => setPoExpectedDate(e.target.value)}
+                  className="w-full border border-slate-200 rounded p-2"
+                />
               </div>
 
-              <div className="flex items-center gap-2">
-                {selectedPO.status !== 'received' && selectedPO.status !== 'cancelled' ? (
-                  <button
-                    onClick={() => handleConfirmReceipt(selectedPO.id)}
-                    disabled={updatingPoId === selectedPO.id}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded transition flex items-center gap-1.5 shadow-2xs cursor-pointer disabled:opacity-50"
-                  >
-                    {updatingPoId === selectedPO.id ? (
-                      <RefreshCw size={14} className="animate-spin" />
-                    ) : (
-                      <CheckCircle2 size={14} />
-                    )}
-                    Confirm Receipt & Fulfill Stock
-                  </button>
-                ) : selectedPO.status === 'received' ? (
-                  <span className="px-3 py-1.5 bg-emerald-50 border border-emerald-300 text-emerald-800 text-xs font-bold rounded flex items-center gap-1.5">
-                    <CheckCircle2 size={14} className="text-emerald-600" />
-                    Receipt Confirmed & Stock Fulfilled
-                  </span>
-                ) : null}
+              <div>
+                <label className="font-bold text-slate-700 block mb-1">Order Notes / Specifications</label>
+                <textarea
+                  rows={2}
+                  value={poNotes}
+                  onChange={(e) => setPoNotes(e.target.value)}
+                  className="w-full border border-slate-200 rounded p-2"
+                  placeholder="Special pallet requirements, delivery dock guidelines..."
+                />
+              </div>
 
+              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
                 <button
-                  onClick={() => setSelectedPO(null)}
-                  className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded hover:bg-slate-800"
+                  type="button"
+                  onClick={() => setShowCreatePoModal(false)}
+                  className="px-3.5 py-1.5 bg-slate-100 text-slate-700 font-bold rounded"
                 >
-                  Close
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCreatingPo}
+                  className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-xs"
+                >
+                  {isCreatingPo ? 'Issuing PO...' : 'Issue Purchase Order'}
                 </button>
               </div>
-            </div>
+            </form>
           </div>
         </div>
       )}

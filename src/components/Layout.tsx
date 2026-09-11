@@ -5,10 +5,11 @@ import {
   Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, 
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
   Store, Building2, Wallet, Menu, X, Lock,
-  SlidersHorizontal, UserCog, History, FolderTree, Scale, Search
+  SlidersHorizontal, UserCog, History, FolderTree, Scale, Search, User
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
+import ProfileModal from './ProfileModal';
 import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
@@ -61,6 +62,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
+  const [showProfileModal, setShowProfileModal] = useState(false);
 
   // Global search state
   const [searchQuery, setSearchQuery] = useState('');
@@ -158,7 +160,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/shifts', icon: <Clock size={18} />, label: 'Shift Register' },
     { to: '/products', icon: <Package size={18} />, label: 'Products Catalog' },
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
-    { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments' },
+    { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
     { to: '/supplier-dashboard', icon: <Building2 size={18} />, label: 'Supplier Portal', adminOnly: true },
     { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
@@ -232,22 +234,26 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   const renderUserProfileFooter = () => (
     <div className={`p-2.5 border-t border-slate-800 bg-slate-950/70 text-xs ${isNavCollapsed ? 'flex flex-col items-center space-y-2' : 'space-y-2'}`}>
-      <div className={`flex items-center ${isNavCollapsed ? 'justify-center p-1.5' : 'justify-between gap-2 p-2'} bg-slate-900 rounded-lg border border-slate-800 w-full`}>
+      <div 
+        onClick={() => setShowProfileModal(true)}
+        className={`flex items-center ${isNavCollapsed ? 'justify-center p-1.5' : 'justify-between gap-2 p-2'} bg-slate-900 hover:bg-slate-850 rounded-lg border border-slate-800 hover:border-slate-700 w-full cursor-pointer transition group`}
+        title="Manage Account Profile"
+      >
         <div className={`flex items-center ${isNavCollapsed ? 'justify-center' : 'gap-2'} min-w-0`}>
           {user?.profile_picture ? (
             <img 
               src={user.profile_picture} 
               alt={user.name} 
-              className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0" 
+              className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0 group-hover:ring-2 group-hover:ring-blue-500/40" 
             />
           ) : (
-            <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0">
+            <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0 group-hover:border-blue-400">
               {user?.name?.charAt(0) || 'U'}
             </div>
           )}
           {!isNavCollapsed && (
-            <div className="min-w-0">
-              <div className="font-bold text-slate-100 truncate text-[11px]">{user?.name}</div>
+            <div className="min-w-0 text-left">
+              <div className="font-bold text-slate-100 truncate text-[11px] group-hover:text-blue-300 transition-colors">{user?.name}</div>
               <div className="flex items-center gap-1.5">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
                 <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
@@ -259,13 +265,30 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </div>
 
         {!isNavCollapsed && (
-          <button
-            onClick={handleLockTerminal}
-            className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-800 rounded transition"
-            title="Lock Terminal (Quick Sign Out)"
-          >
-            <Lock size={14} />
-          </button>
+          <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                setShowProfileModal(true);
+              }}
+              className="p-1.5 text-slate-400 hover:text-blue-300 hover:bg-slate-850 rounded transition"
+              title="Edit Profile"
+            >
+              <User size={13} />
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleLockTerminal();
+              }}
+              className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-850 rounded transition"
+              title="Lock Terminal (Quick Sign Out)"
+            >
+              <Lock size={13} />
+            </button>
+          </div>
         )}
       </div>
 
@@ -486,6 +509,28 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* In-App Notifications Dropdown */}
             <NotificationBell />
+
+            {/* User Profile Quick Trigger */}
+            <button
+              onClick={() => setShowProfileModal(true)}
+              className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-lg text-xs transition"
+              title="My Profile & Account Settings"
+            >
+              {user?.profile_picture ? (
+                <img 
+                  src={user.profile_picture} 
+                  alt={user.name} 
+                  className="w-5 h-5 rounded-full object-cover shrink-0 border border-slate-300" 
+                />
+              ) : (
+                <div className="w-5 h-5 rounded-full bg-slate-800 text-white font-black text-[10px] flex items-center justify-center uppercase shrink-0">
+                  {user?.name?.charAt(0) || 'U'}
+                </div>
+              )}
+              <span className="hidden sm:inline font-bold text-slate-800 text-xs truncate max-w-[100px]">
+                {user?.name?.split(' ')[0]}
+              </span>
+            </button>
           </div>
         </header>
 
@@ -499,6 +544,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           </div>
         </div>
       </main>
+
+      {/* Profile Management Modal (Accessible to every role: Admin, Staff, Supplier) */}
+      <ProfileModal
+        isOpen={showProfileModal}
+        onClose={() => setShowProfileModal(false)}
+      />
     </div>
   );
 }

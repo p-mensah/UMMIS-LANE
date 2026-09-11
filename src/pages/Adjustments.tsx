@@ -24,7 +24,8 @@ export default function Adjustments() {
   // Toast feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  const canAdjustStock = user?.role === 'admin' || allowStaffAdjustments;
+  // Strictly restrict adjustments to admin role
+  const canAdjustStock = user?.role === 'admin';
 
   useEffect(() => {
     loadData();

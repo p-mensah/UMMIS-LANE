@@ -1,7 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
-import { ArrowUpRight, ArrowDownLeft, FileText, Filter } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer } from 'lucide-react';
+import InvoiceModal from '../components/InvoiceModal';
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -9,6 +10,8 @@ export default function Transactions() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [userIdFilter, setUserIdFilter] = useState('');
+  const [selectedSaleData, setSelectedSaleData] = useState<any | null>(null);
+  const [loadingReceipt, setLoadingReceipt] = useState(false);
 
   useEffect(() => {
     loadData();
@@ -24,6 +27,18 @@ export default function Transactions() {
       setUsers(usersRes);
     })
     .finally(() => setLoading(false));
+  };
+
+  const handlePrintReceipt = async (saleId: number) => {
+    setLoadingReceipt(true);
+    try {
+      const sale = await fetchApi(`/sales/${saleId}`);
+      setSelectedSaleData(sale);
+    } catch (err: any) {
+      alert('Error fetching receipt: ' + err.message);
+    } finally {
+      setLoadingReceipt(false);
+    }
   };
 
   const filteredTransactions = transactions.filter(t => {
@@ -80,6 +95,7 @@ export default function Transactions() {
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Description</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Type</th>
               <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Amount</th>
+              <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
@@ -114,12 +130,27 @@ export default function Transactions() {
                       {formatGHS(Math.abs(t.amount))}
                     </span>
                   </td>
+                  <td className="px-5 py-3 whitespace-nowrap text-right text-[12px]">
+                    {t.type === 'sale' ? (
+                      <button
+                        onClick={() => handlePrintReceipt(t.id)}
+                        disabled={loadingReceipt}
+                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold text-[11px] rounded border border-slate-200 transition-colors cursor-pointer"
+                        title="Print Official Sales Receipt"
+                      >
+                        <Printer size={12} />
+                        <span>Print Receipt</span>
+                      </button>
+                    ) : (
+                      <span className="text-slate-300 font-mono text-xs">—</span>
+                    )}
+                  </td>
                 </tr>
               );
             })}
             {filteredTransactions.length === 0 && (
               <tr>
-                <td colSpan={5} className="px-5 py-10 text-center text-slate-400 text-[13px]">
+                <td colSpan={7} className="px-5 py-10 text-center text-slate-400 text-[13px]">
                   <FileText className="mx-auto mb-2 opacity-30" size={32} />
                   No transactions found.
                 </td>
@@ -128,6 +159,15 @@ export default function Transactions() {
           </tbody>
         </table>
       </div>
+
+      {/* Sales Receipt Modal */}
+      {selectedSaleData && (
+        <InvoiceModal
+          saleData={selectedSaleData}
+          initialFormat="receipt"
+          onClose={() => setSelectedSaleData(null)}
+        />
+      )}
     </div>
   );
 }
