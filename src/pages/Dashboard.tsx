@@ -16,6 +16,8 @@ import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
 import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
+import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
+import RecentActivityPanel from '../components/RecentActivityPanel';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -581,6 +583,20 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* AUTOMATED LOW-STOCK WARNING NOTIFICATION & REORDER POINT WARNING LIST */}
+      <AutomatedLowStockNotification
+        products={allProducts.length > 0 ? allProducts : lowStockProducts}
+        globalThreshold={globalThreshold}
+        userRole={user?.role}
+        onQuickRestock={user?.role === 'admin' || allowStaffAdjustments ? (prod) => {
+          setSelectedProductForRestock(prod);
+          setRestockQty(Math.max(10, ((prod.min_stock_level || globalThreshold) * 2) - prod.stock_quantity));
+          setShowRestockModal(true);
+        } : undefined}
+        onRefresh={loadDashboardData}
+        isLoading={loading}
+      />
+
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
         <>
@@ -925,6 +941,15 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+
+          {/* RECENT ACTIVITY PANEL (LAST 5 TRANSACTIONS & INVENTORY CHANGES) */}
+          <RecentActivityPanel
+            sales={recentSalesList}
+            auditLogs={recentAuditLogs}
+            onViewSaleReceipt={handleViewInvoice}
+            onRefresh={loadDashboardData}
+            isLoading={loading}
+          />
 
           {/* RECENT SALES ACTIVITY FEED & INVOICE VIEWER */}
           <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">

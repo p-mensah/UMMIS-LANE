@@ -33,6 +33,7 @@ import {
 
 import SupplierKPIs from '../components/supplier/SupplierKPIs';
 import POManagement from '../components/supplier/POManagement';
+import CreatePOModal from '../components/supplier/CreatePOModal';
 import ReplenishmentTriggers from '../components/supplier/ReplenishmentTriggers';
 import SupplierMasterData from '../components/supplier/SupplierMasterData';
 import QualityControlRMA from '../components/supplier/QualityControlRMA';
@@ -119,6 +120,7 @@ export default function SupplierDashboard() {
 
   // Create PO Modal State
   const [showCreatePoModal, setShowCreatePoModal] = useState(false);
+  const [prefilledRestockItem, setPrefilledRestockItem] = useState<any>(null);
   const [poSelectedProductId, setPoSelectedProductId] = useState<number | ''>('');
   const [poQuantity, setPoQuantity] = useState<number>(50);
   const [poUnitPrice, setPoUnitPrice] = useState<number>(25.0);

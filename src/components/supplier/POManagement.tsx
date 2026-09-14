@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { formatGHS } from '../../lib/formatters';
+import PODocumentModal from './PODocumentModal';
+import ReceivePOModal from './ReceivePOModal';
 import {
   Truck,
   PackageCheck,
@@ -30,7 +32,10 @@ import {
   Sliders,
   FileSpreadsheet,
   AlertTriangle,
-  RotateCcw
+  RotateCcw,
+  Package,
+  MoreHorizontal,
+  Printer
 } from 'lucide-react';
 
 interface PurchaseItem {
@@ -125,6 +130,10 @@ export default function POManagement({
   const [expandedPoId, setExpandedPoId] = useState<number | null>(null);
 
   // Modals state
+  const [documentModalPo, setDocumentModalPo] = useState<PurchaseOrder | null>(null);
+  const [receiveModalPo, setReceiveModalPo] = useState<PurchaseOrder | null>(null);
+  const [sortBy, setSortBy] = useState<'date_desc' | 'date_asc' | 'amount_desc' | 'amount_asc'>('date_desc');
+
   const [ackModalPo, setAckModalPo] = useState<PurchaseOrder | null>(null);
   const [ackNotes, setAckNotes] = useState('Order received and confirmed for production.');
 
@@ -153,6 +162,22 @@ export default function POManagement({
   const [scheduledPickupDate, setScheduledPickupDate] = useState('');
 
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Quick pipeline metric counts
+  const allCount = purchases.length;
+  const pendingCount = purchases.filter((p) => ['pending', 'pending_confirmation', 'submitted', 'ordered'].includes(p.status.toLowerCase())).length;
+  const readyCount = purchases.filter((p) => ['ready_for_pickup', 'preparing'].includes(p.status.toLowerCase())).length;
+  const transitCount = purchases.filter((p) => ['in-transit', 'out_for_delivery'].includes(p.status.toLowerCase())).length;
+  const receivedCount = purchases.filter((p) => p.status.toLowerCase() === 'received').length;
+  const canceledCount = purchases.filter((p) => p.status.toLowerCase() === 'cancelled').length;
+
+  const totalSpend = purchases.reduce((acc, p) => acc + (p.total_amount || 0), 0);
+  const pendingSpend = purchases
+    .filter((p) => ['pending', 'pending_confirmation', 'submitted', 'ordered'].includes(p.status.toLowerCase()))
+    .reduce((acc, p) => acc + (p.total_amount || 0), 0);
+  const receivedSpend = purchases
+    .filter((p) => p.status.toLowerCase() === 'received')
+    .reduce((acc, p) => acc + (p.total_amount || 0), 0);
 
   // Open logistics modal with prefilled data
   const handleOpenLogistics = (po: PurchaseOrder) => {
@@ -254,26 +279,91 @@ export default function POManagement({
     return matchesSupplier && matchesStatus && matchesSearch;
   });
 
+  const sortedPOs = [...filteredPOs].sort((a, b) => {
+    if (sortBy === 'date_desc') return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    if (sortBy === 'date_asc') return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    if (sortBy === 'amount_desc') return b.total_amount - a.total_amount;
+    if (sortBy === 'amount_asc') return a.total_amount - b.total_amount;
+    return 0;
+  });
+
+  const handleExportAllCsv = () => {
+    if (sortedPOs.length === 0) {
+      alert('No purchase orders to export.');
+      return;
+    }
+    const headers = ['PO Reference', 'Date', 'Supplier', 'Contact', 'Status', 'Total Amount (GHS)', 'Units', 'Fulfillment Mode', 'Driver', 'Vehicle Reg', 'Dock Bay'];
+    const rows = sortedPOs.map((po) => [
+      `PO-${po.id}`,
+      new Date(po.created_at).toLocaleDateString(),
+      `"${(po.supplier_name || '').replace(/"/g, '""')}"`,
+      `"${(po.supplier_contact || '').replace(/"/g, '""')}"`,
+      po.status,
+      po.total_amount.toFixed(2),
+      po.total_units || (po.items ? po.items.reduce((s, it) => s + it.quantity, 0) : 0),
+      po.fulfillment_mode || 'direct_delivery',
+      `"${(po.driver_name || '').replace(/"/g, '""')}"`,
+      `"${(po.vehicle_number || '').replace(/"/g, '""')}"`,
+      `"${(po.dock_slot || '').replace(/"/g, '""')}"`
+    ]);
+    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map((e) => e.join(','))].join('\n');
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement('a');
+    link.setAttribute('href', encodedUri);
+    link.setAttribute('download', `Purchase_Orders_Summary_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const getStatusBadge = (status: string) => {
     switch (status.toLowerCase()) {
       case 'draft':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-slate-100 text-slate-700 border border-slate-300 uppercase">Draft</span>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">
+            Draft
+          </span>
+        );
       case 'pending':
       case 'pending_confirmation':
       case 'ordered':
       case 'submitted':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-amber-50 text-amber-700 border border-amber-200 uppercase flex items-center gap-1"><Clock size={10} /> Pending Confirmation</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+            <Clock size={11} className="text-amber-500" /> Pending
+          </span>
+        );
       case 'ready_for_pickup':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-purple-50 text-purple-700 border border-purple-200 uppercase flex items-center gap-1"><Building2 size={10} /> Ready for Pickup</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-purple-50 text-purple-700 border border-purple-200">
+            <Building2 size={11} className="text-purple-500" /> Ready for Pickup
+          </span>
+        );
       case 'in-transit':
       case 'out_for_delivery':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-blue-50 text-blue-700 border border-blue-200 uppercase flex items-center gap-1"><Truck size={10} /> In-Transit / Out for Delivery</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
+            <Truck size={11} className="text-blue-500" /> In-Transit
+          </span>
+        );
       case 'received':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-emerald-50 text-emerald-700 border border-emerald-200 uppercase flex items-center gap-1"><CheckCircle2 size={10} /> Received & Inspected</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200">
+            <CheckCircle2 size={11} className="text-emerald-500" /> Received
+          </span>
+        );
       case 'cancelled':
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-rose-50 text-rose-700 border border-rose-200 uppercase">Canceled</span>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+            Canceled
+          </span>
+        );
       default:
-        return <span className="px-2 py-0.5 text-[10px] font-black rounded bg-slate-100 text-slate-700 uppercase">{status}</span>;
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-semibold bg-slate-100 text-slate-700 border border-slate-200">
+            {status}
+          </span>
+        );
     }
   };
 
@@ -323,52 +413,120 @@ export default function POManagement({
 
   return (
     <div className="space-y-4">
-      {/* Control bar: Quick Filters, Search, and Action Buttons */}
-      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col lg:flex-row items-stretch lg:items-center justify-between gap-3">
+      {/* Top Metrics Cards */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between text-slate-500 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Total PO Volume</span>
+            <Package size={14} className="text-blue-500" />
+          </div>
+          <div className="text-lg font-black text-slate-900 font-mono">{formatGHS(totalSpend)}</div>
+          <div className="text-[11px] text-slate-400 font-medium mt-0.5">{allCount} orders issued</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between text-amber-600 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Pending Orders</span>
+            <Clock size={14} className="text-amber-500" />
+          </div>
+          <div className="text-lg font-black text-amber-900 font-mono">{formatGHS(pendingSpend)}</div>
+          <div className="text-[11px] text-amber-700 font-semibold mt-0.5">{pendingCount} orders awaiting SLA delivery</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between text-blue-600 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Active Logistics</span>
+            <Truck size={14} className="text-blue-500" />
+          </div>
+          <div className="text-lg font-black text-blue-900 font-mono">{transitCount + readyCount} Shipments</div>
+          <div className="text-[11px] text-blue-700 font-semibold mt-0.5">{transitCount} in-transit, {readyCount} ready for pickup</div>
+        </div>
+
+        <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
+          <div className="flex items-center justify-between text-emerald-600 mb-1">
+            <span className="text-[10px] font-bold uppercase tracking-wider">Fulfilled & Restocked</span>
+            <CheckCircle2 size={14} className="text-emerald-500" />
+          </div>
+          <div className="text-lg font-black text-emerald-900 font-mono">{formatGHS(receivedSpend)}</div>
+          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">{receivedCount} GRNs completed & stocked</div>
+        </div>
+      </div>
+
+      {/* Control bar: Quick Filters, Search, Sort and Action Buttons */}
+      <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-3">
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 flex-1">
           {/* Search Box */}
           <div className="relative sm:w-64">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" size={14} />
             <input
               type="text"
-              placeholder="Search PO #, driver, vendor, tracking..."
+              placeholder="Search PO #, vendor, driver..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs font-bold rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="w-full pl-9 pr-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500 bg-slate-50/50 focus:bg-white transition"
             />
           </div>
 
-          {/* Quick Filters as mandated */}
+          {/* Quick Filters with live counts */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs overflow-x-auto">
             {[
-              { id: 'all', label: 'All' },
-              { id: 'pending_confirmation', label: 'Pending Confirmation' },
-              { id: 'ready_for_pickup', label: 'Ready for Pickup' },
-              { id: 'in-transit', label: 'In-Transit' },
-              { id: 'received', label: 'Received' },
-              { id: 'cancelled', label: 'Canceled' }
+              { id: 'all', label: 'All', count: allCount },
+              { id: 'pending_confirmation', label: 'Pending', count: pendingCount },
+              { id: 'ready_for_pickup', label: 'Ready', count: readyCount },
+              { id: 'in-transit', label: 'In-Transit', count: transitCount },
+              { id: 'received', label: 'Received', count: receivedCount },
+              { id: 'cancelled', label: 'Canceled', count: canceledCount }
             ].map((st) => (
               <button
                 key={st.id}
                 onClick={() => setStatusFilter(st.id)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-black whitespace-nowrap transition-colors cursor-pointer ${
-                  statusFilter === st.id ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60' : 'text-slate-600 hover:text-slate-900'
+                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                  statusFilter === st.id ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60 font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                {st.label}
+                <span>{st.label}</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                  statusFilter === st.id ? 'bg-blue-100 text-blue-800' : 'bg-slate-200/80 text-slate-600'
+                }`}>
+                  {st.count}
+                </span>
               </button>
             ))}
           </div>
         </div>
 
-        {onCreatePO && (
-          <button
-            onClick={onCreatePO}
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-lg flex items-center justify-center gap-1.5 shadow-sm shrink-0 cursor-pointer transition"
+        <div className="flex items-center gap-2 shrink-0">
+          {/* Sort Selector */}
+          <select
+            value={sortBy}
+            onChange={(e) => setSortBy(e.target.value as any)}
+            className="px-2.5 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-700 bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 cursor-pointer"
           >
-            <Plus size={14} /> Create New PO
+            <option value="date_desc">Newest First</option>
+            <option value="date_asc">Oldest First</option>
+            <option value="amount_desc">Amount: High to Low</option>
+            <option value="amount_asc">Amount: Low to High</option>
+          </select>
+
+          {/* Export CSV Button */}
+          <button
+            onClick={handleExportAllCsv}
+            className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs rounded-lg border border-slate-200 flex items-center gap-1.5 cursor-pointer transition"
+            title="Export filtered purchase orders to CSV"
+          >
+            <Download size={13} />
+            <span className="hidden sm:inline">Export CSV</span>
           </button>
-        )}
+
+          {onCreatePO && (
+            <button
+              onClick={onCreatePO}
+              className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-xs rounded-lg flex items-center justify-center gap-1.5 shadow-xs cursor-pointer transition"
+            >
+              <Plus size={14} /> Create Purchase Order
+            </button>
+          )}
+        </div>
       </div>
 
       {/* PO List Table */}
@@ -376,25 +534,28 @@ export default function POManagement({
         <div className="overflow-x-auto">
           <table className="w-full border-collapse text-left">
             <thead>
-              <tr className="bg-slate-50 text-[10px] font-black text-slate-500 uppercase tracking-wider border-b border-slate-200">
-                <th className="p-3.5">PO # / Date</th>
-                <th className="p-3.5">Vendor Partner</th>
-                <th className="p-3.5">Lifecycle Status</th>
-                <th className="p-3.5">Total Amount</th>
-                <th className="p-3.5">Fulfillment & Logistics</th>
-                <th className="p-3.5">Documents</th>
-                <th className="p-3.5 text-right">Lifecycle Actions</th>
+              <tr className="bg-slate-50/80 text-[11px] font-bold text-slate-500 uppercase tracking-wider border-b border-slate-200">
+                <th className="py-3 px-4 w-10"></th>
+                <th className="py-3 px-4">PO Number & Date</th>
+                <th className="py-3 px-4">Supplier Partner</th>
+                <th className="py-3 px-4">Status</th>
+                <th className="py-3 px-4">Amount</th>
+                <th className="py-3 px-4">Logistics & Fulfillment</th>
+                <th className="py-3 px-4">Docs</th>
+                <th className="py-3 px-4 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 text-xs">
-              {filteredPOs.length === 0 ? (
+              {sortedPOs.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">
-                    No purchase orders matching the current filter.
+                  <td colSpan={8} className="py-12 px-4 text-center text-slate-400">
+                    <Package size={28} className="mx-auto mb-2 text-slate-300" />
+                    <p className="font-medium text-slate-500">No purchase orders found</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">Try adjusting your search query or status filter.</p>
                   </td>
                 </tr>
               ) : (
-                filteredPOs.map((po) => {
+                sortedPOs.map((po) => {
                   const isExpanded = expandedPoId === po.id;
                   const attachments = parseAttachments(po.attachments);
                   const st = po.status.toLowerCase();
@@ -406,159 +567,166 @@ export default function POManagement({
 
                   return (
                     <React.Fragment key={po.id}>
-                      <tr className="hover:bg-slate-50/70 transition-colors">
-                        <td className="p-3.5 font-bold font-mono text-slate-900">
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
-                              className="text-slate-400 hover:text-slate-600 cursor-pointer"
-                              title="Toggle Order Details"
-                            >
-                              {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-                            </button>
-                            <span className="font-black text-slate-900">#PO-{po.id}</span>
+                      <tr className={`hover:bg-slate-50/80 transition-colors ${isExpanded ? 'bg-blue-50/20' : ''}`}>
+                        <td className="py-3.5 px-4 text-center">
+                          <button
+                            onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
+                            className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer"
+                            title={isExpanded ? "Collapse details" : "Expand line items & details"}
+                          >
+                            {isExpanded ? <ChevronUp size={15} /> : <ChevronDown size={15} />}
+                          </button>
+                        </td>
+
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold font-mono text-slate-900 flex items-center gap-1.5">
+                            <span className="text-blue-600 font-bold">#PO-{po.id}</span>
                           </div>
-                          <div className="text-[10px] text-slate-400 font-sans font-medium mt-0.5">
-                            {new Date(po.created_at).toLocaleDateString()}
+                          <div className="text-[11px] text-slate-400 font-sans mt-0.5 flex items-center gap-1">
+                            <Calendar size={11} className="text-slate-400" />
+                            {new Date(po.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                           </div>
                         </td>
 
-                        <td className="p-3.5">
-                          <span className="font-black text-slate-900 block">{po.supplier_name}</span>
-                          <span className="text-[11px] text-slate-500 block">{po.supplier_contact || 'Local Vendor'}</span>
+                        <td className="py-3.5 px-4">
+                          <div className="font-semibold text-slate-900">{po.supplier_name}</div>
+                          <div className="text-[11px] text-slate-400 mt-0.5 truncate max-w-[180px]">
+                            {po.supplier_contact || 'Standard Vendor'}
+                          </div>
                         </td>
 
-                        <td className="p-3.5">
+                        <td className="py-3.5 px-4">
                           {getStatusBadge(po.status)}
                           {po.acknowledged_at && (
-                            <span className="block text-[10px] text-emerald-600 font-bold mt-1">
-                              ✓ Ack: {new Date(po.acknowledged_at).toLocaleDateString()}
-                            </span>
+                            <div className="text-[10px] text-emerald-600 font-medium mt-1 flex items-center gap-0.5">
+                              <span>✓ Ack {new Date(po.acknowledged_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}</span>
+                            </div>
                           )}
                         </td>
 
-                        <td className="p-3.5 font-black text-slate-900">
-                          {formatGHS(po.total_amount)}
+                        <td className="py-3.5 px-4">
+                          <div className="font-bold text-slate-900">{formatGHS(po.total_amount)}</div>
                           {po.invoice_status && (
-                            <span className={`block text-[9px] font-bold uppercase tracking-wider mt-0.5 ${
-                              po.invoice_status === 'paid' ? 'text-emerald-600' : 'text-slate-500'
+                            <span className={`inline-block text-[10px] font-semibold mt-0.5 ${
+                              po.invoice_status === 'paid' ? 'text-emerald-600' : 'text-slate-400'
                             }`}>
                               Inv: {po.invoice_status}
                             </span>
                           )}
                         </td>
 
-                        <td className="p-3.5">
+                        <td className="py-3.5 px-4">
                           {po.fulfillment_mode === 'store_pickup' ? (
                             <div className="text-[11px] space-y-0.5">
-                              <span className="font-bold text-purple-700 flex items-center gap-1">
-                                <Building2 size={12} /> Warehouse Pickup
-                              </span>
-                              <span className="text-[10px] text-slate-600 block">
-                                {po.driver_name || 'Assigned Store Vehicle'}
+                              <span className="inline-flex items-center gap-1 font-semibold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded border border-purple-100">
+                                <Building2 size={11} /> Warehouse Pickup
                               </span>
                               {po.pickup_code && (
-                                <span className="font-mono text-[9px] font-bold text-slate-500 block">
-                                  Code: {po.pickup_code}
-                                </span>
+                                <div className="text-[10px] font-mono text-slate-500 pl-0.5">
+                                  PIN: <strong className="text-slate-700">{po.pickup_code}</strong>
+                                </div>
                               )}
                             </div>
                           ) : po.fulfillment_mode === 'direct_delivery' || po.driver_name || po.carrier ? (
                             <div className="text-[11px] space-y-0.5">
-                              <span className="font-bold text-blue-700 flex items-center gap-1">
-                                <Truck size={12} /> Direct Delivery
+                              <span className="inline-flex items-center gap-1 font-semibold text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded border border-blue-100">
+                                <Truck size={11} /> Direct Delivery
                               </span>
-                              <span className="text-[10px] text-slate-700 block">
-                                Driver: {po.driver_name || po.carrier || 'Vendor Driver'}
-                              </span>
-                              {po.dock_slot && (
-                                <span className="text-[9px] font-bold text-slate-500 block">
-                                  Slot: {po.dock_slot}
-                                </span>
+                              {po.driver_name && (
+                                <div className="text-[10px] text-slate-500 pl-0.5 truncate max-w-[160px]">
+                                  {po.driver_name}
+                                </div>
                               )}
                             </div>
                           ) : (
                             <button
                               onClick={() => handleOpenLogistics(po)}
-                              className="text-blue-600 hover:text-blue-800 text-[11px] font-bold underline cursor-pointer"
+                              className="text-blue-600 hover:text-blue-800 text-[11px] font-semibold hover:underline cursor-pointer flex items-center gap-1"
                             >
-                              + Configure Logistics
+                              <Truck size={12} /> Set Logistics
                             </button>
                           )}
                         </td>
 
-                        <td className="p-3.5">
-                          <div className="flex items-center gap-1.5 flex-wrap">
+                        <td className="py-3.5 px-4">
+                          <div className="flex items-center gap-1">
                             {attachments.length > 0 ? (
-                              attachments.map((doc, dIdx) => (
-                                <span
-                                  key={dIdx}
-                                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 text-[10px] font-bold text-slate-700"
-                                  title={`${doc.name} (${doc.type})`}
-                                >
-                                  <FileText size={11} className="text-blue-600" />
-                                  <span className="capitalize">{doc.type.replace('_', ' ')}</span>
-                                </span>
-                              ))
+                              <button
+                                onClick={() => setAttachModalPo(po)}
+                                className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-[11px] font-medium text-slate-700 transition cursor-pointer"
+                                title="View / Add attachments"
+                              >
+                                <Paperclip size={11} className="text-blue-600" />
+                                <span>{attachments.length}</span>
+                              </button>
                             ) : (
-                              <span className="text-slate-300 text-[11px] italic">None</span>
+                              <button
+                                onClick={() => setAttachModalPo(po)}
+                                className="p-1 hover:bg-slate-100 rounded text-slate-300 hover:text-slate-600 transition cursor-pointer"
+                                title="Attach Document"
+                              >
+                                <Paperclip size={13} />
+                              </button>
                             )}
-                            <button
-                              onClick={() => setAttachModalPo(po)}
-                              className="p-1 hover:bg-slate-200 rounded text-slate-500 hover:text-slate-900 transition-colors"
-                              title="Attach Document (Invoice, Packing List, Bill of Lading)"
-                            >
-                              <Paperclip size={13} />
-                            </button>
                           </div>
                         </td>
 
-                        <td className="p-3.5 text-right whitespace-nowrap">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Action 1: Confirm Order */}
+                            {/* Action: Confirm Order */}
                             {(isDraft || (isPending && !po.acknowledged_at)) && (
                               <button
                                 onClick={() => {
                                   setAckModalPo(po);
                                   setAckNotes(`Order #PO-${po.id} accepted and confirmed for production.`);
                                 }}
-                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-black text-[10px] uppercase tracking-wider rounded border border-amber-200 transition-colors"
+                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] rounded border border-amber-200 transition cursor-pointer"
                                 title="Confirm Order / Acknowledgment"
                               >
-                                Confirm Order
+                                Confirm
                               </button>
                             )}
 
-                            {/* Action 2: Mark Ready for Pickup */}
+                            {/* Action: Mark Ready for Pickup */}
                             {(isPending || isDraft) && !isReadyPickup && (
                               <button
                                 onClick={() => onUpdateStatus(po.id, 'ready_for_pickup')}
-                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 font-black text-[10px] uppercase tracking-wider rounded border border-purple-200 transition-colors"
+                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 font-semibold text-[11px] rounded border border-purple-200 transition cursor-pointer"
                                 title="Vendor has packed order; ready for pickup"
                               >
-                                Mark Ready for Pickup
+                                Ready
                               </button>
                             )}
 
-                            {/* Action 3: Dispatch / Configure Logistics */}
+                            {/* Action: Dispatch / Configure Logistics */}
                             {!isReceived && po.status !== 'cancelled' && (
                               <button
                                 onClick={() => handleOpenLogistics(po)}
-                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-black text-[10px] uppercase tracking-wider rounded border border-blue-200 transition-colors flex items-center gap-1"
+                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] rounded border border-blue-200 transition cursor-pointer flex items-center gap-1"
                                 title="Configure Direct Delivery or Warehouse Pickup Logistics"
                               >
-                                <Truck size={11} /> {isInTransit ? 'Edit Logistics' : 'Dispatch / Pickup'}
+                                <Truck size={11} /> {isInTransit ? 'Logistics' : 'Dispatch'}
                               </button>
                             )}
 
-                            {/* Action 4: Receive & Stock */}
+                            {/* Action: Print Formal PO Document */}
+                            <button
+                              onClick={() => setDocumentModalPo(po)}
+                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] rounded border border-slate-200 transition cursor-pointer flex items-center gap-1"
+                              title="View & Print Official Purchase Order Document"
+                            >
+                              <Printer size={11} className="text-blue-600" />
+                              <span className="hidden sm:inline">Print</span>
+                            </button>
+
+                            {/* Action: Receive & Stock via GRN */}
                             {!isReceived && po.status !== 'cancelled' && (
                               <button
-                                onClick={() => onUpdateStatus(po.id, 'received')}
-                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-[10px] uppercase tracking-wider rounded transition-colors shadow-2xs flex items-center gap-1"
-                                title="Goods physically received, verified & stocked into inventory"
+                                onClick={() => setReceiveModalPo(po)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-semibold text-[11px] rounded transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                                title="Goods physically received, verified & stocked into inventory with GRN"
                               >
-                                <CheckCircle2 size={11} /> Receive & Stock
+                                <CheckCircle2 size={11} /> Receive
                               </button>
                             )}
 
@@ -570,7 +738,7 @@ export default function POManagement({
                                     onUpdateStatus(po.id, 'cancelled');
                                   }
                                 }}
-                                className="p-1 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded"
+                                className="p-1 hover:bg-rose-50 text-slate-300 hover:text-rose-600 rounded transition cursor-pointer"
                                 title="Cancel PO"
                               >
                                 <X size={13} />
@@ -582,31 +750,31 @@ export default function POManagement({
 
                       {/* Expanded PO details: Line Items, Full Logistics & Attachments */}
                       {isExpanded && (
-                        <tr className="bg-slate-50/90 border-b border-slate-200">
-                          <td colSpan={7} className="p-4">
+                        <tr className="bg-slate-50/80 border-b border-slate-200">
+                          <td colSpan={8} className="p-5">
                             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                               {/* Order Line Items */}
                               <div className="md:col-span-2 space-y-2">
-                                <div className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center justify-between">
+                                <div className="text-[11px] font-bold uppercase tracking-wider text-slate-600 flex items-center justify-between">
                                   <span>Order Line Items ({po.items?.length || 0})</span>
                                   <span>Expected Delivery: {po.expected_date ? new Date(po.expected_date).toLocaleDateString() : 'Standard SLA'}</span>
                                 </div>
-                                <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-48 overflow-y-auto">
+                                <div className="bg-white rounded-lg border border-slate-200 divide-y divide-slate-100 max-h-48 overflow-y-auto shadow-2xs">
                                   {po.items && po.items.length > 0 ? (
                                     po.items.map((item, iIdx) => (
-                                      <div key={iIdx} className="p-2.5 flex items-center justify-between text-xs">
+                                      <div key={iIdx} className="p-3 flex items-center justify-between text-xs hover:bg-slate-50/50">
                                         <div>
-                                          <span className="font-bold text-slate-900 block">{item.product_name}</span>
+                                          <span className="font-semibold text-slate-900 block">{item.product_name}</span>
                                           <span className="text-[10px] font-mono text-slate-400">SKU: {item.sku}</span>
                                         </div>
                                         <div className="text-right">
-                                          <span className="font-black text-slate-900 block">{item.quantity} units @ {formatGHS(item.unit_price)}</span>
-                                          <span className="text-[10px] text-blue-600 font-bold">{formatGHS(item.quantity * item.unit_price)}</span>
+                                          <span className="font-bold text-slate-900 block">{item.quantity} units @ {formatGHS(item.unit_price)}</span>
+                                          <span className="text-[11px] text-blue-600 font-semibold">{formatGHS(item.quantity * item.unit_price)}</span>
                                         </div>
                                       </div>
                                     ))
                                   ) : (
-                                    <div className="p-3 text-center text-slate-400 text-xs">No item details loaded for this PO.</div>
+                                    <div className="p-4 text-center text-slate-400 text-xs">No item details loaded for this PO.</div>
                                   )}
                                 </div>
                                 {po.notes && (
@@ -617,64 +785,64 @@ export default function POManagement({
                               </div>
 
                               {/* Logistics Summary Card */}
-                              <div className="bg-white p-3.5 rounded-lg border border-slate-200 space-y-2.5">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-[11px] font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                              <div className="bg-white p-4 rounded-lg border border-slate-200 space-y-3 shadow-2xs">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                  <span className="text-[11px] font-bold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
                                     <Truck size={14} className="text-blue-600" /> Logistics Profile
                                   </span>
                                   <button
                                     onClick={() => handleOpenLogistics(po)}
-                                    className="text-[10px] font-bold text-blue-600 hover:underline"
+                                    className="text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
                                   >
                                     Configure
                                   </button>
                                 </div>
 
-                                <div className="text-xs space-y-1.5 text-slate-700">
+                                <div className="text-xs space-y-2 text-slate-700">
                                   <div className="flex justify-between">
-                                    <span className="text-slate-400">Mode:</span>
-                                    <span className="font-bold capitalize">{po.fulfillment_mode === 'store_pickup' ? 'Store Pickup (Warehouse Fleet)' : 'Direct Delivery (Vendor Truck)'}</span>
+                                    <span className="text-slate-400">Fulfillment Mode:</span>
+                                    <span className="font-semibold capitalize">{po.fulfillment_mode === 'store_pickup' ? 'Warehouse Pickup' : 'Direct Delivery'}</span>
                                   </div>
 
                                   {po.driver_name && (
                                     <div className="flex justify-between">
-                                      <span className="text-slate-400">Driver / Fleet:</span>
-                                      <span className="font-bold">{po.driver_name}</span>
+                                      <span className="text-slate-400">Driver / Carrier:</span>
+                                      <span className="font-semibold">{po.driver_name}</span>
                                     </div>
                                   )}
 
                                   {po.driver_phone && (
                                     <div className="flex justify-between">
-                                      <span className="text-slate-400">Driver Phone:</span>
-                                      <span className="font-bold">{po.driver_phone}</span>
+                                      <span className="text-slate-400">Contact:</span>
+                                      <span className="font-semibold">{po.driver_phone}</span>
                                     </div>
                                   )}
 
                                   {po.vehicle_number && (
                                     <div className="flex justify-between">
                                       <span className="text-slate-400">Vehicle Reg:</span>
-                                      <span className="font-mono font-bold">{po.vehicle_number}</span>
+                                      <span className="font-mono font-semibold">{po.vehicle_number}</span>
                                     </div>
                                   )}
 
                                   {po.eta_window && (
                                     <div className="flex justify-between">
                                       <span className="text-slate-400">ETA Window:</span>
-                                      <span className="font-bold text-blue-700">{po.eta_window}</span>
+                                      <span className="font-semibold text-blue-700">{po.eta_window}</span>
                                     </div>
                                   )}
 
                                   {po.dock_slot && (
                                     <div className="flex justify-between">
                                       <span className="text-slate-400">Dock Slot:</span>
-                                      <span className="font-bold text-emerald-700">{po.dock_slot}</span>
+                                      <span className="font-semibold text-emerald-700">{po.dock_slot}</span>
                                     </div>
                                   )}
 
                                   {po.pickup_code && (
                                     <div className="flex justify-between">
                                       <span className="text-slate-400">Pickup Code:</span>
-                                      <span className="font-mono font-black text-purple-700">{po.pickup_code}</span>
+                                      <span className="font-mono font-bold text-purple-700">{po.pickup_code}</span>
                                     </div>
                                   )}
                                 </div>
@@ -1043,6 +1211,28 @@ export default function POManagement({
             </form>
           </div>
         </div>
+      )}
+
+      {/* PO Document Viewer & Print Modal */}
+      {documentModalPo && (
+        <PODocumentModal
+          po={documentModalPo}
+          isOpen={!!documentModalPo}
+          onClose={() => setDocumentModalPo(null)}
+        />
+      )}
+
+      {/* Goods Receipt Note (GRN) Confirmation Modal */}
+      {receiveModalPo && (
+        <ReceivePOModal
+          po={receiveModalPo}
+          isOpen={!!receiveModalPo}
+          onClose={() => setReceiveModalPo(null)}
+          onConfirm={async (poId) => {
+            await onUpdateStatus(poId, 'received');
+            onRefresh();
+          }}
+        />
       )}
     </div>
   );

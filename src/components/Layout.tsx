@@ -150,7 +150,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Flat & Standalone Navigation Links
   const navItems: NavItemConfig[] = user?.role === 'supplier' ? [
-    { to: '/supplier-dashboard', icon: <Building2 size={18} />, label: 'Supplier Portal', badge: 'Vendor' },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders' },
     { to: '/products', icon: <Package size={18} />, label: 'Supplied Products' }
   ] : [
@@ -162,7 +161,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
-    { to: '/supplier-dashboard', icon: <Building2 size={18} />, label: 'Supplier Portal', adminOnly: true },
     { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
     { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
     { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },
@@ -306,7 +304,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full bg-slate-100 font-sans text-slate-900 overflow-hidden overscroll-none">
       {/* Desktop Sidebar (Fluid Flex layout with collapsible Navigation Slider) */}
-      <aside className={`hidden md:flex flex-col ${isNavCollapsed ? 'w-16' : 'w-56 lg:w-64'} bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl transition-all duration-300 ease-in-out`}>
+      <aside className={`hidden md:flex flex-col ${isNavCollapsed ? 'w-16' : 'w-56 lg:w-64'} bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl transition-all duration-300 ease-in-out print:hidden`}>
         {/* Brand Header */}
         <div className={`p-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center ${isNavCollapsed ? 'justify-center' : 'justify-between'} gap-2.5`}>
           <div className="flex items-center gap-2.5 min-w-0">
@@ -343,7 +341,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Mobile Drawer (Accessible on small screens) */}
       {mobileMenuOpen && (
         <div 
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex md:hidden animate-in fade-in duration-150"
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex md:hidden animate-in fade-in duration-150 print:hidden"
           onClick={() => setMobileMenuOpen(false)}
         >
           <div 
@@ -376,9 +374,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main Content Area (Fluid flex viewport with auto-fit container) */}
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-100 relative">
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-100 relative print:overflow-visible print:h-auto">
         {/* Top Header Bar - Always pinned and accessible */}
-        <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-xs border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs">
+        <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-xs border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs print:hidden">
           <div className="flex items-center gap-3 min-w-0">
             {/* Mobile Hamburger Menu Button */}
             <button
@@ -537,9 +535,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Page Body Viewport (Fluid & responsive without hardcoded pixel widths, scroll contained) */}
         <div 
           id="main-content-scroll" 
-          className="flex-1 overflow-y-auto overscroll-contain overscroll-y-contain px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 2xl:px-10 custom-scrollbar"
+          className="flex-1 overflow-y-auto overscroll-contain overscroll-y-contain px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 2xl:px-10 custom-scrollbar print:overflow-visible print:p-0 print:m-0"
         >
-          <div className="w-full max-w-[1680px] mx-auto min-w-0">
+          <div className="w-full max-w-[1680px] mx-auto min-w-0 print:max-w-none print:w-full">
             {children}
           </div>
         </div>

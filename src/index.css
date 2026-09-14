@@ -64,4 +64,41 @@ body {
   background: rgba(100, 116, 139, 0.6);
 }
 
+/* ================= PRINT MEDIA STYLES ================= */
+@media print {
+  /* Strictly hide all application navigation, headers, and UI chrome */
+  aside,
+  header,
+  nav,
+  #sidebar,
+  #topbar,
+  #mobile-menu-toggle-btn,
+  .no-print,
+  [data-print-hide="true"] {
+    display: none !important;
+    visibility: hidden !important;
+  }
+
+  /* Reset layout constraints for full printer page flow */
+  html, body, #root, main {
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Ensure print receipts and invoices expand cleanly */
+  #invoice-print-area {
+    visibility: visible !important;
+    margin: 0 auto !important;
+    box-shadow: none !important;
+    border: none !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+  }
+}
+
 

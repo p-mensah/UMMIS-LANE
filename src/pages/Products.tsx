@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
+import BulkCsvProductModal from '../components/BulkCsvProductModal';
 
 interface Product {
   id: number;
@@ -28,6 +29,7 @@ export default function Products() {
 
   const [products, setProducts] = useState<Product[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
+  const [searchScope, setSearchScope] = useState<'all' | 'name' | 'sku'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam);
   const [loading, setLoading] = useState(true);
   const [categories, setCategories] = useState<any[]>([]);
@@ -59,6 +61,7 @@ export default function Products() {
   const [deletingProductId, setDeletingProductId] = useState<number | null>(null);
 
   const [showImportModal, setShowImportModal] = useState(false);
+  const [showBulkCsvModal, setShowBulkCsvModal] = useState(false);
   const [showBulkModal, setShowBulkModal] = useState(false);
   const [bulkMode, setBulkMode] = useState<'update' | 'import'>('update');
   const [bulkFile, setBulkFile] = useState<File | null>(null);
@@ -408,40 +411,198 @@ export default function Products() {
     reader.readAsText(bulkFile);
   };
 
-  const filteredProducts = products.filter(p => {
+  const lowStockCount = useMemo(() => {
+    return products.filter(p => p.stock_quantity <= (p.min_stock_level ?? 10)).length;
+  }, [products]);
+
+  const filteredProducts = useMemo(() => {
     const q = searchQuery.toLowerCase().trim();
-    const matchesSearch = !q || (
-      (p.name && p.name.toLowerCase().includes(q)) ||
-      (p.sku && p.sku.toLowerCase().includes(q)) ||
-      (p.barcode && p.barcode.toLowerCase().includes(q)) ||
-      (p.brand && p.brand.toLowerCase().includes(q))
-    );
+    const cleanQ = q.replace(/[^a-z0-9]/gi, '');
 
-    const matchesCategory = !selectedCategory || selectedCategory === 'ALL' ||
-      (p.category && p.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase());
+    return products.filter(p => {
+      // 1. Category filter
+      const matchesCategory = !selectedCategory || selectedCategory === 'ALL' ||
+        (p.category && p.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase());
 
-    return matchesSearch && matchesCategory;
-  });
+      if (!matchesCategory) return false;
+
+      // 2. Real-time Search filter (by name or SKU)
+      if (!q) return true;
+
+      const nameLower = (p.name || '').toLowerCase();
+      const skuLower = (p.sku || '').toLowerCase();
+      const skuClean = skuLower.replace(/[^a-z0-9]/gi, '');
+      const barcodeLower = (p.barcode || '').toLowerCase();
+
+      if (searchScope === 'name') {
+        const words = q.split(/\s+/).filter(Boolean);
+        return words.every(w => nameLower.includes(w));
+      }
+
+      if (searchScope === 'sku') {
+        return skuLower.includes(q) || (cleanQ.length > 0 && skuClean.includes(cleanQ));
+      }
+
+      // 'all': matches either Product Name OR SKU (also checks barcode)
+      const words = q.split(/\s+/).filter(Boolean);
+      const wordsMatchName = words.every(w => nameLower.includes(w));
+      const matchesSku = skuLower.includes(q) || (cleanQ.length > 0 && skuClean.includes(cleanQ));
+      const matchesBarcode = barcodeLower.includes(q);
+
+      return wordsMatchName || matchesSku || matchesBarcode;
+    });
+  }, [products, searchQuery, searchScope, selectedCategory]);
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 mb-6">
-        <div>
-          <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Products Catalog</h1>
-          <p className="text-[12px] text-slate-500 font-medium mt-0.5">
-            Showing <strong className="text-slate-800">{filteredProducts.length}</strong> of <strong className="text-slate-800">{products.length}</strong> total products
-            {selectedCategory && selectedCategory !== 'ALL' && (
-              <span className="text-blue-600 font-bold ml-1">in category "{selectedCategory}"</span>
-            )}
-          </p>
+      {/* SOLID BLUE PAGE HEADER (No gradient) */}
+      <div id="products-page-header" className="bg-blue-600 text-white rounded-lg p-5 shadow-sm border border-blue-700/50">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-start sm:items-center gap-3.5">
+            <div className="w-11 h-11 rounded-lg bg-blue-700/80 border border-blue-500/50 flex items-center justify-center text-white shrink-0 shadow-xs">
+              <Package size={22} className="text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
+                  Products Catalog
+                </h1>
+                <span className="px-2 py-0.5 bg-blue-700/90 text-blue-100 rounded text-[11px] font-bold border border-blue-500/40">
+                  {products.length} Products
+                </span>
+                {lowStockCount > 0 && (
+                  <span className="px-2 py-0.5 bg-amber-500 text-slate-900 rounded text-[11px] font-black shadow-2xs">
+                    {lowStockCount} Low/Out of Stock
+                  </span>
+                )}
+              </div>
+              <p className="text-xs text-blue-100 font-medium mt-0.5">
+                Manage inventory stock levels, barcode tracking, retail pricing, and supplier reorder points
+              </p>
+            </div>
+          </div>
+
+          {/* Action buttons with clean contrast against the blue background */}
+          {user?.role === 'admin' && (
+            <div className="flex items-center flex-wrap gap-2">
+              <button 
+                type="button"
+                onClick={openNew} 
+                className="flex items-center justify-center px-3.5 py-2 bg-white text-blue-900 hover:bg-blue-50 rounded font-black text-xs uppercase tracking-wider transition shadow-sm cursor-pointer active:scale-95"
+              >
+                <Plus size={15} className="mr-1 text-blue-700" /> Add Product
+              </button>
+              <button 
+                type="button"
+                onClick={() => setShowBulkCsvModal(true)}
+                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                title="Add multiple products at once via simple CSV-like text input area"
+              >
+                <FileSpreadsheet size={14} className="mr-1.5 text-blue-200" /> Bulk Add (CSV)
+              </button>
+              <button 
+                type="button"
+                onClick={() => {
+                  setShowBulkModal(true);
+                  setBulkMode('update');
+                  setBulkFile(null);
+                  setParsedImportProducts([]);
+                  setBulkStatus(null);
+                }}
+                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+              >
+                <Upload size={14} className="mr-1.5 text-blue-200" /> Bulk Update
+              </button>
+              <button 
+                type="button"
+                onClick={() => setShowImportModal(true)}
+                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+              >
+                <Table size={14} className="mr-1.5 text-blue-200" /> Import
+              </button>
+              <button 
+                type="button"
+                onClick={exportCatalogToCSV}
+                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+              >
+                <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV
+              </button>
+            </div>
+          )}
         </div>
-        <div className="flex flex-col sm:flex-row items-center gap-3 w-full sm:w-auto">
+      </div>
+
+      {/* ROBUST REAL-TIME SEARCH & FILTER TOOLBAR */}
+      <div className="bg-white border border-slate-200 rounded-lg p-3.5 sm:p-4 shadow-xs space-y-3">
+        <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
+          {/* Real-time search field */}
+          <div className="relative flex-1 group">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-blue-600 transition-colors" size={18} />
+            <input
+              type="text"
+              id="products-search-input"
+              placeholder="Search products in real-time by Name or SKU (e.g. 'Ideal Milk', 'MLK-160')..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full border-2 border-slate-200 focus:border-blue-600 rounded-lg pl-11 pr-24 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-slate-50/50 transition-all"
+            />
+            {/* Quick clear & live match counter pill */}
+            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
+              {searchQuery && (
+                <button 
+                  type="button"
+                  onClick={() => setSearchQuery('')}
+                  className="px-1.5 py-0.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  title="Clear search"
+                >
+                  <X size={14} />
+                  <span className="text-[11px]">Clear</span>
+                </button>
+              )}
+              <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+                {filteredProducts.length} {filteredProducts.length === 1 ? 'match' : 'matches'}
+              </span>
+            </div>
+          </div>
+
+          {/* Search scope toggles: All vs Product Name vs SKU */}
+          <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg border border-slate-200 text-xs font-bold shrink-0">
+            <span className="text-[11px] text-slate-500 px-1.5 font-semibold hidden sm:inline">Filter by:</span>
+            <button
+              type="button"
+              onClick={() => setSearchScope('all')}
+              className={`px-2.5 py-1 rounded transition cursor-pointer text-xs font-black ${
+                searchScope === 'all' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchScope('name')}
+              className={`px-2.5 py-1 rounded transition cursor-pointer text-xs font-black ${
+                searchScope === 'name' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Product Name
+            </button>
+            <button
+              type="button"
+              onClick={() => setSearchScope('sku')}
+              className={`px-2.5 py-1 rounded transition cursor-pointer text-xs font-black ${
+                searchScope === 'sku' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              SKU
+            </button>
+          </div>
+
           {/* Category Filter Selector */}
-          <div className="relative w-full sm:w-auto">
+          <div className="relative shrink-0 min-w-[190px]">
             <select
               value={selectedCategory || 'ALL'}
               onChange={(e) => handleCategoryChange(e.target.value)}
-              className="w-full sm:w-auto border border-slate-200 rounded-sm pl-8 pr-7 py-2 text-[13px] font-bold text-slate-700 bg-white shadow-sm focus:outline-none focus:border-blue-500 cursor-pointer hover:bg-slate-50 transition-colors"
+              className="w-full border-2 border-slate-200 rounded-lg pl-8 pr-8 py-2 text-xs font-bold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:border-blue-600 cursor-pointer transition-colors"
             >
               <option value="ALL">All Categories ({products.length})</option>
               {categories.map((c) => {
@@ -455,90 +616,48 @@ export default function Products() {
             </select>
             <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
-
-          <div className="relative w-full sm:w-72 group">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 group-focus-within:text-blue-500 transition-colors" size={16} />
-            <input
-              type="text"
-              placeholder="Search Name, SKU, or Barcode..."
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full border border-slate-200 rounded-sm pl-10 pr-10 py-2 text-[13px] focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500/20 bg-white shadow-sm transition-all"
-            />
-            {searchQuery && (
-              <button 
-                onClick={() => setSearchQuery('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-300 hover:text-slate-500 transition-colors"
-                title="Clear Search"
-              >
-                <Plus size={16} className="rotate-45" />
-              </button>
-            )}
-          </div>
-
-          {user?.role === 'admin' && (
-            <>
-              <button 
-                type="button"
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center justify-center px-3.5 py-2 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 hover:border-blue-300 rounded-sm font-bold text-[13px] transition shadow-xs w-full sm:w-auto"
-                title="Upload or paste structured product list to quickly populate catalog"
-              >
-                <Table size={15} className="mr-1.5 text-blue-600" /> Import List
-              </button>
-              <button 
-                type="button"
-                onClick={exportCatalogToCSV}
-                className="flex items-center justify-center px-3.5 py-2 bg-white border border-slate-200 text-slate-700 rounded-sm font-bold text-[13px] hover:bg-slate-50 transition shadow-sm w-full sm:w-auto"
-                title="Export current store product catalog to CSV"
-              >
-                <Download size={15} className="mr-1.5 text-slate-500" /> Export CSV
-              </button>
-              <button 
-                type="button"
-                onClick={() => {
-                  setShowBulkModal(true);
-                  setBulkMode('update');
-                  setBulkFile(null);
-                  setParsedImportProducts([]);
-                  setBulkStatus(null);
-                }}
-                className="flex items-center justify-center px-4 py-2 bg-blue-600 text-white rounded-sm font-bold text-[13px] hover:bg-blue-700 transition shadow-sm w-full sm:w-auto"
-              >
-                <Upload size={16} className="mr-2" /> Bulk Update
-              </button>
-              <button 
-                onClick={openNew} 
-                className="flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-sm font-bold text-[13px] hover:bg-slate-800 transition shadow-sm active:scale-95 w-full sm:w-auto"
-              >
-                <Plus size={16} className="mr-2" /> Add Product
-              </button>
-            </>
-          )}
         </div>
+
+        {/* Real-time search status indicator if active */}
+        {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (
+          <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="font-semibold text-slate-700">Active Filter:</span>
+              {searchQuery && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                  <span>{searchScope === 'name' ? 'Name:' : searchScope === 'sku' ? 'SKU:' : 'Keyword:'}</span>
+                  <span className="text-slate-900 font-mono font-black">"{searchQuery}"</span>
+                  <button type="button" onClick={() => setSearchQuery('')} className="hover:text-red-600 ml-0.5 cursor-pointer">
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              {selectedCategory && selectedCategory !== 'ALL' && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
+                  <span>Category: {selectedCategory}</span>
+                  <button type="button" onClick={() => handleCategoryChange('ALL')} className="hover:text-red-600 ml-0.5 cursor-pointer">
+                    <X size={12} />
+                  </button>
+                </span>
+              )}
+              <span className="text-slate-500 font-medium">
+                — Showing {filteredProducts.length} of {products.length} items
+              </span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                handleCategoryChange('ALL');
+              }}
+              className="text-[11px] font-bold text-slate-500 hover:text-red-600 underline cursor-pointer"
+            >
+              Reset all filters
+            </button>
+          </div>
+        )}
       </div>
-
-      {/* Active Category Filter Callout */}
-      {selectedCategory && selectedCategory !== 'ALL' && (
-        <div className="bg-blue-50 border border-blue-200/90 rounded px-3.5 py-2 flex items-center justify-between text-xs text-blue-900">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Tag size={14} className="text-blue-600" />
-            <span className="font-semibold text-blue-800">Active Category:</span>
-            <span className="px-2.5 py-0.5 bg-blue-600 text-white rounded font-black uppercase tracking-wide text-[11px] shadow-2xs">
-              {selectedCategory}
-            </span>
-            <span className="text-blue-700 font-bold ml-1">
-              — Displaying {filteredProducts.length} matching product(s)
-            </span>
-          </div>
-          <button
-            onClick={() => handleCategoryChange('ALL')}
-            className="px-2.5 py-1 bg-white hover:bg-rose-50 text-slate-700 hover:text-rose-600 border border-slate-200 hover:border-rose-200 rounded font-bold text-[11px] transition flex items-center gap-1 shadow-2xs cursor-pointer"
-          >
-            <X size={12} /> Clear Category Filter
-          </button>
-        </div>
-      )}
 
       <div className="bg-white border border-slate-200 rounded-sm overflow-x-auto min-h-[300px]">
         <table className="min-w-full divide-y divide-slate-200">
@@ -557,7 +676,40 @@ export default function Products() {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
-            {filteredProducts.map(p => (
+            {filteredProducts.length === 0 ? (
+              <tr>
+                <td colSpan={10} className="py-16 text-center">
+                  <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-500 space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+                      <PackageSearch size={24} />
+                    </div>
+                    <div>
+                      <p className="text-sm font-black text-slate-800">
+                        {searchQuery ? `No products matching "${searchQuery}"` : 'No products found'}
+                      </p>
+                      <p className="text-xs text-slate-500 mt-1">
+                        {searchQuery 
+                          ? `We couldn't find any products with ${searchScope === 'sku' ? 'SKU' : searchScope === 'name' ? 'name' : 'name or SKU'} matching your search.`
+                          : 'No items currently in catalog. Use "+ Add Product" or "Bulk Add (CSV)" to add products.'}
+                      </p>
+                    </div>
+                    {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearchQuery('');
+                          handleCategoryChange('ALL');
+                        }}
+                        className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition shadow-xs cursor-pointer"
+                      >
+                        Clear Search & Filters
+                      </button>
+                    )}
+                  </div>
+                </td>
+              </tr>
+            ) : (
+              filteredProducts.map(p => (
               <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-5 py-3 whitespace-nowrap text-[13px]">
                    {p.image_url ? (
@@ -651,29 +803,8 @@ export default function Products() {
                   )}
                 </td>
               </tr>
-            ))}
-            {filteredProducts.length === 0 && !loading && (
-              <tr>
-                <td colSpan={10} className="px-5 py-8 text-center text-slate-500 text-[13px] italic">
-                   {searchQuery ? (
-                     <span>No products found matching <strong className="text-slate-900 font-black">"{searchQuery}"</strong>{selectedCategory && selectedCategory !== 'ALL' ? ` in category "${selectedCategory}"` : ''}</span>
-                   ) : selectedCategory && selectedCategory !== 'ALL' ? (
-                     <div className="space-y-2">
-                       <p>No products assigned to category <strong className="text-slate-900 font-bold">"{selectedCategory}"</strong> yet.</p>
-                       <button
-                         type="button"
-                         onClick={() => handleCategoryChange('ALL')}
-                         className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-xs inline-block transition-colors"
-                       >
-                         Show All Categories ({products.length})
-                       </button>
-                     </div>
-                   ) : (
-                     "No products found in catalog. Click 'Add Product' to begin."
-                   )}
-                </td>
-              </tr>
-            )}
+            ))
+          )}
           </tbody>
         </table>
       </div>
@@ -1070,6 +1201,14 @@ export default function Products() {
           onSuccess={loadProducts}
         />
       )}
+
+      {/* Bulk Add Products via CSV Text Modal */}
+      <BulkCsvProductModal
+        isOpen={showBulkCsvModal}
+        onClose={() => setShowBulkCsvModal(false)}
+        onSuccess={loadProducts}
+        availableCategories={categories}
+      />
 
     </div>
   );

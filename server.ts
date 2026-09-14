@@ -2121,8 +2121,110 @@ app.get('/api/purchases', authenticate, (req: any, res) => {
 
     sql += ` ORDER BY p.created_at DESC`;
 
-    const purchases = db.prepare(sql).all(...params);
+    const purchases = db.prepare(sql).all(...params) as any[];
+    const getItems = db.prepare(`
+      SELECT pi.*, prod.name as product_name, prod.sku, prod.category
+      FROM purchase_items pi
+      JOIN products prod ON pi.product_id = prod.id
+      WHERE pi.purchase_id = ?
+    `);
+    for (const p of purchases) {
+      try {
+        p.items = getItems.all(p.id);
+      } catch {
+        p.items = [];
+      }
+    }
     res.json(purchases);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/purchases/:id', authenticate, (req: any, res) => {
+  const { 
+    supplier_name, supplier_contact, items, notes, expected_date,
+    fulfillment_mode, driver_name, driver_phone, vehicle_number, dock_slot, 
+    dock_time_window, pickup_address, eta_window 
+  } = req.body;
+
+  try {
+    const existing: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Purchase order not found' });
+    if (existing.status === 'received') {
+      return res.status(400).json({ error: 'Cannot modify a Purchase Order that is already received and fulfilled.' });
+    }
+
+    db.transaction(() => {
+      let total_amount = existing.total_amount;
+      if (items && Array.isArray(items) && items.length > 0) {
+        total_amount = items.reduce((sum: number, item: any) => sum + (Number(item.quantity) * Number(item.unit_price)), 0);
+        db.prepare('DELETE FROM purchase_items WHERE purchase_id = ?').run(req.params.id);
+        const insertItem = db.prepare('INSERT INTO purchase_items (purchase_id, product_id, quantity, unit_price) VALUES (?, ?, ?, ?)');
+        for (const it of items) {
+          insertItem.run(req.params.id, it.product_id, Number(it.quantity), Number(it.unit_price));
+        }
+      }
+
+      db.prepare(`
+        UPDATE purchases SET
+          supplier_name = COALESCE(?, supplier_name),
+          supplier_contact = COALESCE(?, supplier_contact),
+          total_amount = ?,
+          notes = COALESCE(?, notes),
+          expected_date = COALESCE(?, expected_date),
+          fulfillment_mode = COALESCE(?, fulfillment_mode),
+          driver_name = COALESCE(?, driver_name),
+          driver_phone = COALESCE(?, driver_phone),
+          vehicle_number = COALESCE(?, vehicle_number),
+          dock_slot = COALESCE(?, dock_slot),
+          dock_time_window = COALESCE(?, dock_time_window),
+          pickup_address = COALESCE(?, pickup_address),
+          eta_window = COALESCE(?, eta_window)
+        WHERE id = ?
+      `).run(
+        supplier_name || null, supplier_contact || null, total_amount, notes || null, expected_date || null,
+        fulfillment_mode || null, driver_name || null, driver_phone || null, vehicle_number || null, dock_slot || null,
+        dock_time_window || null, pickup_address || null, eta_window || null, req.params.id
+      );
+    })();
+
+    logAuditEvent(
+      req.user.id, 
+      req.user.name, 
+      'Updated Purchase Order', 
+      'stock', 
+      `Updated PO #PO-${req.params.id} details.`
+    );
+
+    res.json({ success: true, message: 'Purchase Order updated successfully' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/purchases/:id', authenticate, (req: any, res) => {
+  try {
+    const existing: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!existing) return res.status(404).json({ error: 'Purchase order not found' });
+    if (existing.status === 'received') {
+      return res.status(400).json({ error: 'Cannot delete a fulfilled/received purchase order. Cancel or adjust stock instead.' });
+    }
+
+    db.transaction(() => {
+      db.prepare('DELETE FROM purchase_items WHERE purchase_id = ?').run(req.params.id);
+      db.prepare('DELETE FROM purchases WHERE id = ?').run(req.params.id);
+    })();
+
+    logAuditEvent(
+      req.user.id, 
+      req.user.name, 
+      'Deleted Purchase Order', 
+      'stock', 
+      `Deleted PO #PO-${req.params.id} (Supplier: ${existing.supplier_name})`
+    );
+
+    res.json({ success: true, message: 'Purchase order removed.' });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -3159,6 +3261,9 @@ app.get('/api/reports/low-stock', authenticate, (req, res) => {
   try {
     const thresholdRow: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
     const threshold = parseInt(thresholdRow?.value || '10', 10);
+
+    // Automatically trigger notification creation for products below threshold
+    checkStockAlerts();
 
     const lowStock = db.prepare(`
       SELECT 
