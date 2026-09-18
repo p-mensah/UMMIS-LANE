@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../lib/api';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { 
   User, Camera, Lock, Mail, Phone, ShieldCheck, Check, 
   AlertCircle, X, Loader2, KeyRound, Sparkles, Trash2, Building2
@@ -38,6 +39,8 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  useModalDismiss(isOpen, onClose);
 
   // Initialize or fetch latest profile
   useEffect(() => {
@@ -197,7 +200,14 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   const roleInfo = getRoleBadge(user.role);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+    <div 
+      className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden my-auto animate-in zoom-in-95 duration-150">
         
         {/* Header */}

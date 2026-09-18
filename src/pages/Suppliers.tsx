@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
+import { useNotifications } from '../context/NotificationContext';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { 
   Truck, Plus, Search, Edit, Trash2, X, RefreshCw, 
   Phone, Mail, MapPin, User, FileText, DollarSign, 
@@ -30,10 +32,15 @@ export default function Suppliers() {
   });
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
+  const { addToast, confirmModal } = useNotifications();
+
   // Supplier History Drawer/Modal
   const [historySupplier, setHistorySupplier] = useState<any | null>(null);
   const [historyPurchases, setHistoryPurchases] = useState<any[]>([]);
   const [historyLoading, setHistoryLoading] = useState<boolean>(false);
+
+  useModalDismiss(showModal, () => setShowModal(false));
+  useModalDismiss(historySupplier !== null, () => setHistorySupplier(null));
 
   useEffect(() => {
     loadData();
@@ -45,7 +52,13 @@ export default function Suppliers() {
       .then((data) => {
         if (Array.isArray(data)) setSuppliers(data);
       })
-      .catch(console.error)
+      .catch((err) => {
+        addToast({
+          type: 'danger',
+          title: 'Error Loading Suppliers',
+          message: err.message || 'Could not load suppliers.'
+        });
+      })
       .finally(() => setLoading(false));
   };
 
@@ -78,29 +91,59 @@ export default function Suppliers() {
           method: 'PUT',
           body: JSON.stringify(formData)
         });
+        addToast({
+          type: 'success',
+          title: 'Supplier Updated',
+          message: `Supplier "${formData.name.trim()}" has been updated.`
+        });
       } else {
         await fetchApi('/suppliers', {
           method: 'POST',
           body: JSON.stringify(formData)
         });
+        addToast({
+          type: 'success',
+          title: 'Supplier Added',
+          message: `Supplier "${formData.name.trim()}" was created successfully.`
+        });
       }
       setShowModal(false);
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to save supplier.');
+      addToast({
+        type: 'danger',
+        title: 'Save Failed',
+        message: err.message || 'Failed to save supplier.'
+      });
     } finally {
       setIsSubmitting(false);
     }
   };
 
   const handleDelete = async (id: number, name: string) => {
-    if (confirm(`Are you sure you want to delete supplier "${name}"?`)) {
-      try {
-        await fetchApi(`/suppliers/${id}`, { method: 'DELETE' });
-        loadData();
-      } catch (err: any) {
-        alert(err.message || 'Failed to delete supplier.');
-      }
+    const confirmed = await confirmModal({
+      title: 'Delete Supplier?',
+      message: `Are you sure you want to delete supplier "${name}"? This action cannot be undone.`,
+      confirmText: 'Delete Supplier',
+      type: 'danger'
+    });
+
+    if (!confirmed) return;
+
+    try {
+      await fetchApi(`/suppliers/${id}`, { method: 'DELETE' });
+      addToast({
+        type: 'success',
+        title: 'Supplier Deleted',
+        message: `Supplier "${name}" has been removed.`
+      });
+      loadData();
+    } catch (err: any) {
+      addToast({
+        type: 'danger',
+        title: 'Delete Failed',
+        message: err.message || 'Failed to delete supplier.'
+      });
     }
   };
 
@@ -114,7 +157,11 @@ export default function Suppliers() {
       setHistorySupplier(res.supplier);
       setHistoryPurchases(res.purchases || []);
     } catch (err: any) {
-      alert('Failed to load supplier purchase history: ' + err.message);
+      addToast({
+        type: 'danger',
+        title: 'History Failed',
+        message: 'Failed to load supplier purchase history: ' + err.message
+      });
     } finally {
       setHistoryLoading(false);
     }
@@ -480,14 +527,24 @@ export default function Suppliers() {
 
       {/* SUPPLIER CREATE / EDIT FORM MODAL */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded max-w-lg w-full p-6 border border-slate-200 shadow-xl space-y-5">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl max-w-lg w-full p-6 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                 <Truck size={18} className="text-blue-600" />
                 {editingSupplier ? 'Update Supplier Record' : 'Register New Vendor Supplier'}
               </h2>
-              <button onClick={() => setShowModal(false)} className="text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={() => setShowModal(false)} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
+              >
                 <X size={18} />
               </button>
             </div>
@@ -584,8 +641,15 @@ export default function Suppliers() {
 
       {/* SUPPLIER PURCHASE HISTORY DRAWER / MODAL */}
       {(historySupplier || historyLoading) && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded max-w-2xl w-full p-6 border border-slate-200 shadow-xl space-y-4 max-h-[85vh] flex flex-col">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setHistorySupplier(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl max-w-2xl w-full p-6 border border-slate-200 shadow-2xl space-y-4 max-h-[85vh] flex flex-col animate-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
               <div>
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">

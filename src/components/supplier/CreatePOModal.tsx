@@ -2,6 +2,8 @@ import React, { useState, useEffect } from 'react';
 import { formatGHS } from '../../lib/formatters';
 import { validators } from '../../lib/validation';
 import { FormField, ValidatedInput, ValidatedSelect, ValidatedTextarea } from '../common/FormField';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   Plus,
   Trash2,
@@ -77,6 +79,9 @@ export default function CreatePOModal({
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const { addToast } = useNotifications();
+  useModalDismiss(isOpen, onClose);
 
   // Initialize line items
   useEffect(() => {
@@ -156,7 +161,7 @@ export default function CreatePOModal({
   // Add an item to the PO line items
   const handleAddLineItem = () => {
     if (!selectedProductId) {
-      alert('Please select a product from the catalog');
+      addToast('Please select a product from the catalog', 'warning');
       return;
     }
     const prod = catalog.find((c) => c.id === Number(selectedProductId));
@@ -244,14 +249,23 @@ export default function CreatePOModal({
       });
       onClose();
     } catch (err: any) {
-      alert(err.message || 'Failed to issue purchase order');
+      addToast(err.message || 'Failed to issue purchase order', 'error');
     } finally {
       setIsSubmitting(false);
     }
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+    <div 
+      className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl overflow-hidden my-auto animate-in zoom-in-95 duration-150 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between shrink-0">

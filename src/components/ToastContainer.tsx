@@ -56,8 +56,11 @@ function ToastItem({ toast, onDismiss }: { key?: string; toast: Toast; onDismiss
     }
   }, [progress, toast.id, onDismiss]);
 
-  // Determine one of 3 colors: 'critical' (Red), 'warning' (Amber), 'info' (Slate)
-  const getSemanticType = (): 'critical' | 'warning' | 'info' => {
+  // Determine color semantic: 'critical' (Red), 'warning' (Amber), 'success' (Emerald), 'info' (Slate)
+  const getSemanticType = (): 'critical' | 'warning' | 'success' | 'info' => {
+    if (toast.type === 'success') {
+      return 'success';
+    }
     const text = ((toast.title || '') + ' ' + (toast.message || '')).toLowerCase();
     if (toast.type === 'danger' || text.includes('out of stock') || text.includes('critical') || text.includes('error')) {
       return 'critical';
@@ -78,13 +81,18 @@ function ToastItem({ toast, onDismiss }: { key?: string; toast: Toast; onDismiss
   if (semanticType === 'critical') {
     cardClasses = 'bg-white border-rose-400 text-rose-950 shadow-lg shadow-rose-950/5';
     badgeClasses = 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
-    badgeText = 'CRITICAL';
+    badgeText = 'ERROR';
     progressBg = 'bg-rose-600';
   } else if (semanticType === 'warning') {
     cardClasses = 'bg-white border-amber-400 text-amber-950 shadow-lg shadow-amber-950/5';
     badgeClasses = 'bg-amber-100 text-amber-800 border-amber-300 font-bold';
     badgeText = 'WARNING';
     progressBg = 'bg-amber-500';
+  } else if (semanticType === 'success') {
+    cardClasses = 'bg-white border-emerald-400 text-emerald-950 shadow-lg shadow-emerald-950/5';
+    badgeClasses = 'bg-emerald-100 text-emerald-800 border-emerald-300 font-bold';
+    badgeText = 'SUCCESS';
+    progressBg = 'bg-emerald-600';
   }
 
   return (

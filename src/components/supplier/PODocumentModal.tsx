@@ -1,5 +1,7 @@
 import React from 'react';
 import { formatGHS } from '../../lib/formatters';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   Printer,
   Download,
@@ -65,6 +67,9 @@ interface PODocumentModalProps {
 }
 
 export default function PODocumentModal({ po, isOpen, onClose }: PODocumentModalProps) {
+  const { addToast } = useNotifications();
+  useModalDismiss(isOpen, onClose);
+
   if (!isOpen || !po) return null;
 
   const handlePrint = () => {
@@ -73,7 +78,7 @@ export default function PODocumentModal({ po, isOpen, onClose }: PODocumentModal
 
   const handleExportCSV = () => {
     if (!po.items || po.items.length === 0) {
-      alert('No items in this purchase order to export.');
+      addToast('No items in this purchase order to export.', 'warning');
       return;
     }
 
@@ -100,7 +105,14 @@ export default function PODocumentModal({ po, isOpen, onClose }: PODocumentModal
   const totalItemsCount = po.items ? po.items.reduce((sum, item) => sum + item.quantity, 0) : (po.total_units || 0);
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150">
+    <div 
+      className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-3xl overflow-hidden my-auto animate-in zoom-in-95 duration-150 print:m-0 print:p-0 print:border-none print:shadow-none print:max-w-none">
         {/* Action Header - Hidden during print */}
         <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between print:hidden">

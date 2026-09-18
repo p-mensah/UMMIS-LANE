@@ -2,6 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { formatGHS } from '../lib/formatters';
 import { 
   FolderTree, Plus, Search, Edit, Trash2, X, RefreshCw, 
@@ -19,12 +21,23 @@ export default function Categories() {
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterType, setFilterType] = useState<'all' | 'with_products' | 'empty'>('all');
 
+  const { addToast, confirmModal } = useNotifications();
+
   // Modal State
   const [showModal, setShowModal] = useState<boolean>(false);
   const [editingCategory, setEditingCategory] = useState<any>(null);
   const [name, setName] = useState<string>('');
   const [parentId, setParentId] = useState<string>('');
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+
+  const handleClose = () => {
+    setShowModal(false);
+    setEditingCategory(null);
+    setName('');
+    setParentId('');
+  };
+
+  useModalDismiss(showModal, handleClose);
 
   useEffect(() => {
     loadData();
@@ -36,7 +49,13 @@ export default function Categories() {
       .then((data) => {
         if (Array.isArray(data)) setCategories(data);
       })
-      .catch(console.error)
+      .catch((err) => {
+        addToast({
+          type: 'danger',
+          title: 'Error Loading Categories',
+          message: err.message || 'Could not load product categories.'
+        });
+      })
       .finally(() => setLoading(false));
   };
 
@@ -51,16 +70,30 @@ export default function Categories() {
           method: 'PUT',
           body: JSON.stringify({ name: name.trim(), parent_id: parentId || null })
         });
+        addToast({
+          type: 'success',
+          title: 'Category Updated',
+          message: `Category "${name.trim()}" was updated successfully.`
+        });
       } else {
         await fetchApi('/categories', {
           method: 'POST',
           body: JSON.stringify({ name: name.trim(), parent_id: parentId || null })
         });
+        addToast({
+          type: 'success',
+          title: 'Category Created',
+          message: `Category "${name.trim()}" has been added.`
+        });
       }
       handleClose();
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to save category.');
+      addToast({
+        type: 'danger',
+        title: 'Save Failed',
+        message: err.message || 'Failed to save category.'
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -74,21 +107,30 @@ export default function Categories() {
   };
 
   const handleDelete = async (id: number, catName: string) => {
-    if (confirm(`Are you sure you want to delete the category "${catName}"?`)) {
-      try {
-        await fetchApi(`/categories/${id}`, { method: 'DELETE' });
-        loadData();
-      } catch (err: any) {
-        alert(err.message || 'Failed to delete category.');
-      }
-    }
-  };
+    const confirmed = await confirmModal({
+      title: 'Delete Category?',
+      message: `Are you sure you want to delete category "${catName}"? This action cannot be undone.`,
+      confirmText: 'Delete Category',
+      type: 'danger'
+    });
 
-  const handleClose = () => {
-    setShowModal(false);
-    setEditingCategory(null);
-    setName('');
-    setParentId('');
+    if (!confirmed) return;
+
+    try {
+      await fetchApi(`/categories/${id}`, { method: 'DELETE' });
+      addToast({
+        type: 'success',
+        title: 'Category Deleted',
+        message: `Category "${catName}" has been removed.`
+      });
+      loadData();
+    } catch (err: any) {
+      addToast({
+        type: 'danger',
+        title: 'Delete Failed',
+        message: err.message || 'Failed to delete category.'
+      });
+    }
   };
 
   // KPI Calculations
@@ -432,14 +474,24 @@ export default function Categories() {
 
       {/* MODAL FOR ADDING / EDITING CATEGORIES */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-[2px] flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded max-w-md w-full p-6 border border-slate-200 shadow-xl space-y-5">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) handleClose();
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl max-w-md w-full p-6 border border-slate-200 shadow-2xl space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                <FolderTree size={18} className="text-indigo-600" />
+              <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+                <FolderTree size={18} className="text-blue-600" />
                 {editingCategory ? 'Update Category Details' : 'Create New Category'}
               </h2>
-              <button onClick={handleClose} className="text-slate-400 hover:text-slate-600">
+              <button 
+                onClick={handleClose} 
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg hover:bg-slate-100 transition"
+              >
                 <X size={18} />
               </button>
             </div>

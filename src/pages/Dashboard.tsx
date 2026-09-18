@@ -14,6 +14,8 @@ import {
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
+import { useNotifications } from '../context/NotificationContext';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import InvoiceModal from '../components/InvoiceModal';
 import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
@@ -39,6 +41,7 @@ export default function Dashboard() {
   const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
   const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
+  const [recentAdjustments, setRecentAdjustments] = useState<any[]>([]);
 
   // Quick Sale Modal State
   const [showQuickSaleModal, setShowQuickSaleModal] = useState(false);
@@ -51,6 +54,12 @@ export default function Dashboard() {
   // Staff Permissions and Alert Display Settings
   const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
   const [showStaffAlerts, setShowStaffAlerts] = useState<boolean>(true);
+
+  const { addToast } = useNotifications();
+  useModalDismiss(showQuickSaleModal, () => setShowQuickSaleModal(false));
+  useModalDismiss(showRestockModal, () => setShowRestockModal(false));
+  useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
+  useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
 
   const formatRelativeTime = (dateString: string): string => {
     try {
@@ -143,9 +152,10 @@ export default function Dashboard() {
       fetchApi('/sales').catch(() => []),
       fetchApi('/settings').catch(() => ({})),
       fetchApi('/products').catch(() => []),
-      fetchApi('/audit-logs?limit=5').catch(() => [])
+      fetchApi('/audit-logs?limit=5').catch(() => []),
+      fetchApi('/inventory/adjustments').catch(() => [])
     ])
-      .then(([summaryData, lowStockData, top, sales, settingsData, prods, audits]) => {
+      .then(([summaryData, lowStockData, top, sales, settingsData, prods, audits, adjs]) => {
          setSummary(summaryData);
          setLowStockProducts(lowStockData);
          setBestSellers(top);
@@ -157,6 +167,9 @@ export default function Dashboard() {
          }
          if (Array.isArray(audits)) {
            setRecentAuditLogs(audits);
+         }
+         if (Array.isArray(adjs)) {
+           setRecentAdjustments(adjs.slice(0, 6));
          }
          if (settingsData) {
            if (settingsData.low_stock_threshold) {
@@ -211,7 +224,7 @@ export default function Dashboard() {
       const sale = await fetchApi(`/sales/${saleId}`);
       setSelectedInvoiceSale(sale);
     } catch (err: any) {
-      alert('Failed to load invoice: ' + err.message);
+      addToast('Failed to load invoice: ' + err.message, 'error');
     } finally {
       setLoadingInvoiceId(null);
     }
@@ -237,8 +250,9 @@ export default function Dashboard() {
         method: 'PUT',
         body: JSON.stringify({ allow_staff_stock_adjustments: newValue })
       });
+      addToast(`Staff stock adjustments ${newValue ? 'enabled' : 'disabled'}`, 'success');
     } catch (err: any) {
-      alert('Failed to update staff stock adjustment setting: ' + err.message);
+      addToast('Failed to update staff stock adjustment setting: ' + err.message, 'error');
       loadDashboardData();
     }
   };
@@ -250,8 +264,9 @@ export default function Dashboard() {
         method: 'PUT',
         body: JSON.stringify({ show_staff_stock_alerts: newValue })
       });
+      addToast(`Staff stock alerts ${newValue ? 'enabled' : 'disabled'}`, 'success');
     } catch (err: any) {
-      alert('Failed to update staff alert visibility setting: ' + err.message);
+      addToast('Failed to update staff alert visibility setting: ' + err.message, 'error');
       loadDashboardData();
     }
   };
@@ -260,7 +275,7 @@ export default function Dashboard() {
     e.preventDefault();
     if (!selectedProductForRestock || restockQty <= 0) return;
     if (user?.role !== 'admin' && !allowStaffAdjustments) {
-      alert('Permission Denied: Staff stock adjustments are disabled by administrator.');
+      addToast('Permission Denied: Staff stock adjustments are disabled by administrator.', 'warning');
       return;
     }
     setIsSubmittingRestock(true);
@@ -275,9 +290,10 @@ export default function Dashboard() {
       });
       setShowRestockModal(false);
       setSelectedProductForRestock(null);
+      addToast(`Restocked ${restockQty} units of ${selectedProductForRestock.name}`, 'success');
       loadDashboardData();
     } catch (err: any) {
-      alert(err.message || 'Failed to update stock');
+      addToast(err.message || 'Failed to update stock', 'error');
     } finally {
       setIsSubmittingRestock(false);
     }
@@ -292,9 +308,10 @@ export default function Dashboard() {
         body: JSON.stringify({ low_stock_threshold: globalThreshold })
       });
       setShowThresholdModal(false);
+      addToast(`Global low stock threshold set to ${globalThreshold} units`, 'success');
       loadDashboardData();
     } catch (err: any) {
-      alert(err.message || 'Failed to update settings');
+      addToast(err.message || 'Failed to update settings', 'error');
     } finally {
       setIsSavingThreshold(false);
     }
@@ -388,13 +405,13 @@ export default function Dashboard() {
   const handleAddProductToQuickSale = (prod: any) => {
     const maxStock = prod.stock_quantity ?? 0;
     if (maxStock <= 0) {
-      alert(`"${prod.name}" is out of stock.`);
+      addToast(`"${prod.name}" is out of stock.`, 'warning');
       return;
     }
     const existing = quickSaleCart.find(item => item.product_id === prod.id);
     if (existing) {
       if (existing.quantity >= maxStock) {
-        alert(`Cannot exceed available stock (${maxStock} units).`);
+        addToast(`Cannot exceed available stock (${maxStock} units).`, 'warning');
         return;
       }
       setQuickSaleCart(prev => prev.map(item => 
@@ -431,7 +448,7 @@ export default function Dashboard() {
   const handleProcessQuickSale = async (e: React.FormEvent) => {
     e.preventDefault();
     if (quickSaleCart.length === 0) {
-      alert('Please select at least one item for the sale.');
+      addToast('Please select at least one item for the sale.', 'warning');
       return;
     }
     setIsProcessingQuickSale(true);
@@ -453,12 +470,13 @@ export default function Dashboard() {
       });
       setShowQuickSaleModal(false);
       setQuickSaleCart([]);
+      addToast('Quick sale transaction completed successfully.', 'success');
       loadDashboardData();
       if (createdSale?.id) {
         handleViewInvoice(createdSale.id);
       }
     } catch (err: any) {
-      alert('Quick Sale error: ' + (err.message || 'Could not complete transaction.'));
+      addToast('Quick Sale error: ' + (err.message || 'Could not complete transaction.'), 'error');
     } finally {
       setIsProcessingQuickSale(false);
     }
@@ -946,6 +964,7 @@ export default function Dashboard() {
           <RecentActivityPanel
             sales={recentSalesList}
             auditLogs={recentAuditLogs}
+            stockAdjustments={recentAdjustments}
             onViewSaleReceipt={handleViewInvoice}
             onRefresh={loadDashboardData}
             isLoading={loading}
@@ -1463,7 +1482,14 @@ export default function Dashboard() {
 
       {/* Quick Restock Modal */}
       {showRestockModal && selectedProductForRestock && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowRestockModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-md border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
@@ -1533,7 +1559,14 @@ export default function Dashboard() {
 
       {/* Global Alert Threshold Settings Modal */}
       {showThresholdModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowThresholdModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-sm border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
               <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
@@ -1586,7 +1619,14 @@ export default function Dashboard() {
 
       {/* EOD Daily Summary Modal */}
       {showDailySummaryModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-8 custom-scrollbar animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowDailySummaryModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden max-h-[90vh] flex flex-col my-auto animate-in fade-in zoom-in-95 duration-150">
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
               <h3 className="text-sm font-black uppercase tracking-wider flex items-center gap-2">
@@ -1666,7 +1706,14 @@ export default function Dashboard() {
 
       {/* QUICK SALE MODAL (Direct Dashboard POS) */}
       {showQuickSaleModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-6 sm:py-8 custom-scrollbar">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-6 sm:py-8 custom-scrollbar animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowQuickSaleModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden flex flex-col my-auto animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
             <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0">

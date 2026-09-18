@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
+import { useModalDismiss } from '../hooks/useModalDismiss';
+import { useNotifications } from '../context/NotificationContext';
 import { 
   RotateCcw, X, Search, CheckCircle2, AlertCircle, Package, 
   Trash2, Plus, Minus, CreditCard, ShieldCheck, ArrowRight, HelpCircle
@@ -35,6 +37,9 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
   const [globalReason, setGlobalReason] = useState<string>('Defective / Damaged Item');
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
+
+  const { addToast } = useNotifications();
+  useModalDismiss(true, onClose);
 
   useEffect(() => {
     if (initialSaleId) {
@@ -127,7 +132,7 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
     e.preventDefault();
     if (!saleData) return;
     if (totalItemsToReturn === 0) {
-      alert("Please select at least 1 item and quantity to return.");
+      addToast("Please select at least 1 item and quantity to return.", "warning");
       return;
     }
 
@@ -160,15 +165,22 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
         throw new Error(res.error || "Failed to process return.");
       }
     } catch (err: any) {
-      alert(err.message || "Failed to process sales return.");
+      addToast(err.message || "Failed to process sales return.", "error");
     } finally {
       setSubmitting(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[75] overflow-y-auto">
-      <div className="bg-white rounded-md max-w-3xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh]">
+    <div 
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[75] overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
+      <div className="bg-white rounded-xl max-w-3xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col my-auto max-h-[92vh] animate-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="bg-slate-900 text-white p-4 sm:p-5 flex items-center justify-between border-b border-slate-800">
           <div className="flex items-center gap-3">

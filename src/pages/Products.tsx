@@ -6,6 +6,7 @@ import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckC
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
 import BulkCsvProductModal from '../components/BulkCsvProductModal';
+import ProductFormModal from '../components/ProductFormModal';
 
 interface Product {
   id: number;
@@ -67,10 +68,6 @@ export default function Products() {
   const [bulkFile, setBulkFile] = useState<File | null>(null);
   const [parsedImportProducts, setParsedImportProducts] = useState<any[]>([]);
   const [bulkStatus, setBulkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
-
-  const [formData, setFormData] = useState({
-    name: '', sku: '', category: '', cost_price: 0, selling_price: 0, stock_quantity: 0, barcode: '', brand: '', unit_of_measure: '', image_url: '', min_stock_level: 10
-  });
 
   useEffect(() => {
     loadProducts();
@@ -288,34 +285,29 @@ export default function Products() {
     }
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleProductSubmit = async (data: any) => {
     try {
       if (editingProduct) {
         await fetchApi(`/products/${editingProduct.id}`, {
           method: 'PUT',
-          body: JSON.stringify(formData)
+          body: JSON.stringify(data)
         });
       } else {
         await fetchApi('/products', {
           method: 'POST',
-          body: JSON.stringify(formData)
+          body: JSON.stringify(data)
         });
       }
       setShowModal(false);
       loadProducts();
     } catch (err: any) {
-      alert(err.message);
+      alert(err.message || 'Failed to save product');
+      throw err;
     }
   };
 
   const handleEdit = (p: Product) => {
     setEditingProduct(p);
-    setFormData({
-      name: p.name, sku: p.sku, category: p.category, 
-      cost_price: p.cost_price, selling_price: p.selling_price, stock_quantity: p.stock_quantity, barcode: p.barcode || '',
-      brand: p.brand || '', unit_of_measure: p.unit_of_measure || '', image_url: p.image_url || '', min_stock_level: p.min_stock_level ?? 10
-    });
     setShowModal(true);
   };
 
@@ -334,7 +326,6 @@ export default function Products() {
 
   const openNew = () => {
     setEditingProduct(null);
-    setFormData({ name: '', sku: '', category: '', cost_price: 0, selling_price: 0, stock_quantity: 0, barcode: '', brand: '', unit_of_measure: '' });
     setShowModal(true);
   };
 
@@ -810,68 +801,16 @@ export default function Products() {
       </div>
 
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-sm max-w-md w-full p-6 border border-slate-200">
-            <h2 className="text-[14px] font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">{editingProduct ? 'Edit Product' : 'New Product'}</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Name</label>
-                <input required type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">SKU</label>
-                  <input required type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.sku} onChange={e => setFormData({...formData, sku: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Brand</label>
-                  <input type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.brand} onChange={e => setFormData({...formData, brand: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Unit of Measure</label>
-                  <input type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.unit_of_measure} onChange={e => setFormData({...formData, unit_of_measure: e.target.value})} placeholder="e.g. pcs, kg" />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Image URL (Optional)</label>
-                  <input type="url" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.image_url} onChange={e => setFormData({...formData, image_url: e.target.value})} placeholder="https://..." />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Barcode (Alphanumeric)</label>
-                  <input type="text" pattern="[a-zA-Z0-9]*" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.barcode} onChange={e => setFormData({...formData, barcode: e.target.value})} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Category</label>
-                  <select required className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.category} onChange={e => setFormData({...formData, category: e.target.value})}>
-                     <option value="">Select Category</option>
-                     {categories.map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Cost Price (GH₵)</label>
-                  <input required type="number" step="0.01" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.cost_price} onChange={e => setFormData({...formData, cost_price: parseFloat(e.target.value)})} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Selling Price (GH₵)</label>
-                  <input required type="number" step="0.01" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.selling_price} onChange={e => setFormData({...formData, selling_price: parseFloat(e.target.value)})} />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Low Stock Threshold</label>
-                  <input type="number" min="0" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.min_stock_level} onChange={e => setFormData({...formData, min_stock_level: parseInt(e.target.value, 10) || 0})} placeholder="Default: 10" />
-                </div>
-              </div>
-              {!editingProduct && (
-                 <div>
-                    <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide text-left mb-1">Initial Stock</label>
-                    <input required type="number" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.stock_quantity} onChange={e => setFormData({...formData, stock_quantity: parseInt(e.target.value, 10)})} />
-                 </div>
-              )}
-              <div className="pt-5 flex justify-end space-x-3 border-t border-slate-200 mt-5">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-sm hover:bg-slate-50">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-blue-500 border-none rounded-sm hover:bg-blue-600">Save</button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <ProductFormModal
+          isOpen={showModal}
+          onClose={() => {
+            setShowModal(false);
+            setEditingProduct(null);
+          }}
+          onSubmit={handleProductSubmit}
+          editingProduct={editingProduct}
+          categories={categories}
+        />
       )}
 
       {showAdjustModal && adjustingProduct && (

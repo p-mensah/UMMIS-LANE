@@ -1,13 +1,14 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams, useNavigate, Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
 import { 
   ArrowLeft, History, Package, Tag, CreditCard, DollarSign, AlertTriangle, Printer,
   Search, Filter, ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, RotateCcw,
-  FileText, Calendar, UserCheck, QrCode, Barcode, X
+  FileText, Calendar, UserCheck, QrCode, Barcode, X, ChevronRight
 } from 'lucide-react';
 
 interface Adjustment {
@@ -60,6 +61,9 @@ export default function ProductDetail() {
   const [showPrintModal, setShowPrintModal] = useState(false);
   const [showLabelModal, setShowLabelModal] = useState(false);
   
+  useModalDismiss(showPrintModal, () => setShowPrintModal(false));
+  useModalDismiss(showLabelModal, () => setShowLabelModal(false));
+
   // Tab & Audit Log filters
   const [activeTab, setActiveTab] = useState<'overview' | 'audit_log' | 'price_history'>('overview');
   const [auditFilter, setAuditFilter] = useState<'all' | 'restock' | 'sale' | 'adjustment' | 'refund'>('all');
@@ -102,38 +106,40 @@ export default function ProductDetail() {
   const netDelta = totalInflow - totalOutflow;
 
   return (
-    <div className="max-w-6xl mx-auto space-y-6 pb-12">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <button 
-          onClick={() => navigate('/products')}
-          className="flex items-center text-[12px] font-bold text-slate-500 hover:text-slate-900 transition-colors uppercase tracking-widest"
-        >
-          <ArrowLeft size={16} className="mr-2" /> Back to Product Catalog
-        </button>
-        <div className="flex items-center gap-2">
-            <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-widest ${
-              product.stock_quantity <= 5 ? 'bg-red-100 text-red-700 border border-red-200' : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
-            }`}>
-              {product.stock_quantity <= 5 ? 'Low Stock Warning' : 'Stock Level Optimal'}
-            </span>
-            <button
-              onClick={() => setShowLabelModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-[11px] font-bold uppercase rounded-sm shadow-2xs transition-colors"
-            >
-              <QrCode size={14} /> Print QR / Barcode Labels
-            </button>
-            <button
-              onClick={() => setShowPrintModal(true)}
-              className="flex items-center gap-1.5 px-3 py-1 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-[11px] font-bold uppercase rounded-sm shadow-2xs"
-            >
-              <Printer size={14} /> Print Product Sheet
-            </button>
+    <div className="max-w-6xl mx-auto space-y-5 pb-12">
+      {/* Structured Breadcrumbs & Header Actions */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+        <nav aria-label="Breadcrumb" className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
+          <Link to="/" className="hover:text-blue-600 transition">Dashboard</Link>
+          <ChevronRight size={13} className="text-slate-400" />
+          <Link to="/products" className="hover:text-blue-600 transition">Product Catalog</Link>
+          <ChevronRight size={13} className="text-slate-400" />
+          <span className="font-semibold text-slate-900 truncate max-w-[200px] sm:max-w-xs">{product.name}</span>
+        </nav>
+
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className={`px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider ${
+            product.stock_quantity <= 5 ? 'bg-red-50 text-red-700 border border-red-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+          }`}>
+            {product.stock_quantity <= 5 ? 'Low Stock Warning' : 'Stock Level Optimal'}
+          </span>
+          <button
+            onClick={() => setShowLabelModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg shadow-2xs transition-colors"
+          >
+            <QrCode size={14} /> Print Labels
+          </button>
+          <button
+            onClick={() => setShowPrintModal(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-lg shadow-2xs transition-colors"
+          >
+            <Printer size={14} /> Print Sheet
+          </button>
         </div>
       </div>
 
       {/* Main Banner Card */}
-      <div className="bg-white border border-slate-200 rounded-sm p-6 shadow-2xs">
+      <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-2xs">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="flex items-start gap-5">
             {product.image_url ? (
@@ -581,8 +587,15 @@ export default function ProductDetail() {
 
       {/* PRINT MODAL */}
       {showPrintModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-[70]">
-          <div className="bg-white rounded-sm w-96 p-8 border border-slate-200 text-center shadow-xl flex flex-col">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[70] animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowPrintModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl w-96 p-8 border border-slate-200 text-center shadow-2xl flex flex-col animate-in zoom-in-95 duration-150">
             <style>{`@media print { body * { display: none; } #print-area, #print-area * { display: block; } #print-area { position: absolute; left: 0; top: 0; width: 100%; border: none; box-shadow: none; padding: 20px; } }`}</style>
             <div id="print-area" className="text-left font-mono text-[14px] text-slate-800 space-y-4">
                <div className="text-center mb-6 pb-4 border-b border-dashed border-slate-300">
@@ -756,7 +769,14 @@ function BarcodeLabelModal({ product, onClose }: { product: ProductDetails; onCl
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[80] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[80] overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <style>{`
         @media print {
           body * {
@@ -783,7 +803,7 @@ function BarcodeLabelModal({ product, onClose }: { product: ProductDetails; onCl
         }
       `}</style>
 
-      <div className="bg-white rounded-md max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
+      <div className="bg-white rounded-xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto animate-in zoom-in-95 duration-150">
         {/* Modal Header */}
         <div className="no-print bg-slate-900 text-white p-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800">
           <div className="flex items-center gap-3">

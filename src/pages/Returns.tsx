@@ -3,6 +3,7 @@ import { fetchApi } from '../lib/api';
 import ReturnModal from '../components/ReturnModal';
 import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
 import { formatGHS } from '../lib/formatters';
+import { useNotifications } from '../context/NotificationContext';
 import { 
   RotateCcw, Search, Calendar, Download, RefreshCw, FileText, 
   DollarSign, Package, AlertCircle, ShieldAlert, CheckCircle2, Filter
@@ -24,6 +25,8 @@ export default function Returns() {
   const [selectedReturnSaleId, setSelectedReturnSaleId] = useState<number | null>(null);
   const [creditNoteData, setCreditNoteData] = useState<any | null>(null);
   const [loadingCreditNoteId, setLoadingCreditNoteId] = useState<number | null>(null);
+
+  const { addToast } = useNotifications();
 
   useEffect(() => {
     loadReturnsData();
@@ -94,7 +97,7 @@ export default function Returns() {
       const data = await fetchApi(`/returns/${returnId}`);
       setCreditNoteData(data);
     } catch (err: any) {
-      alert('Failed to load return credit note details: ' + err.message);
+      addToast('Failed to load return credit note details: ' + err.message, 'error');
     } finally {
       setLoadingCreditNoteId(null);
     }
@@ -173,7 +176,7 @@ export default function Returns() {
 
       {/* Summary Analytics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Today's Refunds</span>
             <DollarSign size={16} className="text-rose-600" />
@@ -186,7 +189,7 @@ export default function Returns() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>This Month Refunds</span>
             <RotateCcw size={16} className="text-rose-600" />
@@ -199,7 +202,7 @@ export default function Returns() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded border border-amber-200 bg-amber-50/40 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-amber-200 bg-amber-50/40 shadow-2xs">
           <div className="flex items-center justify-between text-amber-800 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Damaged Stock Loss</span>
             <ShieldAlert size={16} className="text-amber-600" />
@@ -212,7 +215,7 @@ export default function Returns() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Primary Return Reason</span>
             <AlertCircle size={16} className="text-slate-400" />
@@ -227,7 +230,7 @@ export default function Returns() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="bg-white border border-slate-200 rounded p-4 shadow-2xs space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
           {/* Search Box */}
           <form onSubmit={handleSearchSubmit} className="relative flex-1">
@@ -307,7 +310,7 @@ export default function Returns() {
       </div>
 
       {/* Returns History Table */}
-      <div className="bg-white border border-slate-200 rounded shadow-2xs overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-hidden">
         <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
           <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
             <FileText size={15} className="text-rose-600" />

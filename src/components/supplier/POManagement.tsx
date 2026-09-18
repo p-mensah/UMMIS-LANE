@@ -2,6 +2,8 @@ import React, { useState } from 'react';
 import { formatGHS } from '../../lib/formatters';
 import PODocumentModal from './PODocumentModal';
 import ReceivePOModal from './ReceivePOModal';
+import { useNotifications } from '../../context/NotificationContext';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
 import {
   Truck,
   PackageCheck,
@@ -143,6 +145,11 @@ export default function POManagement({
 
   // Logistics & Fulfillment Modal State
   const [logisticsModalPo, setLogisticsModalPo] = useState<PurchaseOrder | null>(null);
+
+  const { addToast } = useNotifications();
+  useModalDismiss(!!logisticsModalPo, () => setLogisticsModalPo(null));
+  useModalDismiss(!!ackModalPo, () => setAckModalPo(null));
+  useModalDismiss(!!attachModalPo, () => setAttachModalPo(null));
   const [fulfillmentMode, setFulfillmentMode] = useState<'direct_delivery' | 'store_pickup'>('direct_delivery');
   
   // Direct Delivery fields
@@ -239,7 +246,7 @@ export default function POManagement({
       setLogisticsModalPo(null);
       onRefresh();
     } catch (err: any) {
-      alert(err.message || 'Failed to update logistics.');
+      addToast(err.message || 'Failed to update logistics.', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -289,7 +296,7 @@ export default function POManagement({
 
   const handleExportAllCsv = () => {
     if (sortedPOs.length === 0) {
-      alert('No purchase orders to export.');
+      addToast('No purchase orders to export.', 'warning');
       return;
     }
     const headers = ['PO Reference', 'Date', 'Supplier', 'Contact', 'Status', 'Total Amount (GHS)', 'Units', 'Fulfillment Mode', 'Driver', 'Vehicle Reg', 'Dock Bay'];
@@ -862,7 +869,14 @@ export default function POManagement({
 
       {/* Logistics & Fulfillment Mode Configuration Modal */}
       {logisticsModalPo && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150">
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setLogisticsModalPo(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden my-auto animate-in zoom-in-95 duration-150">
             <div className="px-6 py-4 bg-slate-900 text-white flex items-center justify-between">
               <div className="flex items-center gap-2">
@@ -1109,7 +1123,14 @@ export default function POManagement({
 
       {/* Acknowledgment Modal */}
       {ackModalPo && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAckModalPo(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
             <div className="px-5 py-3.5 bg-amber-500 text-white flex items-center justify-between">
               <span className="font-black text-xs uppercase tracking-wider">Confirm Order Acceptance</span>
@@ -1154,7 +1175,14 @@ export default function POManagement({
 
       {/* Document Attachment Modal */}
       {attachModalPo && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setAttachModalPo(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden">
             <div className="px-5 py-3.5 bg-slate-900 text-white flex items-center justify-between">
               <span className="font-black text-xs uppercase tracking-wider">Attach Logistics Document</span>

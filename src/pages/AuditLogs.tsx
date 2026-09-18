@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useMemo } from 'react';
 import { fetchApi } from '../lib/api';
+import { useNotifications } from '../context/NotificationContext';
 import { 
   ShieldCheck, Search, Filter, Trash2, RefreshCw, Calendar, User, 
   Settings, Clock, FileText, AlertTriangle, Info, CheckCircle2, Download,
@@ -74,6 +75,8 @@ export default function AuditLogs() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanupResult, setCleanupResult] = useState<any>(null);
   const [copiedLogId, setCopiedLogId] = useState<number | null>(null);
+
+  const { addToast, confirmModal } = useNotifications();
 
   // Prevent background scroll bleed and enable Escape key close for modals
   useEffect(() => {
@@ -425,6 +428,15 @@ export default function AuditLogs() {
   }, [autoRefreshInterval, categoryFilter, subCategoryFilter, userFilter, terminalFilter, startDate, endDate, limit]);
 
   const handleCleanupNow = async () => {
+    const confirm = await confirmModal({
+      title: 'Purge Historical Logs',
+      message: `Are you sure you want to permanently purge audit logs older than ${cleanupDays} days? This action cannot be undone.`,
+      confirmText: 'Purge Records',
+      cancelText: 'Keep Records',
+      type: 'danger'
+    });
+    if (!confirm) return;
+
     setCleaning(true);
     setCleanupResult(null);
     try {
@@ -433,9 +445,10 @@ export default function AuditLogs() {
         body: JSON.stringify({ retention_days: cleanupDays })
       });
       setCleanupResult(res);
+      addToast(`Successfully cleared ${res.clearedCount || 0} audit logs older than ${cleanupDays} days`, 'success');
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Cleanup failed');
+      addToast(err.message || 'Cleanup failed', 'error');
     } finally {
       setCleaning(false);
     }
@@ -492,7 +505,7 @@ export default function AuditLogs() {
 
   const exportLogsToCsv = () => {
     if (filteredLogs.length === 0) {
-      alert('No audit logs match current filters to export.');
+      addToast('No audit logs match current filters to export.', 'warning');
       return;
     }
 

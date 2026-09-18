@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 interface PurchaseOrderItem {
   product_id: number;
@@ -57,7 +58,9 @@ export default function Purchases() {
   const [loadingDetail, setLoadingDetail] = useState(false);
   const [updatingId, setUpdatingId] = useState<number | null>(null);
 
-  const { addToast, refreshNotifications } = useNotifications();
+  const { addToast, confirmModal, refreshNotifications } = useNotifications();
+  useModalDismiss(showModal, () => setShowModal(false));
+  useModalDismiss(!!selectedPO, () => setSelectedPO(null));
 
   const loadData = async () => {
     setLoading(true);
@@ -139,7 +142,7 @@ export default function Purchases() {
 
   const handleCreatePO = async () => {
     if (cart.length === 0 || !selectedSupplier) {
-      alert("Please select a supplier and add at least one product.");
+      addToast('Please select a supplier and add at least one product.', 'warning');
       return;
     }
     setCreating(true);
@@ -172,7 +175,7 @@ export default function Purchases() {
       await loadData();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.message || 'Failed to create Purchase Order');
+      addToast(err.message || 'Failed to create Purchase Order', 'error');
     } finally {
       setCreating(false);
     }
@@ -200,13 +203,21 @@ export default function Purchases() {
       await loadData();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.message || 'Failed to update status');
+      addToast(err.message || 'Failed to update status', 'error');
     } finally {
       setUpdatingId(null);
     }
   };
 
   const handleConfirmReceipt = async (poId: number) => {
+    const confirmed = await confirmModal({
+      title: 'Confirm Goods Receipt',
+      message: `Confirm receipt of Purchase Order #PO-${poId}? This will restock all line items into inventory.`,
+      confirmText: 'Confirm & Restock',
+      type: 'success'
+    });
+    if (!confirmed) return;
+
     setUpdatingId(poId);
     try {
       await fetchApi(`/purchases/${poId}/confirm-receipt`, {
@@ -227,7 +238,7 @@ export default function Purchases() {
       await loadData();
       await refreshNotifications();
     } catch (err: any) {
-      alert(err.message || 'Failed to confirm receipt');
+      addToast(err.message || 'Failed to confirm receipt', 'error');
     } finally {
       setUpdatingId(null);
     }
@@ -239,7 +250,7 @@ export default function Purchases() {
       const poData = await fetchApi(`/purchases/${poId}`);
       setSelectedPO(poData);
     } catch (err: any) {
-      alert(err.message || 'Failed to load PO details');
+      addToast(err.message || 'Failed to load PO details', 'error');
     } finally {
       setLoadingDetail(false);
     }
@@ -547,8 +558,15 @@ export default function Purchases() {
 
       {/* New Purchase Order Modal */}
       {showModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-md max-w-4xl w-full flex flex-col md:flex-row overflow-hidden max-h-[90vh] border border-slate-200 shadow-2xl">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl max-w-4xl w-full flex flex-col md:flex-row overflow-hidden max-h-[90vh] border border-slate-200 shadow-2xl animate-in zoom-in-95 duration-150">
             {/* Left: Product Selection */}
             <div className="w-full md:w-1/2 flex flex-col border-r border-slate-200 bg-slate-50/50">
               <div className="px-5 py-3.5 bg-slate-900 text-white font-bold text-xs uppercase tracking-wider flex items-center justify-between">
@@ -677,8 +695,15 @@ export default function Purchases() {
 
       {/* PO Detail Modal */}
       {selectedPO && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-md max-w-2xl w-full border border-slate-200 shadow-2xl p-6 space-y-5">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setSelectedPO(null);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
+          <div className="bg-white rounded-xl max-w-2xl w-full border border-slate-200 shadow-2xl p-6 space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="text-sm font-black text-slate-900 uppercase tracking-wider">Purchase Order #PO-{selectedPO.id}</h3>

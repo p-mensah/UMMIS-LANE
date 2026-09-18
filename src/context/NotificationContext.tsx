@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useEffect, useState, useRef, ReactNode } from 'react';
 import { fetchApi } from '../lib/api';
 import ToastContainer, { Toast } from '../components/ToastContainer';
+import ConfirmModal, { ConfirmDialogOptions } from '../components/ConfirmModal';
 
 interface NotificationItem {
   id: number;
@@ -16,6 +17,7 @@ interface NotificationContextType {
   toasts: Toast[];
   addToast: (toast: Omit<Toast, 'id'>) => void;
   removeToast: (id: string) => void;
+  confirmModal: (options: ConfirmDialogOptions) => Promise<boolean>;
   notifications: NotificationItem[];
   unreadCount: number;
   refreshNotifications: () => Promise<void>;
@@ -28,6 +30,32 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const lastSeenIdRef = useRef<number | null>(null);
+
+  // Modal confirmation dialog state
+  const [confirmDialog, setConfirmDialog] = useState<{
+    options: ConfirmDialogOptions;
+    resolve: (val: boolean) => void;
+  } | null>(null);
+
+  const confirmModal = (options: ConfirmDialogOptions): Promise<boolean> => {
+    return new Promise((resolve) => {
+      setConfirmDialog({ options, resolve });
+    });
+  };
+
+  const handleConfirmAction = () => {
+    if (confirmDialog) {
+      confirmDialog.resolve(true);
+      setConfirmDialog(null);
+    }
+  };
+
+  const handleCancelAction = () => {
+    if (confirmDialog) {
+      confirmDialog.resolve(false);
+      setConfirmDialog(null);
+    }
+  };
 
   const addToast = (toastData: Omit<Toast, 'id'>) => {
     const id = Math.random().toString(36).substring(2, 9);
@@ -91,6 +119,7 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
         toasts,
         addToast,
         removeToast,
+        confirmModal,
         notifications,
         unreadCount,
         refreshNotifications
@@ -98,6 +127,12 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     >
       {children}
       <ToastContainer toasts={toasts} onDismiss={removeToast} />
+      <ConfirmModal
+        isOpen={!!confirmDialog}
+        options={confirmDialog?.options || null}
+        onConfirm={handleConfirmAction}
+        onCancel={handleCancelAction}
+      />
     </NotificationContext.Provider>
   );
 }

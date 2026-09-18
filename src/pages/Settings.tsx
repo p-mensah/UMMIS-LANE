@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
+import { useNotifications } from '../context/NotificationContext';
 import { 
   Store, ShieldCheck, Database, Receipt, CheckCircle2, 
   Trash2, RefreshCw, SlidersHorizontal, Eye, Lock,
@@ -44,6 +45,8 @@ export default function Settings() {
 
   // Backup State
   const [downloadingBackup, setDownloadingBackup] = useState(false);
+
+  const { addToast, confirmModal } = useNotifications();
 
   useEffect(() => {
     fetchApi('/settings')
@@ -101,18 +104,25 @@ export default function Settings() {
         })
       });
       setMessage('Store profile, financial parameters, and security settings saved successfully.');
+      addToast('Store profile, financial parameters, and security settings saved successfully.', 'success');
       setTimeout(() => setMessage(''), 4000);
     } catch (err: any) {
-      alert(err.message || 'Failed to save settings');
+      addToast(err.message || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
     }
   };
 
   const handleManualCleanup = async () => {
-    if (!window.confirm(`Are you sure you want to clear/archive all audit logs older than ${retentionDays} days?`)) {
-      return;
-    }
+    const confirmed = await confirmModal({
+      title: 'Purge Audit Records',
+      message: `Are you sure you want to clear/archive all audit logs older than ${retentionDays} days? This action cannot be undone.`,
+      confirmText: 'Purge Records',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
     setCleaning(true);
     setCleanupMessage(null);
     try {
@@ -121,12 +131,16 @@ export default function Settings() {
         body: JSON.stringify({ retention_days: retentionDays })
       });
       if (res.success) {
-        setCleanupMessage(`Success: Purged ${res.clearedCount} audit log records older than ${res.retentionDays} days (before ${new Date(res.cutoffDate).toLocaleDateString()}).`);
+        const msg = `Success: Purged ${res.clearedCount} audit log records older than ${res.retentionDays} days (before ${new Date(res.cutoffDate).toLocaleDateString()}).`;
+        setCleanupMessage(msg);
+        addToast(`Purged ${res.clearedCount} audit log records`, 'success');
       } else {
-        setCleanupMessage(`Cleanup notice: ${res.message || 'No records needed purging.'}`);
+        const msg = `Cleanup notice: ${res.message || 'No records needed purging.'}`;
+        setCleanupMessage(msg);
+        addToast(msg, 'info');
       }
     } catch (err: any) {
-      alert(err.message || 'Failed to perform cleanup');
+      addToast(err.message || 'Failed to perform cleanup', 'error');
     } finally {
       setCleaning(false);
     }
@@ -154,8 +168,9 @@ export default function Settings() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(downloadUrl);
+      addToast('Database backup snapshot exported successfully.', 'success');
     } catch (err: any) {
-      alert(err.message || 'Failed to download backup snapshot.');
+      addToast(err.message || 'Failed to download backup snapshot.', 'error');
     } finally {
       setDownloadingBackup(false);
     }

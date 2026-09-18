@@ -1,29 +1,197 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { fetchApi } from '../lib/api';
-import { Users, Search, Plus, CreditCard, Mail, Phone, Award } from 'lucide-react';
+import { Users, Search, Plus, CreditCard, Mail, Phone, Award, X, CheckCircle2, UserPlus } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import { useFormValidation, validators } from '../lib/validation';
+import { FormField, ValidatedInput } from '../components/common/FormField';
+
+interface CustomerFormData {
+  name: string;
+  phone: string;
+  email: string;
+}
+
+interface AddCustomerModalProps {
+  isOpen: boolean;
+  onClose: () => void;
+  onSuccess: () => void;
+}
+
+function AddCustomerModal({ isOpen, onClose, onSuccess }: AddCustomerModalProps) {
+  const initialValues: CustomerFormData = useMemo(() => ({
+    name: '',
+    phone: '',
+    email: '',
+  }), []);
+
+  const validationRules = useMemo(() => ({
+    name: [
+      validators.required('Customer full name is required'),
+      validators.minLength(2, 'Name must be at least 2 characters'),
+    ],
+    phone: [
+      validators.phone('Please enter a valid phone number (e.g. 0241234567 or +233...)'),
+    ],
+    email: [
+      validators.email('Please enter a valid email address'),
+    ],
+  }), []);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const {
+    values,
+    errors,
+    touched,
+    handleChange,
+    handleBlur,
+    handleSubmit,
+    isValid,
+    resetForm,
+  } = useFormValidation<CustomerFormData>(initialValues, validationRules);
+
+  const handleCustomerSubmit = handleSubmit(async (formValues) => {
+    setIsSubmitting(true);
+    try {
+      await fetchApi('/customers', {
+        method: 'POST',
+        body: JSON.stringify(formValues),
+      });
+      resetForm();
+      onSuccess();
+      onClose();
+    } catch (err: any) {
+      alert(err.message || 'Failed to create customer');
+    } finally {
+      setIsSubmitting(false);
+    }
+  });
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+      <div className="bg-white rounded-xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden">
+        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/60">
+          <div className="flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
+              <UserPlus size={16} />
+            </div>
+            <div>
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Add Customer</h2>
+              <p className="text-[11px] text-slate-400 font-medium">Register client profile & loyalty tracking</p>
+            </div>
+          </div>
+          <button
+            onClick={onClose}
+            className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <form onSubmit={handleCustomerSubmit} className="p-5 space-y-4 text-xs">
+          <FormField
+            label="Customer Name"
+            required
+            error={errors.name}
+            isTouched={touched.name}
+            isValid={!errors.name && !!values.name}
+            helperText="Full legal or business account name"
+          >
+            <ValidatedInput
+              name="name"
+              value={values.name}
+              onChange={(e) => handleChange('name', e.target.value)}
+              onBlur={() => handleBlur('name')}
+              placeholder="e.g. Samuel K. Addo"
+              error={errors.name}
+              isTouched={touched.name}
+              isValid={!errors.name && !!values.name}
+            />
+          </FormField>
+
+          <FormField
+            label="Phone Number"
+            error={errors.phone}
+            isTouched={touched.phone}
+            isValid={!errors.phone && !!values.phone}
+            helperText="Ghana mobile or international contact (+233)"
+          >
+            <ValidatedInput
+              name="phone"
+              value={values.phone}
+              onChange={(e) => handleChange('phone', e.target.value)}
+              onBlur={() => handleBlur('phone')}
+              placeholder="024 123 4567"
+              error={errors.phone}
+              isTouched={touched.phone}
+              isValid={!errors.phone && !!values.phone}
+            />
+          </FormField>
+
+          <FormField
+            label="Email Address"
+            error={errors.email}
+            isTouched={touched.email}
+            isValid={!errors.email && !!values.email}
+            helperText="For receipts and notifications"
+          >
+            <ValidatedInput
+              type="email"
+              name="email"
+              value={values.email}
+              onChange={(e) => handleChange('email', e.target.value)}
+              onBlur={() => handleBlur('email')}
+              placeholder="customer@domain.com"
+              error={errors.email}
+              isTouched={touched.email}
+              isValid={!errors.email && !!values.email}
+            />
+          </FormField>
+
+          <div className="pt-4 border-t border-slate-100 flex items-center justify-between">
+            <span className="text-[11px] text-slate-400 font-medium">
+              <span className="text-rose-500 font-bold">*</span> Required field
+            </span>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onClose}
+                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold rounded-lg transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={isSubmitting || !isValid}
+                className={`px-4 py-1.5 font-bold text-white rounded-lg transition flex items-center gap-1.5 shadow-2xs cursor-pointer ${
+                  !isValid
+                    ? 'bg-slate-400 opacity-60 cursor-not-allowed'
+                    : 'bg-blue-600 hover:bg-blue-700'
+                }`}
+              >
+                <CheckCircle2 size={13} />
+                {isSubmitting ? 'Saving...' : 'Register Customer'}
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 export default function Customers() {
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
-  const [formData, setFormData] = useState({ name: '', phone: '', email: '' });
 
   useEffect(() => { loadData(); }, []);
 
   const loadData = () => {
     fetchApi('/customers').then(setCustomers).finally(() => setLoading(false));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      await fetchApi('/customers', { method: 'POST', body: JSON.stringify(formData) });
-      setShowModal(false);
-      setFormData({ name: '', phone: '', email: '' });
-      loadData();
-    } catch (err: any) { alert(err.message); }
   };
 
   const filteredCustomers = customers.filter(c => 
@@ -52,7 +220,7 @@ export default function Customers() {
           </div>
           <button 
             onClick={() => setShowModal(true)} 
-            className="flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-sm font-bold text-[12px] uppercase tracking-widest hover:bg-slate-800 transition shadow-sm w-full sm:w-auto"
+            className="flex items-center justify-center px-4 py-2 bg-slate-900 text-white rounded-sm font-bold text-[12px] uppercase tracking-widest hover:bg-slate-800 transition shadow-sm w-full sm:w-auto cursor-pointer"
           >
             <Plus size={16} className="mr-2" /> Add Customer
           </button>
@@ -78,16 +246,27 @@ export default function Customers() {
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                    <div className="flex flex-col gap-1">
-                      {c.phone && <div className="flex items-center text-[11px] text-slate-500 font-mono"><Phone size={12} className="mr-1.5 opacity-50" /> {c.phone}</div>}
-                      {c.email && <div className="flex items-center text-[11px] text-slate-500 font-mono"><Mail size={12} className="mr-1.5 opacity-50" /> {c.email}</div>}
+                      {c.phone && (
+                        <span className="text-[12px] font-bold text-slate-600 flex items-center gap-1.5">
+                          <Phone size={12} className="text-slate-400" /> {c.phone}
+                        </span>
+                      )}
+                      {c.email && (
+                        <span className="text-[12px] text-slate-500 flex items-center gap-1.5">
+                          <Mail size={12} className="text-slate-400" /> {c.email}
+                        </span>
+                      )}
+                      {!c.phone && !c.email && (
+                        <span className="text-[12px] text-slate-400 italic">No contact info</span>
+                      )}
                    </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-center">
-                  <div className="inline-flex items-center px-2 py-1 bg-amber-50 text-amber-600 rounded-sm text-[11px] font-black uppercase tracking-tighter border border-amber-100">
-                     <Award size={12} className="mr-1" /> {c.loyalty_points}
-                  </div>
+                  <span className="inline-flex items-center px-2 py-0.5 rounded text-[11px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    <Award size={11} className="mr-1" /> {c.points || 0} pts
+                  </span>
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-[13px] font-black text-emerald-600">
+                <td className="px-6 py-4 whitespace-nowrap text-right text-[13px] font-bold text-slate-900">
                   {formatGHS(c.total_spent || 0)}
                 </td>
               </tr>
@@ -99,31 +278,11 @@ export default function Customers() {
         </table>
       </div>
 
-      {showModal && (
-        <div className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-sm max-w-sm w-full p-6 border border-slate-200">
-            <h2 className="text-[14px] font-bold text-slate-900 border-b border-slate-200 pb-3 mb-4">New Customer</h2>
-            <form onSubmit={handleSubmit} className="space-y-4">
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Name</label>
-                <input required type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.name} onChange={e => setFormData({...formData, name: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Phone</label>
-                <input type="text" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.phone} onChange={e => setFormData({...formData, phone: e.target.value})} />
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide mb-1">Email</label>
-                <input type="email" className="w-full border border-slate-300 rounded-sm px-3 py-2 text-[13px] focus:outline-none focus:border-blue-500" value={formData.email} onChange={e => setFormData({...formData, email: e.target.value})} />
-              </div>
-              <div className="pt-5 flex justify-end space-x-3 border-t border-slate-200 mt-5">
-                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs font-bold text-slate-700 bg-white border border-slate-300 rounded-sm hover:bg-slate-50">Cancel</button>
-                <button type="submit" className="px-4 py-2 text-xs font-bold text-white bg-blue-500 border-none rounded-sm hover:bg-blue-600">Save</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
+      <AddCustomerModal
+        isOpen={showModal}
+        onClose={() => setShowModal(false)}
+        onSuccess={loadData}
+      />
     </div>
   );
 }

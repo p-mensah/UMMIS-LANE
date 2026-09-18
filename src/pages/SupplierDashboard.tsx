@@ -351,10 +351,13 @@ export default function SupplierDashboard() {
   // Handler: Quick Restock from Replenishment triggers
   const handleRestockItem = (item: any) => {
     const suggestedUnits = Math.max((item.effective_rop || 10) * 3, 24);
-    setPoSelectedProductId(item.id);
-    setPoQuantity(suggestedUnits);
-    setPoUnitPrice(item.cost_price || 20);
-    setPoNotes(`Automated replenishment trigger: On-hand stock (${item.stock_quantity}) breached ROP.`);
+    setPrefilledRestockItem({
+      id: item.id,
+      name: item.name,
+      sku: item.sku || `SKU-${item.id}`,
+      cost_price: item.cost_price || 20,
+      quantity: suggestedUnits
+    });
     setShowCreatePoModal(true);
   };
 
@@ -774,127 +777,32 @@ export default function SupplierDashboard() {
 
       {/* 5. Create & Issue Purchase Order Modal */}
       {showCreatePoModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg max-w-lg w-full p-5 border border-slate-200 shadow-xl space-y-4">
-            <div className="flex justify-between items-center border-b border-slate-100 pb-3">
-              <h3 className="font-black text-slate-900 text-sm flex items-center gap-2">
-                <Plus size={16} className="text-blue-600" />
-                Issue New Purchase Order — {activeSupplier}
-              </h3>
-              <button
-                onClick={() => setShowCreatePoModal(false)}
-                className="text-slate-400 hover:text-slate-600"
-              >
-                <X size={16} />
-              </button>
-            </div>
-
-            <form onSubmit={handleCreatePoSubmit} className="space-y-3 text-xs">
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Catalog Product Line</label>
-                <select
-                  value={poSelectedProductId}
-                  onChange={(e) => {
-                    const pid = Number(e.target.value);
-                    setPoSelectedProductId(pid);
-                    const prod = catalog.find((c) => c.id === pid) ||
-                      triggersData.triggers?.find((t: any) => t.id === pid);
-                    if (prod && prod.cost_price) {
-                      setPoUnitPrice(prod.cost_price);
-                    }
-                  }}
-                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
-                  required
-                >
-                  <option value="">-- Choose Product Line --</option>
-                  {catalog.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} (Stock: {c.stock_quantity}) - {formatGHS(c.cost_price || 0)}
-                    </option>
-                  ))}
-                  {/* Fallback to triggers if catalog is empty */}
-                  {catalog.length === 0 &&
-                    triggersData.triggers?.map((t: any) => (
-                      <option key={t.id} value={t.id}>
-                        {t.name} (Stock: {t.stock_quantity}) - {formatGHS(t.cost_price || 0)}
-                      </option>
-                    ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Order Quantity (Units)</label>
-                  <input
-                    type="number"
-                    min={1}
-                    required
-                    value={poQuantity}
-                    onChange={(e) => setPoQuantity(parseInt(e.target.value) || 1)}
-                    className="w-full border border-slate-200 rounded p-2"
-                  />
-                </div>
-                <div>
-                  <label className="font-bold text-slate-700 block mb-1">Unit Cost (GHS)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    required
-                    value={poUnitPrice}
-                    onChange={(e) => setPoUnitPrice(parseFloat(e.target.value) || 0)}
-                    className="w-full border border-slate-200 rounded p-2"
-                  />
-                </div>
-              </div>
-
-              <div className="p-2.5 bg-slate-50 border border-slate-200 rounded flex items-center justify-between text-xs">
-                <span className="font-bold text-slate-600">Calculated PO Total:</span>
-                <span className="font-black text-blue-600 text-sm">
-                  {formatGHS(poQuantity * poUnitPrice)}
-                </span>
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Expected Delivery Date (SLA)</label>
-                <input
-                  type="date"
-                  required
-                  value={poExpectedDate}
-                  onChange={(e) => setPoExpectedDate(e.target.value)}
-                  className="w-full border border-slate-200 rounded p-2"
-                />
-              </div>
-
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Order Notes / Specifications</label>
-                <textarea
-                  rows={2}
-                  value={poNotes}
-                  onChange={(e) => setPoNotes(e.target.value)}
-                  className="w-full border border-slate-200 rounded p-2"
-                  placeholder="Special pallet requirements, delivery dock guidelines..."
-                />
-              </div>
-
-              <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                <button
-                  type="button"
-                  onClick={() => setShowCreatePoModal(false)}
-                  className="px-3.5 py-1.5 bg-slate-100 text-slate-700 font-bold rounded"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isCreatingPo}
-                  className="px-4 py-1.5 bg-blue-600 text-white font-bold rounded hover:bg-blue-700 shadow-xs"
-                >
-                  {isCreatingPo ? 'Issuing PO...' : 'Issue Purchase Order'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <CreatePOModal
+          isOpen={showCreatePoModal}
+          onClose={() => {
+            setShowCreatePoModal(false);
+            setPrefilledRestockItem(null);
+          }}
+          activeSupplier={activeSupplier}
+          availableSuppliers={availableSuppliers}
+          catalog={catalog.length > 0 ? catalog : (triggersData.triggers || [])}
+          prefilledItem={prefilledRestockItem}
+          onSubmit={async (poData) => {
+            await fetchApi('/purchases', {
+              method: 'POST',
+              body: JSON.stringify(poData)
+            });
+            addToast({
+              title: 'Purchase Order Issued! 📋',
+              message: `PO successfully placed with ${poData.supplier_name}.`,
+              type: 'success'
+            });
+            setShowCreatePoModal(false);
+            setPrefilledRestockItem(null);
+            await loadSupplierData(activeSupplier);
+            await refreshNotifications();
+          }}
+        />
       )}
     </div>
   );

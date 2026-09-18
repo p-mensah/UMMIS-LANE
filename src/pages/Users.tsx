@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 import { supabase } from '../lib/supabase';
 import { callAdminApi, createUser as createAdminUser, suspendUser, reactivateUser, deleteUser as deleteAdminUser } from '../lib/adminApi';
 import ActionMenu, { ActionMenuItemUser } from '../components/ActionMenu';
@@ -14,10 +15,12 @@ import {
 
 export default function Users() {
   const { user } = useAuth();
-  const { addToast } = useNotifications();
+  const { addToast, confirmModal } = useNotifications();
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
+
+  useModalDismiss(showAddModal, () => setShowAddModal(false));
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserManagementData | null>(null);
   const [modalInitialTab, setModalInitialTab] = useState<'profile' | 'security'>('profile');
   const [formData, setFormData] = useState({ name: '', email: '', password: '', role: 'staff', profile_picture: '' });
@@ -212,6 +215,15 @@ export default function Users() {
       return;
     }
 
+    const confirmed = await confirmModal({
+      title: 'Delete User Account',
+      message: `Are you sure you want to permanently delete the account for ${targetUser.name || targetUser.email}? This action cannot be undone.`,
+      confirmText: 'Delete Account',
+      cancelText: 'Cancel',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
     console.log(`[UsersPage] Deleting user ${targetUser.email}`);
     setForbiddenError(null);
 
@@ -255,7 +267,7 @@ export default function Users() {
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      alert('Please select a valid image file (PNG, JPG, or WEBP).');
+      addToast('Please select a valid image file (PNG, JPG, or WEBP).', 'warning');
       return;
     }
 
@@ -501,7 +513,14 @@ export default function Users() {
 
       {/* Add New User Modal */}
       {showAddModal && isAdmin && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-in fade-in duration-150">
+        <div 
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-in fade-in duration-150"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowAddModal(false);
+          }}
+          role="dialog"
+          aria-modal="true"
+        >
           <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in zoom-in-95 duration-150">
             <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-2">

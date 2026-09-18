@@ -1,5 +1,7 @@
 import React, { useState } from 'react';
 import { formatGHS } from '../../lib/formatters';
+import { useModalDismiss } from '../../hooks/useModalDismiss';
+import { useNotifications } from '../../context/NotificationContext';
 import {
   PackageCheck,
   CheckCircle2,
@@ -51,11 +53,14 @@ export default function ReceivePOModal({
   const [conditionChecked, setConditionChecked] = useState(true);
   const [isConfirming, setIsConfirming] = useState(false);
 
+  const { addToast } = useNotifications();
+  useModalDismiss(isOpen, onClose);
+
   if (!isOpen || !po) return null;
 
   const handleConfirm = async () => {
     if (!conditionChecked) {
-      alert('Please verify and check the condition confirmation before restocking.');
+      addToast('Please verify and check the condition confirmation before restocking.', 'warning');
       return;
     }
     setIsConfirming(true);
@@ -63,7 +68,7 @@ export default function ReceivePOModal({
       await onConfirm(po.id);
       onClose();
     } catch (err: any) {
-      alert(err.message || 'Failed to confirm receipt of goods');
+      addToast(err.message || 'Failed to confirm receipt of goods', 'error');
     } finally {
       setIsConfirming(false);
     }
@@ -72,7 +77,14 @@ export default function ReceivePOModal({
   const totalUnits = po.items ? po.items.reduce((s, it) => s + it.quantity, 0) : 0;
 
   return (
-    <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+    <div 
+      className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-lg overflow-hidden animate-in zoom-in-95 duration-150">
         <div className="px-6 py-4 bg-emerald-700 text-white flex items-center justify-between">
           <div className="flex items-center gap-2">

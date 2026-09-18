@@ -174,7 +174,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/') return user?.role === 'supplier' ? 'Supplier Portal Dashboard' : 'Executive Dashboard Overview';
+    if (path === '/reports') return 'Financial Reports & Business Analytics';
     if (path === '/supplier-dashboard') return 'Supplier Portal & Restock Workflow';
+    if (path.startsWith('/products/')) return 'Product Intelligence & Ledger';
     if (path.startsWith('/products')) return 'Products Catalog & Inventory';
     if (path === '/sales') return 'Point of Sale (POS) Terminal';
     if (path === '/returns') return 'Returns & Credit Notes Ledger';
@@ -436,7 +438,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         {searchResults.products.map((p: any) => (
                           <div 
                             key={`prod-${p.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/products'); }}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/products/${p.id}`); }}
                             className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
                           >
                             <div className="flex items-center gap-2">
@@ -457,7 +459,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         {searchResults.customers.map((c: any) => (
                           <div 
                             key={`cust-${c.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/customers'); }}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/customers?search=${encodeURIComponent(c.name)}`); }}
                             className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
                           >
                             <div className="flex items-center gap-2">
@@ -477,7 +479,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                         {searchResults.transactions.map((t: any) => (
                           <div 
                             key={`trans-${t.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate('/transactions'); }}
+                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/transactions?id=${t.id}`); }}
                             className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
                           >
                             <div className="flex items-center gap-2">

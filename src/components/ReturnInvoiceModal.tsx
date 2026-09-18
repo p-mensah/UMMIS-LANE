@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Printer, X, RotateCcw, FileText, CheckCircle2, User, Building2, Calendar, CreditCard, ShieldCheck } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import { useModalDismiss } from '../hooks/useModalDismiss';
 
 interface ReturnInvoiceModalProps {
   returnData: {
@@ -27,6 +28,7 @@ interface ReturnInvoiceModalProps {
 
 export default function ReturnInvoiceModal({ returnData, onClose }: ReturnInvoiceModalProps) {
   const [format, setFormat] = useState<'a4' | 'receipt'>('a4');
+  useModalDismiss(true, onClose);
 
   const rawDate = returnData.created_at || new Date().toISOString();
   const dateObj = new Date(rawDate.endsWith('Z') ? rawDate : rawDate + 'Z');
@@ -40,7 +42,14 @@ export default function ReturnInvoiceModal({ returnData, onClose }: ReturnInvoic
   };
 
   return (
-    <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] overflow-y-auto">
+    <div 
+      className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[90] overflow-y-auto animate-in fade-in duration-150"
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      role="dialog"
+      aria-modal="true"
+    >
       <style>{`
         @media print {
           body * {
@@ -67,7 +76,7 @@ export default function ReturnInvoiceModal({ returnData, onClose }: ReturnInvoic
         }
       `}</style>
 
-      <div className="bg-white rounded-md max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto">
+      <div className="bg-white rounded-xl max-w-2xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[92vh] my-auto animate-in zoom-in-95 duration-150">
         {/* Modal Header & Controls */}
         <div className="no-print bg-slate-900 text-white p-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-b border-slate-800">
           <div className="flex items-center gap-3">

@@ -1,4 +1,5 @@
-import { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
+import type { FormEvent } from 'react';
 
 // Common validator function type
 export type ValidatorFn<T = any> = (value: any, allValues?: T) => string | null;
@@ -102,6 +103,16 @@ export const validators = {
         return message || `Cannot exceed ${len} characters`;
       }
       return null;
+    };
+  },
+
+  /**
+   * Validates value against a RegExp pattern
+   */
+  pattern: (regex: RegExp, message = 'Invalid format'): ValidatorFn => {
+    return (val) => {
+      if (val === undefined || val === null || (typeof val === 'string' && val.trim() === '')) return null;
+      return regex.test(String(val).trim()) ? null : message;
     };
   },
 
@@ -381,6 +392,21 @@ export function useFormValidation<T extends Record<string, any>>(
     [errors, handleBlur, handleChange, touched, values]
   );
 
+  // Submit wrapper: runs validateAll() and executes callback if valid
+  const handleSubmit = useCallback(
+    (onSubmit: (formValues: T) => Promise<void> | void) => {
+      return async (e?: React.FormEvent) => {
+        if (e && e.preventDefault) {
+          e.preventDefault();
+        }
+        const isAllValid = validateAll();
+        if (!isAllValid) return;
+        await onSubmit(values);
+      };
+    },
+    [validateAll, values]
+  );
+
   return {
     values,
     errors,
@@ -394,6 +420,8 @@ export function useFormValidation<T extends Record<string, any>>(
     validateField,
     validateAll,
     reset,
+    resetForm: reset,
+    handleSubmit,
     getFieldState
   };
 }
