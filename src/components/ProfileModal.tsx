@@ -4,7 +4,7 @@ import { fetchApi } from '../lib/api';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { 
   User, Camera, Lock, Mail, Phone, ShieldCheck, Check, 
-  AlertCircle, X, Loader2, KeyRound, Sparkles, Trash2, Building2
+  AlertCircle, X, Loader2, KeyRound, Trash2, Building2
 } from 'lucide-react';
 
 interface ProfileModalProps {

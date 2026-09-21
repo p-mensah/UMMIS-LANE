@@ -2,7 +2,7 @@ import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { fetchApi } from '../lib/api';
 import { 
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
-  Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, Zap, FileText,
+  Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
   ChevronDown, ChevronUp, BarChart3
 } from 'lucide-react';
@@ -11,11 +11,13 @@ import {
   Tooltip, Legend
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
 
 export default function Sales() {
   const { user } = useAuth();
+  const { addToast } = useNotifications();
   const [sales, setSales] = useState<any[]>([]);
   const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -169,13 +171,13 @@ export default function Sales() {
       const p = products.find(prod => prod.id === productId);
       if (existing) {
         if (p && existing.quantity + 1 > p.stock_quantity) {
-           alert(`Cannot exceed available stock of ${p.stock_quantity}`);
+           addToast(`Cannot exceed available stock of ${p.stock_quantity}`, 'warning');
            return prev;
         }
         return prev.map(i => i.product_id === productId ? { ...i, quantity: i.quantity + 1 } : i);
       }
       if (p && p.stock_quantity <= 0) {
-        alert(`${p.name} is out of stock!`);
+        addToast(`${p.name} is out of stock!`, 'warning');
         return prev;
       }
       return [...prev, { product_id: productId, quantity: 1, unit_price: price }];
@@ -221,8 +223,9 @@ export default function Sales() {
       setPaymentMethod('Cash');
       setPosSearchQuery('');
       loadData();
+      addToast('Sale transaction completed successfully', 'success');
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to complete sale', 'error');
     }
   };
 
@@ -231,37 +234,8 @@ export default function Sales() {
       const sale = await fetchApi(`/sales/${saleId}`);
       setInvoiceSaleData(sale);
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to load sale receipt', 'error');
     }
-  };
-
-  const handleExportCSV = () => {
-    if (sales.length === 0) return;
-    const headers = ['Sale ID', 'Date', 'Cashier', 'Customer', 'Payment Method', 'Status', 'Total Amount', 'Transaction Profit'];
-    const csvRows = [headers.join(',')];
-
-    for (const s of sales) {
-      const row = [
-        `SALE-${s.id}`,
-        `"${new Date(s.created_at + 'Z').toLocaleString()}"`,
-        `"${s.user_name}"`,
-        `"${s.customer_name || 'Walk-in'}"`,
-        s.payment_method,
-        s.status,
-        `"${formatGHS(s.total_amount)}"`,
-        user?.role === 'admin' ? `"${formatGHS(s.profit || 0)}"` : '',
-      ];
-      csvRows.push(row.join(','));
-    }
-
-    const csvStr = csvRows.join('\n');
-    const blob = new Blob([csvStr], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `sales_report_${new Date().toISOString().split('T')[0]}.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
   };
 
   // Filter products for POS session
@@ -286,6 +260,52 @@ export default function Sales() {
       (s.payment_method && s.payment_method.toLowerCase().includes(q))
     );
   });
+
+  const handleExportCSV = () => {
+    if (filteredSalesTable.length === 0) {
+      addToast('No sales records match the current table filters to export.', 'warning');
+      return;
+    }
+    const isAdmin = user?.role === 'admin';
+    const headers = [
+      'Sale ID', 
+      'Date & Time', 
+      'Cashier', 
+      'Customer', 
+      'Payment Method', 
+      'Status', 
+      'Total Amount (GHS)', 
+      ...(isAdmin ? ['Gross Profit (GHS)'] : [])
+    ];
+    const csvRows = [headers.join(',')];
+
+    for (const s of filteredSalesTable) {
+      const dateStr = s.created_at ? new Date(s.created_at.endsWith('Z') ? s.created_at : s.created_at + 'Z').toLocaleString() : '';
+      const row = [
+        `"SALE-${s.id}"`,
+        `"${dateStr}"`,
+        `"${(s.user_name || '').replace(/"/g, '""')}"`,
+        `"${(s.customer_name || 'Walk-in').replace(/"/g, '""')}"`,
+        `"${(s.payment_method || 'Cash').replace(/"/g, '""')}"`,
+        `"${(s.status || 'completed').replace(/"/g, '""')}"`,
+        `"${(Number(s.total_amount) || 0).toFixed(2)}"`,
+        ...(isAdmin ? [`"${(Number(s.profit) || 0).toFixed(2)}"`] : [])
+      ];
+      csvRows.push(row.join(','));
+    }
+
+    const csvStr = csvRows.join('\n');
+    const blob = new Blob([csvStr], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `sales_report_${new Date().toISOString().split('T')[0]}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${filteredSalesTable.length} sales records to CSV.`, 'success');
+  };
 
   // Calculate past week daily performance for Recharts line graph
   const weeklyChartData = useMemo(() => {
@@ -376,11 +396,14 @@ export default function Sales() {
 
         <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
           <button 
+            type="button"
+            id="export-sales-header-csv-btn"
             onClick={handleExportCSV} 
-            disabled={sales.length === 0} 
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5"
+            disabled={filteredSalesTable.length === 0} 
+            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            title="Export current table data to CSV"
           >
-            <FileText size={15} /> Export CSV
+            <Download size={15} /> Export CSV ({filteredSalesTable.length})
           </button>
 
           <button 
@@ -677,6 +700,22 @@ export default function Sales() {
                 Reset
               </button>
             )}
+
+            {/* Export Current Table Data Button */}
+            <button
+              type="button"
+              id="export-sales-table-csv-btn"
+              onClick={handleExportCSV}
+              disabled={filteredSalesTable.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded text-xs font-bold transition disabled:opacity-50 cursor-pointer shadow-2xs whitespace-nowrap ml-auto"
+              title="Export current table data to a CSV file for reporting"
+            >
+              <Download size={14} className="text-slate-600" />
+              <span>Export Table CSV</span>
+              <span className="ml-0.5 px-1.5 py-0.2 bg-white text-slate-700 rounded text-[10px] font-mono font-bold border border-slate-200">
+                {filteredSalesTable.length}
+              </span>
+            </button>
           </div>
         </div>
       </div>

@@ -34,6 +34,7 @@ export default function Dashboard() {
   // Executive Data States
   const [summary, setSummary] = useState<any>(null);
   const [lowStockProducts, setLowStockProducts] = useState<any[]>([]);
+  const [stockProximityData, setStockProximityData] = useState<any | null>(null);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [salesTrends, setSalesTrends] = useState<any[]>([]);
   const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('30days');
@@ -56,10 +57,6 @@ export default function Dashboard() {
   const [showStaffAlerts, setShowStaffAlerts] = useState<boolean>(true);
 
   const { addToast } = useNotifications();
-  useModalDismiss(showQuickSaleModal, () => setShowQuickSaleModal(false));
-  useModalDismiss(showRestockModal, () => setShowRestockModal(false));
-  useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
-  useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
 
   const formatRelativeTime = (dateString: string): string => {
     try {
@@ -121,6 +118,11 @@ export default function Dashboard() {
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [dailySummaryLoading, setDailySummaryLoading] = useState(false);
 
+  useModalDismiss(showQuickSaleModal, () => setShowQuickSaleModal(false));
+  useModalDismiss(showRestockModal, () => setShowRestockModal(false));
+  useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
+  useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
+
   // Initial Load
   useEffect(() => {
     loadDashboardData();
@@ -149,16 +151,20 @@ export default function Dashboard() {
       fetchApi('/reports/summary'),
       fetchApi('/reports/low-stock'),
       fetchApi('/reports/best-sellers'),
+      fetchApi('/reports/stock-threshold-proximity').catch(() => null),
       fetchApi('/sales').catch(() => []),
       fetchApi('/settings').catch(() => ({})),
       fetchApi('/products').catch(() => []),
       fetchApi('/audit-logs?limit=5').catch(() => []),
       fetchApi('/inventory/adjustments').catch(() => [])
     ])
-      .then(([summaryData, lowStockData, top, sales, settingsData, prods, audits, adjs]) => {
+      .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs]) => {
          setSummary(summaryData);
          setLowStockProducts(lowStockData);
          setBestSellers(top);
+         if (proximityData) {
+           setStockProximityData(proximityData);
+         }
          if (Array.isArray(sales)) {
            setRecentSalesList(sales.slice(0, 6));
          }
@@ -603,8 +609,9 @@ export default function Dashboard() {
 
       {/* AUTOMATED LOW-STOCK WARNING NOTIFICATION & REORDER POINT WARNING LIST */}
       <AutomatedLowStockNotification
-        products={allProducts.length > 0 ? allProducts : lowStockProducts}
+        products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
         globalThreshold={globalThreshold}
+        proximityData={stockProximityData}
         userRole={user?.role}
         onQuickRestock={user?.role === 'admin' || allowStaffAdjustments ? (prod) => {
           setSelectedProductForRestock(prod);
@@ -619,16 +626,24 @@ export default function Dashboard() {
       {viewMode === 'admin' ? (
         <>
           {/* REORDER POINT & LOW STOCK REPLENISHMENT WIDGET (ADMIN ONLY) */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <AlertTriangle size={16} className="text-amber-600" /> Inventory Reorder Points & Low Stock Replenishment
                 </h2>
-                <p className="text-xs text-slate-500">Products currently at or below their reorder point threshold requiring purchase or replenishment.</p>
+                <p className="text-xs text-slate-500">Products currently at, below, or approaching minimum threshold limits requiring supplier attention.</p>
               </div>
-              <div className="text-xs font-bold text-amber-700 bg-amber-50 px-3 py-1.5 rounded border border-amber-200">
-                {lowStockProducts.length} Item(s) Need Restocking
+              <div className="flex items-center gap-2 flex-wrap">
+                {stockProximityData?.counts?.nearing > 0 && (
+                  <div className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 flex items-center gap-1.5 shadow-2xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
+                    <span>{stockProximityData.counts.nearing} Nearing Threshold</span>
+                  </div>
+                )}
+                <div className="text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs">
+                  {lowStockProducts.length} Below Reorder Point
+                </div>
               </div>
             </div>
 

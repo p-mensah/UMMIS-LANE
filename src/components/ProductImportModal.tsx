@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { 
   X, Upload, FileSpreadsheet, FileText, CheckCircle2, AlertCircle, 
-  ArrowRight, Download, Trash2, Plus, RefreshCw, Check, Sparkles,
+  ArrowRight, Download, Trash2, Plus, RefreshCw, Check,
   Layers, Package, AlertTriangle, Eye, Table
 } from 'lucide-react';
 import { fetchApi } from '../lib/api';
@@ -480,7 +480,7 @@ export default function ProductImportModal({
                   : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
-              <Sparkles size={14} className="text-amber-500" />
+              <Layers size={14} className="text-blue-600" />
               <span>Starter Presets</span>
             </button>
           </div>
@@ -594,7 +594,7 @@ export default function ProductImportModal({
                       onClick={() => loadPreset(key)}
                       className="w-full py-1.5 px-3 bg-slate-900 hover:bg-blue-600 text-white rounded text-xs font-bold transition flex items-center justify-center gap-1.5"
                     >
-                      <Sparkles size={12} className="text-amber-300" />
+                      <Plus size={12} className="text-white" />
                       <span>Load into Queue</span>
                     </button>
                   </div>

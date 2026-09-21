@@ -4,7 +4,7 @@ import { fetchApi } from '../lib/api';
 import { 
   Truck, Plus, Search, Filter, Calendar, Clock, CheckCircle2, 
   AlertCircle, ChevronRight, FileText, Download, X, Eye, ArrowUpRight,
-  PackageCheck, RefreshCw, AlertTriangle, Zap
+  PackageCheck, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';

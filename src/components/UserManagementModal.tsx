@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { 
   X, User, Mail, AlertCircle, Loader2, KeyRound, Eye, EyeOff, 
-  Camera, Upload, Sparkles, CheckCircle2, ShieldAlert,
-  Clock, LogOut, ShieldCheck, Copy, Check, Calendar, Globe
+  Camera, Upload, CheckCircle2, ShieldAlert,
+  Clock, LogOut, ShieldCheck, Copy, Check, Calendar, Globe, RefreshCw
 } from 'lucide-react';
 import { assignRole } from '../lib/adminApi';
 import { fetchApi, ApiError } from '../lib/api';
@@ -13,6 +13,9 @@ export interface UserManagementData {
   name: string;
   email: string;
   role: 'admin' | 'staff' | 'supplier' | string;
+  department?: string | null;
+  role_name?: string | null;
+  role_color?: string | null;
   is_active?: number;
   profile_picture?: string | null;
   created_at?: string;
@@ -43,8 +46,11 @@ export default function UserManagementModal({
 
   // Profile fields
   const [name, setName] = useState('');
-  const [role, setRole] = useState<'admin' | 'staff' | 'supplier'>('staff');
+  const [role, setRole] = useState<string>('staff');
+  const [department, setDepartment] = useState<string>('');
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
+  const [availableRoles, setAvailableRoles] = useState<any[]>([]);
+  const [availableDepartments, setAvailableDepartments] = useState<any[]>([]);
   const [isSaving, setIsSaving] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
@@ -60,6 +66,23 @@ export default function UserManagementModal({
   const [passwordCopied, setPasswordCopied] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Fetch available roles and departments
+  useEffect(() => {
+    if (isOpen) {
+      fetchApi('/roles')
+        .then((data: any) => {
+          if (Array.isArray(data) && data.length > 0) setAvailableRoles(data);
+        })
+        .catch(() => {});
+
+      fetchApi('/departments')
+        .then((data: any) => {
+          if (Array.isArray(data) && data.length > 0) setAvailableDepartments(data);
+        })
+        .catch(() => {});
+    }
+  }, [isOpen]);
 
   // Scroll lock & Escape key dismissal
   useEffect(() => {
@@ -79,8 +102,8 @@ export default function UserManagementModal({
   useEffect(() => {
     if (user && isOpen) {
       setName(user.name || '');
-      const validRole = (user.role === 'admin' || user.role === 'supplier' ? user.role : 'staff') as 'admin' | 'staff' | 'supplier';
-      setRole(validRole);
+      setRole(user.role || 'staff');
+      setDepartment(user.department || '');
       setProfilePicture(user.profile_picture || null);
       setActiveTab(initialTab);
       setForcePassword('');
@@ -157,6 +180,7 @@ export default function UserManagementModal({
       const payload = {
         name: name.trim(),
         role,
+        department: department ? department.trim() : null,
         profile_picture: profilePicture
       };
 
@@ -278,27 +302,28 @@ export default function UserManagementModal({
     }
   };
 
-  const getRoleBadge = (roleName: string) => {
-    switch (roleName) {
-      case 'admin':
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-indigo-50 text-indigo-700 border border-indigo-200">
-            Administrator
-          </span>
-        );
-      case 'supplier':
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200">
-            Supplier Vendor
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-blue-50 text-blue-700 border border-blue-200">
-            Staff Member
-          </span>
-        );
-    }
+  const getRoleBadge = (roleSlug: string) => {
+    const matchedRole = availableRoles.find(r => r.slug?.toLowerCase() === roleSlug?.toLowerCase());
+    const displayName = matchedRole ? matchedRole.name : (roleSlug.charAt(0).toUpperCase() + roleSlug.slice(1));
+    const color = matchedRole?.color || (roleSlug === 'admin' ? 'indigo' : roleSlug === 'supplier' ? 'emerald' : 'blue');
+
+    const colorClasses: Record<string, string> = {
+      indigo: 'bg-indigo-50 text-indigo-700 border-indigo-200',
+      emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
+      amber: 'bg-amber-50 text-amber-700 border-amber-200',
+      blue: 'bg-blue-50 text-blue-700 border-blue-200',
+      rose: 'bg-rose-50 text-rose-700 border-rose-200',
+      purple: 'bg-purple-50 text-purple-700 border-purple-200',
+      slate: 'bg-slate-100 text-slate-700 border-slate-300'
+    };
+
+    const appliedClass = colorClasses[color] || colorClasses.slate;
+
+    return (
+      <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${appliedClass}`}>
+        {displayName}
+      </span>
+    );
   };
 
   const isActive = user.is_active !== 0;
@@ -409,6 +434,15 @@ export default function UserManagementModal({
                       {name || user.name}
                     </h3>
                     {getRoleBadge(role)}
+                    {department ? (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                        {department}
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium text-slate-400 border border-slate-200">
+                        No Dept
+                      </span>
+                    )}
                     <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold ${
                       isActive 
                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' 
@@ -490,19 +524,57 @@ export default function UserManagementModal({
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                    Assigned Security Role
-                  </label>
-                  <select
-                    value={role}
-                    onChange={e => setRole(e.target.value as any)}
-                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
-                  >
-                    <option value="staff">Staff Member (POS transactions & inventory access)</option>
-                    <option value="admin">Administrator (Full system controls & user management)</option>
-                    <option value="supplier">Supplier Vendor (Vendor portal & purchase order access)</option>
-                  </select>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Assigned Security Role
+                    </label>
+                    <select
+                      value={role}
+                      onChange={e => setRole(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
+                    >
+                      {availableRoles.length > 0 ? (
+                        availableRoles.map(r => (
+                          <option key={r.id || r.slug} value={r.slug}>
+                            {r.name} {r.is_system ? '(System)' : ''}
+                          </option>
+                        ))
+                      ) : (
+                        <>
+                          <option value="staff">Staff Member</option>
+                          <option value="admin">Administrator</option>
+                          <option value="supplier">Supplier Vendor</option>
+                          <option value="manager">Store Manager</option>
+                          <option value="cashier">Cashier / POS Operator</option>
+                        </>
+                      )}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      {availableRoles.find(r => r.slug === role)?.description || 'Controls access rights across modules.'}
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                      Assigned Department
+                    </label>
+                    <select
+                      value={department}
+                      onChange={e => setDepartment(e.target.value)}
+                      className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
+                    >
+                      <option value="">-- No Department Assigned --</option>
+                      {availableDepartments.map(d => (
+                        <option key={d.id || d.name} value={d.name}>
+                          {d.name} {d.code ? `[${d.code}]` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <p className="text-[10px] text-slate-400 mt-1">
+                      Organizational unit assignment for audit and operations.
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -580,7 +652,7 @@ export default function UserManagementModal({
                     onClick={generateStrongPassword}
                     className="px-2.5 py-1.5 text-blue-600 hover:bg-blue-50 border border-blue-200 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                   >
-                    <Sparkles size={13} />
+                    <KeyRound size={13} />
                     <span>Generate Strong</span>
                   </button>
                 </div>

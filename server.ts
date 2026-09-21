@@ -240,6 +240,24 @@ function initDb() {
       FOREIGN KEY (shift_id) REFERENCES shifts(id),
       FOREIGN KEY (user_id) REFERENCES users(id)
     );
+
+    CREATE TABLE IF NOT EXISTS roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      slug TEXT NOT NULL UNIQUE,
+      description TEXT,
+      color TEXT DEFAULT 'indigo',
+      is_system INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS departments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE,
+      code TEXT,
+      description TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   addColumnOrIgnore('categories', 'parent_id', 'INTEGER');
@@ -272,6 +290,8 @@ function initDb() {
   addColumnOrIgnore('users', 'profile_picture', 'TEXT');
   addColumnOrIgnore('users', 'force_password_reset', 'INTEGER DEFAULT 0');
   addColumnOrIgnore('users', 'session_revoked_at', 'DATETIME');
+  addColumnOrIgnore('users', 'department', 'TEXT');
+  addColumnOrIgnore('users', 'department_id', 'INTEGER');
 
   // Explicitly ensure users table columns and backfill created_at for existing users
   try {
@@ -296,8 +316,60 @@ function initDb() {
     if (!colNames.includes('session_revoked_at')) {
       db.prepare('ALTER TABLE users ADD COLUMN session_revoked_at DATETIME').run();
     }
+    if (!colNames.includes('department')) {
+      db.prepare('ALTER TABLE users ADD COLUMN department TEXT').run();
+    }
+    if (!colNames.includes('department_id')) {
+      db.prepare('ALTER TABLE users ADD COLUMN department_id INTEGER').run();
+    }
   } catch (err) {
     console.error('Migration error for users columns:', err);
+  }
+
+  // Seed default roles and departments
+  try {
+    const existingRolesCount = (db.prepare('SELECT COUNT(*) as count FROM roles').get() as any)?.count || 0;
+    if (existingRolesCount === 0) {
+      const defaultRoles = [
+        { name: 'Administrator', slug: 'admin', description: 'Full administrative access to all system features, user governance, configuration, and security audits.', color: 'indigo', is_system: 1 },
+        { name: 'Staff Member', slug: 'staff', description: 'Standard point-of-sale cashiering, checkout, customer transactions, and catalog search.', color: 'slate', is_system: 1 },
+        { name: 'Supplier Vendor', slug: 'supplier', description: 'Supplier portal access for managing purchase orders and restocking shipments.', color: 'emerald', is_system: 1 },
+        { name: 'Store Manager', slug: 'manager', description: 'Catalog oversight, stock adjustments, purchase order creation, and staff sales audits.', color: 'amber', is_system: 0 },
+        { name: 'Cashier / POS Operator', slug: 'cashier', description: 'Front-desk point-of-sale sales, receipt generation, and shift cash reconciliation.', color: 'blue', is_system: 0 }
+      ];
+      const insertRole = db.prepare('INSERT OR IGNORE INTO roles (name, slug, description, color, is_system) VALUES (?, ?, ?, ?, ?)');
+      for (const r of defaultRoles) {
+        insertRole.run(r.name, r.slug, r.description, r.color, r.is_system);
+      }
+    }
+
+    const existingDeptsCount = (db.prepare('SELECT COUNT(*) as count FROM departments').get() as any)?.count || 0;
+    if (existingDeptsCount === 0) {
+      const defaultDepts = [
+        { name: 'Executive Administration', code: 'EXEC', description: 'Store oversight, staff administration, executive leadership, and policy governance.' },
+        { name: 'Sales & POS Operations', code: 'SALES', description: 'Front-of-store sales transactions, cashier shifts, and customer checkout.' },
+        { name: 'Inventory & Warehousing', code: 'INV', description: 'Stock control, warehouse replenishments, cycle counts, and inventory auditing.' },
+        { name: 'Procurement & Logistics', code: 'PROC', description: 'Supplier relationships, purchase orders, incoming shipments, and receiving.' },
+        { name: 'Finance & Accounting', code: 'FIN', description: 'Expense tracking, revenue reconciliation, payment audits, and financial reporting.' }
+      ];
+      const insertDept = db.prepare('INSERT OR IGNORE INTO departments (name, code, description) VALUES (?, ?, ?)');
+      for (const d of defaultDepts) {
+        insertDept.run(d.name, d.code, d.description);
+      }
+    }
+
+    // Set initial department for existing users if unassigned
+    db.prepare(`
+      UPDATE users 
+      SET department = CASE 
+        WHEN role = 'admin' THEN 'Executive Administration'
+        WHEN role = 'supplier' THEN 'Procurement & Logistics'
+        ELSE 'Sales & POS Operations'
+      END
+      WHERE department IS NULL OR department = ''
+    `).run();
+  } catch (err) {
+    console.error('Error seeding default roles and departments:', err);
   }
 
   // Ensure extended schema columns for audit_logs
@@ -1357,11 +1429,32 @@ function checkStockAlerts() {
       } else {
         createNotification(
           'Low Stock Warning',
-          `Product "${prod.name}" (SKU: ${prod.sku}) has reached low stock (${prod.stock_quantity} left).`,
+          `Product "${prod.name}" (SKU: ${prod.sku}) has reached low stock (${prod.stock_quantity} left, min: ${prod.threshold}).`,
           'warning',
           `/purchases?reorder=${prod.id}`
         );
       }
+    }
+
+    // Products nearing their minimum stock threshold (above min, but within proximity buffer)
+    const nearingProducts = db.prepare(`
+      SELECT id, name, sku, stock_quantity, COALESCE(min_stock_level, ?) as threshold,
+             (stock_quantity - COALESCE(min_stock_level, ?)) as buffer_left
+      FROM products
+      WHERE stock_quantity > COALESCE(min_stock_level, ?)
+        AND stock_quantity <= CASE 
+          WHEN COALESCE(min_stock_level, ?) <= 10 THEN COALESCE(min_stock_level, ?) + 5
+          ELSE CAST(COALESCE(min_stock_level, ?) * 1.5 AS INT)
+        END
+    `).all(globalThreshold, globalThreshold, globalThreshold, globalThreshold, globalThreshold, globalThreshold) as any[];
+
+    for (const prod of nearingProducts) {
+      createNotification(
+        'Stock Nearing Minimum Threshold',
+        `Product "${prod.name}" (SKU: ${prod.sku}) is nearing minimum threshold (${prod.stock_quantity} left, buffer: only ${prod.buffer_left} above min threshold ${prod.threshold}).`,
+        'warning',
+        `/purchases?reorder=${prod.id}`
+      );
     }
   } catch (err) {
     console.error('Error checking stock alerts:', err);
@@ -3280,6 +3373,91 @@ app.get('/api/reports/low-stock', authenticate, (req, res) => {
   }
 });
 
+// Visual Stock Proximity & Early Threshold Alert System
+app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
+  try {
+    const thresholdRow: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
+    const globalThreshold = parseInt(thresholdRow?.value || '10', 10);
+
+    // Trigger notification check
+    checkStockAlerts();
+
+    const items = db.prepare(`
+      SELECT 
+        p.id, 
+        p.name, 
+        p.sku, 
+        p.category, 
+        p.stock_quantity, 
+        p.cost_price, 
+        p.selling_price, 
+        p.unit_of_measure, 
+        p.brand, 
+        p.image_url, 
+        p.min_stock_level,
+        COALESCE(p.min_stock_level, ?) as threshold,
+        CASE 
+          WHEN p.stock_quantity <= 0 THEN 'out_of_stock'
+          WHEN p.stock_quantity <= COALESCE(p.min_stock_level, ?) THEN 'breached'
+          WHEN p.stock_quantity <= CASE 
+            WHEN COALESCE(p.min_stock_level, ?) <= 10 THEN COALESCE(p.min_stock_level, ?) + 5 
+            ELSE CAST(COALESCE(p.min_stock_level, ?) * 1.5 AS INT) 
+          END THEN 'nearing'
+          ELSE 'healthy'
+        END as proximity_status,
+        (p.stock_quantity - COALESCE(p.min_stock_level, ?)) as buffer_to_threshold
+      FROM products p
+      ORDER BY 
+        CASE 
+          WHEN p.stock_quantity <= 0 THEN 1
+          WHEN p.stock_quantity <= COALESCE(p.min_stock_level, ?) THEN 2
+          WHEN p.stock_quantity <= CASE 
+            WHEN COALESCE(p.min_stock_level, ?) <= 10 THEN COALESCE(p.min_stock_level, ?) + 5 
+            ELSE CAST(COALESCE(p.min_stock_level, ?) * 1.5 AS INT) 
+          END THEN 3
+          ELSE 4
+        END ASC,
+        p.stock_quantity ASC
+    `).all(
+      globalThreshold, 
+      globalThreshold, 
+      globalThreshold, globalThreshold, 
+      globalThreshold,
+      globalThreshold,
+      globalThreshold, globalThreshold
+    );
+
+    const productsWithReorder = items.map((p: any) => {
+      const targetStock = p.threshold * 2;
+      const recommendedReorder = Math.max(0, targetStock - p.stock_quantity);
+      return {
+        ...p,
+        recommended_reorder: recommendedReorder > 0 ? recommendedReorder : (p.threshold || 10)
+      };
+    });
+
+    const outOfStockCount = productsWithReorder.filter((p: any) => p.proximity_status === 'out_of_stock').length;
+    const breachedCount = productsWithReorder.filter((p: any) => p.proximity_status === 'breached').length;
+    const nearingCount = productsWithReorder.filter((p: any) => p.proximity_status === 'nearing').length;
+    const healthyCount = productsWithReorder.filter((p: any) => p.proximity_status === 'healthy').length;
+
+    res.json({
+      globalThreshold,
+      products: productsWithReorder,
+      counts: {
+        total: productsWithReorder.length,
+        out_of_stock: outOfStockCount,
+        breached: breachedCount,
+        nearing: nearingCount,
+        healthy: healthyCount,
+        action_required: outOfStockCount + breachedCount + nearingCount
+      }
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 app.get('/api/reports/chart', authenticate, (req, res) => {
   try {
     const data = db.prepare(`
@@ -3731,7 +3909,10 @@ app.get('/api/users', authenticate, (req, res) => {
         u.id, 
         u.name, 
         u.email, 
-        u.role, 
+        u.role,
+        u.department,
+        (SELECT r.name FROM roles r WHERE LOWER(r.slug) = LOWER(u.role) LIMIT 1) as role_name,
+        (SELECT r.color FROM roles r WHERE LOWER(r.slug) = LOWER(u.role) LIMIT 1) as role_color,
         u.is_active, 
         u.profile_picture,
         u.force_password_reset,
@@ -3758,23 +3939,33 @@ app.get('/api/users', authenticate, (req, res) => {
 
 // Users Management (Admin)
 app.post('/api/users', authenticate, requireAdmin, (req: any, res) => {
-  const { name, email, password, role, profile_picture } = req.body;
-  const validRoles = ['admin', 'staff', 'supplier'];
-  const userRole = role || 'staff';
+  const { name, email, password, role, department, profile_picture } = req.body;
+  const userRole = (role || 'staff').toLowerCase().trim();
 
-  if (!validRoles.includes(userRole)) {
-    return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
+  // Validate role from roles table or fallback defaults
+  const roleRecord = db.prepare('SELECT slug FROM roles WHERE LOWER(slug) = ?').get(userRole);
+  const isDefaultRole = ['admin', 'staff', 'supplier', 'manager', 'cashier'].includes(userRole);
+
+  if (!roleRecord && !isDefaultRole) {
+    return res.status(400).json({ error: `Invalid role "${role}". Please select a valid role or create it first.` });
   }
 
   try {
     const hash = bcrypt.hashSync(password, 10);
-    const result = db.prepare("INSERT INTO users (name, email, password, role, is_active, created_at, profile_picture) VALUES (?, ?, ?, ?, 1, datetime('now'), ?)").run(name, email, hash, userRole, profile_picture || null);
+    const result = db.prepare("INSERT INTO users (name, email, password, role, department, is_active, created_at, profile_picture) VALUES (?, ?, ?, ?, ?, 1, datetime('now'), ?)").run(
+      name.trim(), 
+      email.trim().toLowerCase(), 
+      hash, 
+      userRole, 
+      department ? department.trim() : null, 
+      profile_picture || null
+    );
     logAuditEvent(
       req.user.id,
       req.user.name,
       'Created User Account',
       'auth',
-      `Registered user account "${name}" (${email}) with role: ${userRole}`,
+      `Registered user account "${name}" (${email}) with role: ${userRole} and department: ${department || 'Unassigned'}`,
       getClientIp(req)
     );
     res.json({ id: result.lastInsertRowid });
@@ -3811,20 +4002,24 @@ app.put('/api/users/:id/status', authenticate, requireAdmin, (req: any, res) => 
 });
 
 app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
-  const { name, role, password, profile_picture } = req.body;
+  const { name, role, department, password, profile_picture } = req.body;
   const targetId = Number(req.params.id);
-  const validRoles = ['admin', 'staff', 'supplier'];
 
   try {
-    const target: any = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetId);
+    const target: any = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(targetId);
     if (!target) return res.status(404).json({ error: 'User not found' });
 
-    if (role && !validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
-    }
+    if (role) {
+      const userRole = role.toLowerCase().trim();
+      const roleRecord = db.prepare('SELECT slug FROM roles WHERE LOWER(slug) = ?').get(userRole);
+      const isDefaultRole = ['admin', 'staff', 'supplier', 'manager', 'cashier'].includes(userRole);
+      if (!roleRecord && !isDefaultRole) {
+        return res.status(400).json({ error: `Invalid role "${role}".` });
+      }
 
-    if (targetId === Number(req.user.id) && role && role !== 'admin') {
-      return res.status(400).json({ error: 'You cannot remove administrative privileges from your own account.' });
+      if (targetId === Number(req.user.id) && userRole !== 'admin') {
+        return res.status(400).json({ error: 'You cannot remove administrative privileges from your own account.' });
+      }
     }
 
     const updates: string[] = [];
@@ -3836,7 +4031,11 @@ app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
     }
     if (role) {
       updates.push('role = ?');
-      params.push(role);
+      params.push(role.toLowerCase().trim());
+    }
+    if (department !== undefined) {
+      updates.push('department = ?');
+      params.push(department ? department.trim() : null);
     }
     if (password && password.trim()) {
       updates.push('password = ?');
@@ -3854,6 +4053,7 @@ app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
       const logDetails = `Updated user ${target.email}: ` + [
         name ? `name: "${name}"` : '',
         role ? `role: "${role}"` : '',
+        department !== undefined ? `department: "${department || 'None'}"` : '',
         password ? 'password reset' : '',
         profile_picture !== undefined ? 'avatar updated' : ''
       ].filter(Boolean).join(', ');
@@ -3862,6 +4062,267 @@ app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
     }
 
     res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- ROLES & PERMISSIONS API (Admin) ---
+app.get('/api/roles', authenticate, (req, res) => {
+  try {
+    const roles = db.prepare(`
+      SELECT 
+        r.id, 
+        r.name, 
+        r.slug, 
+        r.description, 
+        r.color, 
+        r.is_system, 
+        r.created_at,
+        COUNT(u.id) as user_count
+      FROM roles r
+      LEFT JOIN users u ON LOWER(u.role) = LOWER(r.slug)
+      GROUP BY r.id
+      ORDER BY r.is_system DESC, r.name ASC
+    `).all();
+    res.json(roles);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/roles', authenticate, requireAdmin, (req: any, res) => {
+  const { name, slug, description, color } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Role name is required.' });
+  }
+
+  const cleanName = name.trim();
+  const rawSlug = (slug || cleanName)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9_]/g, '_')
+    .replace(/_+/g, '_')
+    .replace(/^_|_$/g, '');
+
+  if (!rawSlug) {
+    return res.status(400).json({ error: 'Valid role identifier could not be generated.' });
+  }
+
+  try {
+    const existing = db.prepare('SELECT id FROM roles WHERE LOWER(name) = ? OR LOWER(slug) = ?').get(cleanName.toLowerCase(), rawSlug);
+    if (existing) {
+      return res.status(400).json({ error: 'A role with this name or identifier already exists.' });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO roles (name, slug, description, color, is_system, created_at)
+      VALUES (?, ?, ?, ?, 0, datetime('now'))
+    `).run(cleanName, rawSlug, description ? description.trim() : '', color || 'indigo');
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Created System Role',
+      'auth',
+      `Admin created new security role "${cleanName}" (${rawSlug})`,
+      getClientIp(req)
+    );
+
+    res.json({
+      id: result.lastInsertRowid,
+      name: cleanName,
+      slug: rawSlug,
+      description: description || '',
+      color: color || 'indigo',
+      is_system: 0,
+      user_count: 0
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/roles/:id', authenticate, requireAdmin, (req: any, res) => {
+  const roleId = Number(req.params.id);
+  const { name, description, color } = req.body;
+
+  try {
+    const role: any = db.prepare('SELECT * FROM roles WHERE id = ?').get(roleId);
+    if (!role) return res.status(404).json({ error: 'Role not found.' });
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (name && name.trim()) {
+      const cleanName = name.trim();
+      const existing = db.prepare('SELECT id FROM roles WHERE LOWER(name) = ? AND id != ?').get(cleanName.toLowerCase(), roleId);
+      if (existing) return res.status(400).json({ error: 'Another role with this name already exists.' });
+      updates.push('name = ?');
+      params.push(cleanName);
+    }
+    if (description !== undefined) {
+      updates.push('description = ?');
+      params.push(description.trim());
+    }
+    if (color) {
+      updates.push('color = ?');
+      params.push(color);
+    }
+
+    if (updates.length > 0) {
+      params.push(roleId);
+      db.prepare(`UPDATE roles SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      logAuditEvent(req.user.id, req.user.name, 'Updated Role', 'auth', `Updated role "${role.name}" (${role.slug})`, getClientIp(req));
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/roles/:id', authenticate, requireAdmin, (req: any, res) => {
+  const roleId = Number(req.params.id);
+  try {
+    const role: any = db.prepare('SELECT * FROM roles WHERE id = ?').get(roleId);
+    if (!role) return res.status(404).json({ error: 'Role not found.' });
+
+    if (role.is_system === 1) {
+      return res.status(400).json({ error: `Cannot delete built-in system role "${role.name}".` });
+    }
+
+    const assignedUsers = (db.prepare('SELECT COUNT(*) as count FROM users WHERE LOWER(role) = ?').get(role.slug.toLowerCase()) as any)?.count || 0;
+    if (assignedUsers > 0) {
+      return res.status(400).json({ error: `Cannot delete role "${role.name}". There are ${assignedUsers} user(s) currently assigned to this role. Reassign their role before deleting.` });
+    }
+
+    db.prepare('DELETE FROM roles WHERE id = ?').run(roleId);
+    logAuditEvent(req.user.id, req.user.name, 'Deleted Role', 'auth', `Deleted custom role "${role.name}" (${role.slug})`, getClientIp(req));
+
+    res.json({ success: true, message: `Role "${role.name}" deleted successfully.` });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- DEPARTMENTS API (Admin) ---
+app.get('/api/departments', authenticate, (req, res) => {
+  try {
+    const departments = db.prepare(`
+      SELECT 
+        d.id, 
+        d.name, 
+        d.code, 
+        d.description, 
+        d.created_at,
+        COUNT(u.id) as user_count
+      FROM departments d
+      LEFT JOIN users u ON LOWER(u.department) = LOWER(d.name)
+      GROUP BY d.id
+      ORDER BY d.name ASC
+    `).all();
+    res.json(departments);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/departments', authenticate, requireAdmin, (req: any, res) => {
+  const { name, code, description } = req.body;
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Department name is required.' });
+  }
+
+  const cleanName = name.trim();
+  const cleanCode = (code || cleanName.substring(0, 4)).trim().toUpperCase();
+
+  try {
+    const existing = db.prepare('SELECT id FROM departments WHERE LOWER(name) = ?').get(cleanName.toLowerCase());
+    if (existing) {
+      return res.status(400).json({ error: 'A department with this name already exists.' });
+    }
+
+    const result = db.prepare(`
+      INSERT INTO departments (name, code, description, created_at)
+      VALUES (?, ?, ?, datetime('now'))
+    `).run(cleanName, cleanCode, description ? description.trim() : '');
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Created Department',
+      'auth',
+      `Admin created new department "${cleanName}" [${cleanCode}]`,
+      getClientIp(req)
+    );
+
+    res.json({
+      id: result.lastInsertRowid,
+      name: cleanName,
+      code: cleanCode,
+      description: description || '',
+      user_count: 0
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/departments/:id', authenticate, requireAdmin, (req: any, res) => {
+  const deptId = Number(req.params.id);
+  const { name, code, description } = req.body;
+
+  try {
+    const dept: any = db.prepare('SELECT * FROM departments WHERE id = ?').get(deptId);
+    if (!dept) return res.status(404).json({ error: 'Department not found.' });
+
+    const updates: string[] = [];
+    const params: any[] = [];
+
+    if (name && name.trim()) {
+      const cleanName = name.trim();
+      const existing = db.prepare('SELECT id FROM departments WHERE LOWER(name) = ? AND id != ?').get(cleanName.toLowerCase(), deptId);
+      if (existing) return res.status(400).json({ error: 'Another department with this name already exists.' });
+      updates.push('name = ?');
+      params.push(cleanName);
+
+      // Also update existing users who were assigned the old department name
+      db.prepare('UPDATE users SET department = ? WHERE department = ?').run(cleanName, dept.name);
+    }
+    if (code !== undefined) {
+      updates.push('code = ?');
+      params.push(code.trim().toUpperCase());
+    }
+    if (description !== undefined) {
+      updates.push('description = ?');
+      params.push(description.trim());
+    }
+
+    if (updates.length > 0) {
+      params.push(deptId);
+      db.prepare(`UPDATE departments SET ${updates.join(', ')} WHERE id = ?`).run(...params);
+      logAuditEvent(req.user.id, req.user.name, 'Updated Department', 'auth', `Updated department "${dept.name}" to "${name || dept.name}"`, getClientIp(req));
+    }
+
+    res.json({ success: true });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.delete('/api/departments/:id', authenticate, requireAdmin, (req: any, res) => {
+  const deptId = Number(req.params.id);
+  try {
+    const dept: any = db.prepare('SELECT * FROM departments WHERE id = ?').get(deptId);
+    if (!dept) return res.status(404).json({ error: 'Department not found.' });
+
+    // Update users assigned to this department to NULL
+    db.prepare('UPDATE users SET department = NULL WHERE department = ?').run(dept.name);
+    db.prepare('DELETE FROM departments WHERE id = ?').run(deptId);
+
+    logAuditEvent(req.user.id, req.user.name, 'Deleted Department', 'auth', `Deleted department "${dept.name}" [${dept.code}]`, getClientIp(req));
+    res.json({ success: true, message: `Department "${dept.name}" deleted successfully.` });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -4123,25 +4584,28 @@ app.post('/api/users/:id/revoke-sessions', authenticate, requireAdmin, (req: any
 app.put('/api/users/:id/role', authenticate, requireAdmin, (req: any, res) => {
   const { role } = req.body;
   const targetId = Number(req.params.id);
-  const validRoles = ['admin', 'staff', 'supplier'];
 
   try {
-    if (!validRoles.includes(role)) {
-      return res.status(400).json({ error: 'Invalid role specified. Must be admin, staff, or supplier.' });
+    const userRole = (role || '').toLowerCase().trim();
+    const roleRecord = db.prepare('SELECT slug FROM roles WHERE LOWER(slug) = ?').get(userRole);
+    const isDefaultRole = ['admin', 'staff', 'supplier', 'manager', 'cashier'].includes(userRole);
+
+    if (!roleRecord && !isDefaultRole) {
+      return res.status(400).json({ error: `Invalid role "${role}".` });
     }
-    if (targetId === Number(req.user.id) && role !== 'admin') {
+    if (targetId === Number(req.user.id) && userRole !== 'admin') {
       return res.status(400).json({ error: 'You cannot remove administrative privileges from your own account.' });
     }
     const target: any = db.prepare('SELECT id, name, email, role FROM users WHERE id = ?').get(targetId);
     if (!target) return res.status(404).json({ error: 'User not found' });
 
-    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(role, targetId);
+    db.prepare('UPDATE users SET role = ? WHERE id = ?').run(userRole, targetId);
     logAuditEvent(
       req.user.id,
       req.user.name,
       'Changed User Role',
       'auth',
-      `Changed role for ${target.name} (${target.email}) from ${target.role} to ${role}`,
+      `Changed role for ${target.name} (${target.email}) from ${target.role} to ${userRole}`,
       getClientIp(req)
     );
     res.json({ success: true });

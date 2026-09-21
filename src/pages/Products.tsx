@@ -2,6 +2,7 @@ import React, { useEffect, useState, useMemo } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
@@ -25,6 +26,7 @@ interface Product {
 
 export default function Products() {
   const { user } = useAuth();
+  const { addToast } = useNotifications();
   const [searchParams, setSearchParams] = useSearchParams();
   const categoryParam = searchParams.get('category') || '';
 
@@ -89,28 +91,7 @@ export default function Products() {
   };
 
   const exportCatalogToCSV = () => {
-    const headers = ['SKU', 'Barcode', 'Name', 'Category', 'Brand', 'Unit of Measure', 'Cost Price', 'Selling Price', 'Stock Quantity', 'Min Stock Level'];
-    const rows = products.map(p => [
-      p.sku || '',
-      p.barcode || '',
-      p.name || '',
-      p.category || '',
-      p.brand || '',
-      p.unit_of_measure || 'pcs',
-      (p.cost_price || 0).toFixed(2),
-      (p.selling_price || 0).toFixed(2),
-      (p.stock_quantity || 0).toString(),
-      (p.min_stock_level ?? 10).toString()
-    ]);
-    const csvContent = [headers.join(','), ...rows.map(r => r.map(cell => `"${cell.replace(/"/g, '""')}"`).join(','))].join('\n');
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `store_catalog_export_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+    exportTableToCSV();
   };
 
   const downloadUpdateTemplate = () => {
@@ -301,7 +282,7 @@ export default function Products() {
       setShowModal(false);
       loadProducts();
     } catch (err: any) {
-      alert(err.message || 'Failed to save product');
+      addToast(err.message || 'Failed to save product', 'error');
       throw err;
     }
   };
@@ -317,8 +298,9 @@ export default function Products() {
         await fetchApi(`/products/${deletingProductId}`, { method: 'DELETE' });
         setDeletingProductId(null);
         loadProducts();
+        addToast('Product successfully deleted', 'success');
       } catch (err: any) {
-        alert(err.message);
+        addToast(err.message || 'Failed to delete product', 'error');
         setDeletingProductId(null);
       }
     }
@@ -339,7 +321,7 @@ export default function Products() {
     e.preventDefault();
     if (!adjustingProduct) return;
     if (!adjustData.reason || adjustData.reason.trim().length < 3) {
-      alert("Reason must be at least 3 characters long.");
+      addToast("Reason must be at least 3 characters long.", "warning");
       return;
     }
     
@@ -354,8 +336,9 @@ export default function Products() {
       });
       setShowAdjustModal(false);
       loadProducts();
+      addToast('Stock level adjusted successfully', 'success');
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to adjust stock', 'error');
     }
   };
 
@@ -444,6 +427,65 @@ export default function Products() {
     });
   }, [products, searchQuery, searchScope, selectedCategory]);
 
+  const exportTableToCSV = () => {
+    if (filteredProducts.length === 0) {
+      addToast('No product records match the current table filters to export.', 'warning');
+      return;
+    }
+    const isAdmin = user?.role === 'admin';
+    const headers = [
+      'SKU',
+      'Barcode',
+      'Product Name',
+      'Brand',
+      'Category',
+      'Unit of Measure',
+      ...(isAdmin ? ['Cost Price (GHS)'] : []),
+      'Selling Price (GHS)',
+      'Current Stock',
+      'Min Stock Level',
+      'Stock Status'
+    ];
+
+    const rows = filteredProducts.map(p => {
+      const status = (p.stock_quantity || 0) <= 0
+        ? 'Out of Stock'
+        : (p.stock_quantity || 0) <= (p.min_stock_level ?? 10)
+          ? 'Low Stock'
+          : 'In Stock';
+
+      return [
+        p.sku || '',
+        p.barcode || '',
+        p.name || '',
+        p.brand || '',
+        p.category || 'Uncategorized',
+        p.unit_of_measure || 'pcs',
+        ...(isAdmin ? [(p.cost_price || 0).toFixed(2)] : []),
+        (p.selling_price || 0).toFixed(2),
+        (p.stock_quantity || 0).toString(),
+        (p.min_stock_level ?? 10).toString(),
+        status
+      ];
+    });
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `products_table_report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${filteredProducts.length} product records to CSV.`, 'success');
+  };
+
   return (
     <div className="space-y-6">
       {/* SOLID BLUE PAGE HEADER (No gradient) */}
@@ -513,10 +555,13 @@ export default function Products() {
               </button>
               <button 
                 type="button"
-                onClick={exportCatalogToCSV}
-                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                id="export-products-header-csv-btn"
+                onClick={exportTableToCSV}
+                disabled={filteredProducts.length === 0}
+                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer disabled:opacity-50"
+                title="Export current table data to CSV"
               >
-                <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV
+                <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV ({filteredProducts.length})
               </button>
             </div>
           )}
@@ -607,6 +652,22 @@ export default function Products() {
             </select>
             <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
+
+          {/* Export Current Table Data Button */}
+          <button
+            type="button"
+            id="export-products-table-csv-btn"
+            onClick={exportTableToCSV}
+            disabled={filteredProducts.length === 0}
+            className="flex items-center justify-center gap-1.5 px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition shadow-2xs cursor-pointer whitespace-nowrap active:scale-95 disabled:opacity-50 shrink-0"
+            title="Export the currently displayed table rows to CSV"
+          >
+            <Download size={14} className="text-slate-600" />
+            <span>Export Table CSV</span>
+            <span className="ml-0.5 px-1.5 py-0.5 bg-white text-slate-700 rounded text-[10px] font-mono font-bold border border-slate-200">
+              {filteredProducts.length}
+            </span>
+          </button>
         </div>
 
         {/* Real-time search status indicator if active */}
