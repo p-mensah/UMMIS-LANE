@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Package, DollarSign, Barcode, CheckCircle2, AlertTriangle, Layers, Percent } from 'lucide-react';
+import { X, Package, Tag, Barcode, CheckCircle2, AlertTriangle, Layers, Percent } from 'lucide-react';
 import { useFormValidation, validators } from '../lib/validation';
 import { FormField, ValidatedInput, ValidatedSelect } from './common/FormField';
 import { formatGHS } from '../lib/formatters';
@@ -283,7 +283,7 @@ export default function ProductFormModal({
           <div className="bg-slate-50/80 rounded-xl p-3.5 border border-slate-200 space-y-3">
             <div className="flex items-center justify-between text-[11px] font-bold uppercase tracking-wider text-slate-600">
               <span className="flex items-center gap-1.5">
-                <DollarSign size={14} className="text-emerald-600" />
+                <Tag size={14} className="text-emerald-600" />
                 Pricing & Margins
               </span>
               <span className="text-[10px] text-slate-400 font-medium normal-case">

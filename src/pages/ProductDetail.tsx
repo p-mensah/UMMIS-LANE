@@ -6,7 +6,7 @@ import { useModalDismiss } from '../hooks/useModalDismiss';
 import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
 import { 
-  ArrowLeft, History, Package, Tag, CreditCard, DollarSign, AlertTriangle, Printer,
+  ArrowLeft, History, Package, Tag, CreditCard, AlertTriangle, Printer,
   Search, Filter, ShoppingCart, ArrowDownRight, ArrowUpRight, RefreshCw, RotateCcw,
   FileText, Calendar, UserCheck, QrCode, Barcode, X, ChevronRight
 } from 'lucide-react';

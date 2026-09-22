@@ -4,11 +4,11 @@ import {
   ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid, BarChart, Bar, Cell
 } from 'recharts';
 import { 
-  TrendingUp, ShoppingCart, DollarSign, Package, AlertTriangle, 
+  TrendingUp, ShoppingCart, Package, AlertTriangle, 
   Users, Calendar, RefreshCw, ChevronRight, FileText, Settings, 
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
-  CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store, Zap,
+  CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store,
   Monitor, Globe, Trash2, Minus, Receipt
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
@@ -20,6 +20,7 @@ import InvoiceModal from '../components/InvoiceModal';
 import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
 import RecentActivityPanel from '../components/RecentActivityPanel';
+import AdminReportsModal from '../components/AdminReportsModal';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -44,13 +45,8 @@ export default function Dashboard() {
   const [recentAuditLogs, setRecentAuditLogs] = useState<any[]>([]);
   const [recentAdjustments, setRecentAdjustments] = useState<any[]>([]);
 
-  // Quick Sale Modal State
-  const [showQuickSaleModal, setShowQuickSaleModal] = useState(false);
-  const [quickSaleCart, setQuickSaleCart] = useState<Array<{ product_id: number; name: string; quantity: number; unit_price: number; max_stock: number }>>([]);
-  const [quickSaleSearch, setQuickSaleSearch] = useState('');
-  const [quickSaleCustomerName, setQuickSaleCustomerName] = useState('');
-  const [quickSalePaymentMethod, setQuickSalePaymentMethod] = useState('Cash');
-  const [isProcessingQuickSale, setIsProcessingQuickSale] = useState(false);
+  // Admin Comprehensive Reports Modal State
+  const [showAdminReportsModal, setShowAdminReportsModal] = useState(false);
 
   // Staff Permissions and Alert Display Settings
   const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
@@ -118,7 +114,7 @@ export default function Dashboard() {
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [dailySummaryLoading, setDailySummaryLoading] = useState(false);
 
-  useModalDismiss(showQuickSaleModal, () => setShowQuickSaleModal(false));
+  useModalDismiss(showAdminReportsModal, () => setShowAdminReportsModal(false));
   useModalDismiss(showRestockModal, () => setShowRestockModal(false));
   useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
   useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
@@ -377,7 +373,7 @@ export default function Dashboard() {
 
   // Background Scroll Locking when any modal is active
   const isAnyModalOpen = Boolean(
-    showQuickSaleModal || 
+    showAdminReportsModal || 
     showRestockModal || 
     showThresholdModal || 
     showDailySummaryModal || 
@@ -398,95 +394,6 @@ export default function Dashboard() {
       if (scrollContainer) scrollContainer.style.overflow = 'auto';
     };
   }, [isAnyModalOpen]);
-
-  // Quick Sale Handlers
-  const handleOpenQuickSale = () => {
-    setQuickSaleCart([]);
-    setQuickSaleSearch('');
-    setQuickSaleCustomerName('');
-    setQuickSalePaymentMethod('Cash');
-    setShowQuickSaleModal(true);
-  };
-
-  const handleAddProductToQuickSale = (prod: any) => {
-    const maxStock = prod.stock_quantity ?? 0;
-    if (maxStock <= 0) {
-      addToast(`"${prod.name}" is out of stock.`, 'warning');
-      return;
-    }
-    const existing = quickSaleCart.find(item => item.product_id === prod.id);
-    if (existing) {
-      if (existing.quantity >= maxStock) {
-        addToast(`Cannot exceed available stock (${maxStock} units).`, 'warning');
-        return;
-      }
-      setQuickSaleCart(prev => prev.map(item => 
-        item.product_id === prod.id ? { ...item, quantity: item.quantity + 1 } : item
-      ));
-    } else {
-      setQuickSaleCart(prev => [...prev, {
-        product_id: prod.id,
-        name: prod.name,
-        quantity: 1,
-        unit_price: Number(prod.selling_price || 0),
-        max_stock: maxStock
-      }]);
-    }
-  };
-
-  const handleUpdateQuickSaleQty = (productId: number, qty: number) => {
-    if (qty <= 0) {
-      setQuickSaleCart(prev => prev.filter(item => item.product_id !== productId));
-      return;
-    }
-    setQuickSaleCart(prev => prev.map(item => {
-      if (item.product_id === productId) {
-        return { ...item, quantity: Math.min(qty, item.max_stock) };
-      }
-      return item;
-    }));
-  };
-
-  const handleRemoveQuickSaleItem = (productId: number) => {
-    setQuickSaleCart(prev => prev.filter(item => item.product_id !== productId));
-  };
-
-  const handleProcessQuickSale = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (quickSaleCart.length === 0) {
-      addToast('Please select at least one item for the sale.', 'warning');
-      return;
-    }
-    setIsProcessingQuickSale(true);
-    try {
-      const totalAmount = quickSaleCart.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
-      const salePayload = {
-        customer_name: quickSaleCustomerName.trim() || 'Walk-in Customer',
-        payment_method: quickSalePaymentMethod,
-        total_amount: totalAmount,
-        items: quickSaleCart.map(item => ({
-          product_id: item.product_id,
-          quantity: item.quantity,
-          unit_price: item.unit_price
-        }))
-      };
-      const createdSale = await fetchApi('/sales', {
-        method: 'POST',
-        body: JSON.stringify(salePayload)
-      });
-      setShowQuickSaleModal(false);
-      setQuickSaleCart([]);
-      addToast('Quick sale transaction completed successfully.', 'success');
-      loadDashboardData();
-      if (createdSale?.id) {
-        handleViewInvoice(createdSale.id);
-      }
-    } catch (err: any) {
-      addToast('Quick Sale error: ' + (err.message || 'Could not complete transaction.'), 'error');
-    } finally {
-      setIsProcessingQuickSale(false);
-    }
-  };
 
   return (
     <div className="space-y-6 pb-12">
@@ -523,6 +430,13 @@ export default function Dashboard() {
           )}
 
           <button
+            onClick={() => setShowAdminReportsModal(true)}
+            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+          >
+            <FileText size={15} /> Reports & Audits
+          </button>
+
+          <button
             onClick={handleOpenDailySummary}
             className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs uppercase tracking-wider transition border border-slate-200 flex items-center gap-1.5"
           >
@@ -547,16 +461,6 @@ export default function Dashboard() {
           <span className="text-[10px] text-blue-600">Slide ↔</span>
         </div>
         <div className="flex sm:grid sm:grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] overflow-x-auto snap-x snap-mandatory gap-2.5 pb-2 sm:pb-0 custom-scrollbar">
-          {/* Quick Sale Direct Modal Button */}
-          <button
-            type="button"
-            onClick={handleOpenQuickSale}
-            className="p-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[130px] sm:min-w-0 snap-start"
-          >
-            <Zap size={20} className="group-hover:scale-110 transition-transform text-amber-300" />
-            <span className="text-xs font-black uppercase tracking-wider">Quick POS Sale</span>
-          </button>
-
           <Link
             to="/sales"
             className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
@@ -734,7 +638,6 @@ export default function Dashboard() {
               <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-2 shrink-0 w-[84vw] max-w-[310px] sm:w-auto snap-start">
                 <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
                   <span>Today's Gross Sales</span>
-                  <DollarSign size={18} className="text-blue-600" />
                 </div>
                 <div className="text-2xl font-black text-slate-900">
                   {formatGHS(summary?.todaySales || 0)}
@@ -1195,7 +1098,6 @@ export default function Dashboard() {
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <DollarSign size={16} className="text-emerald-600" />
                   Monthly Financial P&L Statement
                 </h2>
                 <p className="text-[11px] text-slate-500 font-medium">Income statement breakdown of revenues, COGS, operating expenses, and net margins.</p>
@@ -1719,221 +1621,12 @@ export default function Dashboard() {
         </div>
       )}
 
-      {/* QUICK SALE MODAL (Direct Dashboard POS) */}
-      {showQuickSaleModal && (
-        <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 overflow-y-auto py-6 sm:py-8 custom-scrollbar animate-in fade-in duration-150"
-          onClick={(e) => {
-            if (e.target === e.currentTarget) setShowQuickSaleModal(false);
-          }}
-          role="dialog"
-          aria-modal="true"
-        >
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl border border-slate-200 overflow-hidden flex flex-col my-auto animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="p-4 bg-slate-900 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white">
-                  <Zap size={18} className="text-amber-300" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white">
-                    Quick POS Terminal Sale
-                  </h3>
-                  <p className="text-[10px] text-slate-400">Rapid counter checkout directly from dashboard</p>
-                </div>
-              </div>
-              <button 
-                onClick={() => setShowQuickSaleModal(false)}
-                className="p-1 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800 transition"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-6 space-y-4 max-h-[75vh] overflow-y-auto custom-scrollbar">
-              {/* Customer & Payment Method */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Customer Name
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Walk-in Customer"
-                    value={quickSaleCustomerName}
-                    onChange={(e) => setQuickSaleCustomerName(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-semibold focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">
-                    Payment Method
-                  </label>
-                  <select
-                    value={quickSalePaymentMethod}
-                    onChange={(e) => setQuickSalePaymentMethod(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-bold bg-slate-50 focus:outline-none focus:border-blue-600"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Mobile Money">Mobile Money (MoMo)</option>
-                    <option value="Card">Bank Card</option>
-                  </select>
-                </div>
-              </div>
-
-              {/* Product Search & Quick Add */}
-              <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Search Inventory to Add
-                </label>
-                <div className="relative">
-                  <Search size={15} className="absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search by product name, SKU, or category..."
-                    value={quickSaleSearch}
-                    onChange={(e) => setQuickSaleSearch(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2 border border-slate-300 rounded-lg text-xs focus:outline-none focus:border-blue-600"
-                  />
-                </div>
-
-                {quickSaleSearch.trim() && (
-                  <div className="border border-slate-200 rounded-lg max-h-40 overflow-y-auto divide-y divide-slate-100 custom-scrollbar bg-slate-50">
-                    {allProducts
-                      .filter(p => 
-                        p.name?.toLowerCase().includes(quickSaleSearch.toLowerCase()) ||
-                        p.sku?.toLowerCase().includes(quickSaleSearch.toLowerCase()) ||
-                        p.category?.toLowerCase().includes(quickSaleSearch.toLowerCase())
-                      )
-                      .slice(0, 8)
-                      .map(prod => (
-                        <div 
-                          key={prod.id}
-                          className="p-2.5 flex items-center justify-between hover:bg-white transition text-xs"
-                        >
-                          <div>
-                            <div className="font-bold text-slate-900">{prod.name}</div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              SKU: {prod.sku} | Stock: <span className={prod.stock_quantity <= 0 ? 'text-rose-600 font-bold' : 'text-slate-700'}>{prod.stock_quantity}</span>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="font-black text-slate-900">{formatGHS(prod.selling_price)}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleAddProductToQuickSale(prod)}
-                              disabled={prod.stock_quantity <= 0}
-                              className={`px-3 py-1 rounded text-xs font-black uppercase transition ${
-                                prod.stock_quantity <= 0
-                                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                                  : 'bg-blue-600 hover:bg-blue-700 text-white shadow-2xs'
-                              }`}
-                            >
-                              + Add
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Selected Items / Cart */}
-              <div className="border border-slate-200 rounded-lg p-3 space-y-2 bg-slate-50/50">
-                <div className="flex items-center justify-between text-xs font-black uppercase tracking-wider text-slate-700 border-b border-slate-200 pb-2">
-                  <span>Sale Cart Items ({quickSaleCart.reduce((sum, i) => sum + i.quantity, 0)})</span>
-                  <span>Subtotal</span>
-                </div>
-
-                {quickSaleCart.length === 0 ? (
-                  <div className="py-6 text-center text-slate-400 text-xs">
-                    <ShoppingCart size={24} className="mx-auto mb-1.5 opacity-40" />
-                    No items in quick sale cart yet. Search above to add items.
-                  </div>
-                ) : (
-                  <div className="divide-y divide-slate-100 max-h-48 overflow-y-auto custom-scrollbar">
-                    {quickSaleCart.map(item => (
-                      <div key={item.product_id} className="py-2 flex items-center justify-between text-xs">
-                        <div className="min-w-0 pr-2">
-                          <div className="font-bold text-slate-900 truncate">{item.name}</div>
-                          <div className="text-[10px] text-slate-500">{formatGHS(item.unit_price)} each</div>
-                        </div>
-
-                        <div className="flex items-center gap-3 shrink-0">
-                          <div className="flex items-center border border-slate-300 rounded bg-white">
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQuickSaleQty(item.product_id, item.quantity - 1)}
-                              className="p-1 text-slate-500 hover:bg-slate-100"
-                            >
-                              <Minus size={12} />
-                            </button>
-                            <span className="px-2 font-bold text-xs">{item.quantity}</span>
-                            <button
-                              type="button"
-                              onClick={() => handleUpdateQuickSaleQty(item.product_id, item.quantity + 1)}
-                              className="p-1 text-slate-500 hover:bg-slate-100"
-                            >
-                              <Plus size={12} />
-                            </button>
-                          </div>
-
-                          <span className="font-black text-slate-900 w-20 text-right">
-                            {formatGHS(item.quantity * item.unit_price)}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => handleRemoveQuickSaleItem(item.product_id)}
-                            className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded"
-                          >
-                            <Trash2 size={14} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Grand Total */}
-                <div className="pt-3 border-t border-slate-200 flex items-center justify-between">
-                  <span className="text-xs font-black uppercase text-slate-700">Total Payable:</span>
-                  <span className="text-lg font-black text-blue-700">
-                    {formatGHS(quickSaleCart.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0))}
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowQuickSaleModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold uppercase tracking-wider transition"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                disabled={isProcessingQuickSale || quickSaleCart.length === 0}
-                onClick={handleProcessQuickSale}
-                className={`px-6 py-2.5 rounded-lg text-xs font-black uppercase tracking-wider text-white transition flex items-center gap-2 ${
-                  isProcessingQuickSale || quickSaleCart.length === 0
-                    ? 'bg-slate-300 cursor-not-allowed'
-                    : 'bg-emerald-600 hover:bg-emerald-700 shadow-md'
-                }`}
-              >
-                <Receipt size={15} />
-                {isProcessingQuickSale ? 'Processing...' : 'Complete & Print Receipt'}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* ADMIN COMPREHENSIVE REPORTS MODAL */}
+      <AdminReportsModal
+        isOpen={showAdminReportsModal}
+        onClose={() => setShowAdminReportsModal(false)}
+        defaultTab="daily"
+      />
     </div>
   );
 }

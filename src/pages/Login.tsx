@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import { fetchApi } from '../lib/api';
-import { Package, ShieldAlert, ShieldCheck, Store, TrendingUp, Users, Lock, KeyRound, Sparkles, Eye, EyeOff } from 'lucide-react';
+import { Package, ShieldAlert, ShieldCheck, Store, TrendingUp, Users, Lock, KeyRound, Eye, EyeOff } from 'lucide-react';
 
 export default function Login() {
   const [email, setEmail] = useState('');
@@ -267,7 +267,7 @@ export default function Login() {
             {/* Quick Demo Access Badges */}
             <div className="mt-5 pt-4 border-t border-slate-800/80">
               <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                <Sparkles size={12} className="text-amber-400" /> Fast Terminal Logins:
+                Fast Terminal Logins:
               </p>
               <div className="grid grid-cols-2 gap-2">
                 <button

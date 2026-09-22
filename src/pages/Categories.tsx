@@ -7,7 +7,7 @@ import { useModalDismiss } from '../hooks/useModalDismiss';
 import { formatGHS } from '../lib/formatters';
 import { 
   FolderTree, Plus, Search, Edit, Trash2, X, RefreshCw, 
-  Package, Layers, DollarSign, LayoutGrid, List, ArrowRight,
+  Package, Layers, LayoutGrid, List, ArrowRight,
   ChevronRight, Tag, ShieldAlert, CheckCircle2, Box, Lock
 } from 'lucide-react';
 
@@ -194,7 +194,7 @@ export default function Categories() {
       </div>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className={`grid grid-cols-1 sm:grid-cols-2 ${user?.role === 'admin' ? 'lg:grid-cols-4' : 'lg:grid-cols-3'} gap-4`}>
         <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Total Categories</span>
@@ -228,16 +228,18 @@ export default function Categories() {
           </div>
         </div>
 
-        <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
-          <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
-            <span>Category Inventory Value</span>
-            <DollarSign size={16} className="text-slate-700" />
+        {user?.role === 'admin' && (
+          <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
+            <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
+              <span>Category Inventory Value</span>
+              <Layers size={16} className="text-slate-700" />
+            </div>
+            <div className="text-2xl font-black text-slate-900">{formatGHS(totalCategoryValuation)}</div>
+            <div className="text-[11px] text-slate-500 font-medium mt-1">
+              Estimated retail stock valuation
+            </div>
           </div>
-          <div className="text-2xl font-black text-slate-900">{formatGHS(totalCategoryValuation)}</div>
-          <div className="text-[11px] text-slate-500 font-medium mt-1">
-            Estimated retail stock valuation
-          </div>
-        </div>
+        )}
       </div>
 
       {/* Filter and View Switcher Toolbar */}
@@ -355,7 +357,7 @@ export default function Categories() {
                 </div>
 
                 {/* Metrics Breakdown */}
-                <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center my-3">
+                <div className={`grid ${user?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center my-3`}>
                   <div>
                     <div className="text-[10px] font-black text-slate-400 uppercase">Products</div>
                     <div className="text-sm font-black text-slate-900">{cat.product_count || 0}</div>
@@ -364,12 +366,14 @@ export default function Categories() {
                     <div className="text-[10px] font-black text-slate-400 uppercase">Stock Units</div>
                     <div className="text-sm font-black text-emerald-700">{cat.total_stock || 0}</div>
                   </div>
-                  <div>
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Valuation</div>
-                    <div className="text-xs font-black text-slate-800 truncate" title={formatGHS(cat.total_value || 0)}>
-                      {formatGHS(cat.total_value || 0)}
+                  {user?.role === 'admin' && (
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Valuation</div>
+                      <div className="text-xs font-black text-slate-800 truncate" title={formatGHS(cat.total_value || 0)}>
+                        {formatGHS(cat.total_value || 0)}
+                      </div>
                     </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
@@ -400,7 +404,9 @@ export default function Categories() {
                   <th className="px-4 py-3">Parent Hierarchy</th>
                   <th className="px-4 py-3 text-center">Assigned SKUs</th>
                   <th className="px-4 py-3 text-center">Total Stock Units</th>
-                  <th className="px-4 py-3 text-right">Inventory Valuation</th>
+                  {user?.role === 'admin' && (
+                    <th className="px-4 py-3 text-right">Inventory Valuation</th>
+                  )}
                   <th className="px-4 py-3 text-right">Actions</th>
                 </tr>
               </thead>
@@ -434,9 +440,11 @@ export default function Categories() {
                     <td className="px-4 py-3 text-center font-black text-emerald-700">
                       {cat.total_stock || 0} units
                     </td>
-                    <td className="px-4 py-3 text-right font-black text-slate-900">
-                      {formatGHS(cat.total_value || 0)}
-                    </td>
+                    {user?.role === 'admin' && (
+                      <td className="px-4 py-3 text-right font-black text-slate-900">
+                        {formatGHS(cat.total_value || 0)}
+                      </td>
+                    )}
                     <td className="px-4 py-3 text-right">
                       <div className="space-x-1.5 inline-flex items-center">
                         <Link

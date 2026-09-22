@@ -39,6 +39,7 @@ import SupplierMasterData from '../components/supplier/SupplierMasterData';
 import QualityControlRMA from '../components/supplier/QualityControlRMA';
 import FinancialSettlement from '../components/supplier/FinancialSettlement';
 import SupplierAnalytics from '../components/supplier/SupplierAnalytics';
+import SupplierReports from '../components/supplier/SupplierReports';
 
 interface PurchaseItem {
   id: number;
@@ -105,7 +106,7 @@ export default function SupplierDashboard() {
 
   // Active module tab
   const [activeTab, setActiveTab] = useState<
-    'pos' | 'replenishment' | 'master_data' | 'qc_rma' | 'financial' | 'analytics' | 'portal'
+    'pos' | 'replenishment' | 'master_data' | 'qc_rma' | 'financial' | 'analytics' | 'reports' | 'portal'
   >('pos');
 
   // Data states
@@ -597,6 +598,18 @@ export default function SupplierDashboard() {
         </button>
 
         <button
+          onClick={() => setActiveTab('reports')}
+          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+            activeTab === 'reports'
+              ? 'bg-blue-600 text-white shadow-xs'
+              : 'text-slate-600 hover:bg-slate-100'
+          }`}
+        >
+          <FileText size={14} />
+          <span>Supplier Reports</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('portal')}
           className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
             activeTab === 'portal'
@@ -668,6 +681,18 @@ export default function SupplierDashboard() {
         <SupplierAnalytics
           analyticsData={analyticsData}
           activeSupplier={activeSupplier}
+        />
+      )}
+
+      {activeTab === 'reports' && (
+        <SupplierReports
+          activeSupplier={activeSupplier}
+          purchases={purchases}
+          kpis={analyticsData?.kpis}
+          triggersData={triggersData}
+          qcLogs={qcLogs}
+          rmas={rmas}
+          financialData={purchases}
         />
       )}
 

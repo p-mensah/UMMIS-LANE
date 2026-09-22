@@ -6,7 +6,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Clock,
-  DollarSign,
   TrendingDown,
   Calendar,
   Layers,

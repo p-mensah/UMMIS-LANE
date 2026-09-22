@@ -22,9 +22,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Sliders,
-  DollarSign,
   PieChart as PieIcon,
-  Zap,
   Target
 } from 'lucide-react';
 
@@ -130,7 +128,6 @@ export default function SupplierAnalytics({ analyticsData, activeSupplier }: Sup
           <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
             <div className="flex items-center justify-between text-xs text-slate-500 font-bold uppercase">
               <span>Price Variance vs Market</span>
-              <DollarSign size={14} className="text-purple-600" />
             </div>
             <div className="mt-2 flex items-baseline gap-2">
               <span className="text-xl font-black text-purple-600">-1.2%</span>
@@ -255,7 +252,7 @@ export default function SupplierAnalytics({ analyticsData, activeSupplier }: Sup
           {/* Savings Highlight */}
           <div className="p-3 bg-emerald-50 rounded-lg border border-emerald-200 text-emerald-900">
             <div className="flex items-center gap-1.5 text-xs font-bold text-emerald-800">
-              <Zap size={14} className="text-emerald-600" />
+              <TrendingUp size={14} className="text-emerald-600" />
               Direct Margin Savings
             </div>
             <div className="mt-1 text-xl font-black text-emerald-700">

@@ -527,27 +527,6 @@ export default function Products() {
               </button>
               <button 
                 type="button"
-                onClick={() => setShowBulkCsvModal(true)}
-                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
-                title="Add multiple products at once via simple CSV-like text input area"
-              >
-                <FileSpreadsheet size={14} className="mr-1.5 text-blue-200" /> Bulk Add (CSV)
-              </button>
-              <button 
-                type="button"
-                onClick={() => {
-                  setShowBulkModal(true);
-                  setBulkMode('update');
-                  setBulkFile(null);
-                  setParsedImportProducts([]);
-                  setBulkStatus(null);
-                }}
-                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
-              >
-                <Upload size={14} className="mr-1.5 text-blue-200" /> Bulk Update
-              </button>
-              <button 
-                type="button"
                 onClick={() => setShowImportModal(true)}
                 className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
               >
@@ -742,7 +721,7 @@ export default function Products() {
                       <p className="text-xs text-slate-500 mt-1">
                         {searchQuery 
                           ? `We couldn't find any products with ${searchScope === 'sku' ? 'SKU' : searchScope === 'name' ? 'name' : 'name or SKU'} matching your search.`
-                          : 'No items currently in catalog. Use "+ Add Product" or "Bulk Add (CSV)" to add products.'}
+                          : 'No items currently in catalog. Use "+ Add Product" to add products.'}
                       </p>
                     </div>
                     {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (

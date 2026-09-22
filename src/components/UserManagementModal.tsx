@@ -7,6 +7,7 @@ import {
 import { assignRole } from '../lib/adminApi';
 import { fetchApi, ApiError } from '../lib/api';
 import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 
 export interface UserManagementData {
   id: number | string;

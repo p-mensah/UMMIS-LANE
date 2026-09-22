@@ -1,9 +1,8 @@
 import React, { useState, useMemo } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { 
-  AlertTriangle, AlertCircle, CheckCircle2, ChevronDown, ChevronUp, 
-  ShoppingBag, ArrowRight, RefreshCw, Search, X, PackageOpen, SlidersHorizontal,
-  Bell, Gauge, TrendingDown, ArrowUpRight
+  ChevronDown, ChevronUp, 
+  ShoppingBag, Search, X, ArrowUpRight
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 
@@ -141,22 +140,21 @@ export default function AutomatedLowStockNotification({
 
   if (isDismissed) {
     return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-amber-900 shadow-2xs">
+      <div className="bg-slate-100 border border-slate-300 rounded-xl px-4 py-2.5 flex items-center justify-between text-xs text-slate-800 shadow-2xs">
         <div className="flex items-center gap-2.5">
-          <Bell size={15} className="text-amber-600 animate-pulse" />
           <span className="font-bold">Inventory Visual Stock Notification:</span>
           <span>
             {nearingItems.length > 0 && <strong className="text-amber-800">{nearingItems.length} nearing threshold</strong>}
             {nearingItems.length > 0 && (breachedItems.length > 0 || outOfStockItems.length > 0) && ', '}
-            {breachedItems.length > 0 && <span>{breachedItems.length} low stock</span>}
+            {breachedItems.length > 0 && <span className="text-orange-800 font-semibold">{breachedItems.length} low stock</span>}
             {(breachedItems.length > 0 && outOfStockItems.length > 0) && ', '}
-            {outOfStockItems.length > 0 && <span className="text-rose-700 font-bold">{outOfStockItems.length} out of stock</span>}.
+            {outOfStockItems.length > 0 && <span className="text-rose-800 font-bold">{outOfStockItems.length} out of stock</span>}.
           </span>
         </div>
         <button
           type="button"
           onClick={() => setIsDismissed(false)}
-          className="text-xs font-black text-amber-900 hover:text-black underline cursor-pointer"
+          className="text-xs font-bold text-slate-900 hover:underline cursor-pointer"
         >
           View Alert Details
         </button>
@@ -167,33 +165,28 @@ export default function AutomatedLowStockNotification({
   // All inventory completely healthy state
   if (alertList.length === 0) {
     return (
-      <div className="bg-emerald-50/90 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-xl bg-emerald-100 flex items-center justify-center text-emerald-700 shadow-2xs">
-            <CheckCircle2 size={18} />
+      <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-4 flex items-center justify-between text-xs text-emerald-900 shadow-2xs">
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-bold uppercase tracking-wider text-[11px] text-emerald-800">
+              Inventory Stock Health: Optimal
+            </span>
+            <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
+              All Systems Safe
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-black uppercase tracking-wider text-[11px] text-emerald-800">
-                Inventory Stock Health: Optimal
-              </span>
-              <span className="px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-200/60 text-emerald-800">
-                All Systems Safe
-              </span>
-            </div>
-            <p className="text-emerald-700 text-xs font-normal mt-0.5">
-              All tracked products are comfortably above minimum reorder thresholds. No products are currently nearing depletion.
-            </p>
-          </div>
+          <p className="text-emerald-700 text-xs font-normal mt-0.5">
+            All tracked products are comfortably above minimum reorder thresholds. No products are currently nearing depletion.
+          </p>
         </div>
         {onRefresh && (
           <button
             type="button"
             onClick={onRefresh}
             disabled={isLoading}
-            className="px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 rounded-xl transition flex items-center gap-1.5 border border-emerald-300/60 cursor-pointer"
+            className="px-3 py-1.5 text-xs font-bold text-emerald-800 hover:bg-emerald-100 rounded-lg transition border border-emerald-300 cursor-pointer"
           >
-            <RefreshCw size={12} className={isLoading ? 'animate-spin' : ''} /> Check Now
+            Check Now
           </button>
         )}
       </div>
@@ -201,58 +194,52 @@ export default function AutomatedLowStockNotification({
   }
 
   return (
-    <div id="automated-low-stock-notification" className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden animate-in fade-in duration-200">
+    <div id="automated-low-stock-notification" className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
       {/* Visual Stock Notification Header */}
       <div className="bg-slate-900 text-white px-5 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-        <div className="flex items-start sm:items-center gap-3.5">
-          <div className="w-10 h-10 rounded-xl bg-amber-500/20 border border-amber-500/40 flex items-center justify-center text-amber-400 shrink-0 shadow-xs">
-            <Bell size={20} className="animate-bounce" />
+        <div>
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="px-2.5 py-0.5 bg-slate-800 text-amber-300 border border-slate-700 rounded text-[10px] font-bold uppercase tracking-wider">
+              Live Inventory Proximity Monitor
+            </span>
+            <span className="text-xs font-bold text-slate-200">
+              Early Reorder Notification System
+            </span>
           </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="px-2 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-full text-[10px] font-extrabold uppercase tracking-wider">
-                Live Inventory Proximity Monitor
+          <p className="text-xs text-slate-300 font-normal mt-0.5">
+            {nearingItems.length > 0 && (
+              <span className="text-amber-300 font-bold mr-1.5">
+                {nearingItems.length} product(s) nearing minimum stock threshold
               </span>
-              <span className="text-xs font-bold text-slate-200">
-                Early Reorder Notification System
+            )}
+            {breachedItems.length > 0 && (
+              <span className="text-slate-300 mr-1.5">
+                • {breachedItems.length} low stock
               </span>
-            </div>
-            <p className="text-xs text-slate-300 font-normal mt-0.5">
-              {nearingItems.length > 0 && (
-                <span className="text-amber-300 font-bold mr-1.5">
-                  {nearingItems.length} product(s) nearing minimum stock threshold
-                </span>
-              )}
-              {breachedItems.length > 0 && (
-                <span className="text-slate-300 mr-1.5">
-                  • {breachedItems.length} low stock
-                </span>
-              )}
-              {outOfStockItems.length > 0 && (
-                <span className="text-rose-400 font-bold">
-                  • {outOfStockItems.length} depleted
-                </span>
-              )}
-            </p>
-          </div>
+            )}
+            {outOfStockItems.length > 0 && (
+              <span className="text-rose-400 font-bold">
+                • {outOfStockItems.length} depleted
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Quick summary metric chips & collapse toggle */}
         <div className="flex items-center gap-2 self-end sm:self-center">
           <div className="hidden lg:flex items-center gap-2 text-[11px] font-bold mr-2">
             {nearingItems.length > 0 && (
-              <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded-lg flex items-center gap-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+              <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/30 rounded">
                 {nearingItems.length} Nearing Limit
               </span>
             )}
             {breachedItems.length > 0 && (
-              <span className="px-2.5 py-1 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded-lg">
+              <span className="px-2.5 py-1 bg-orange-500/20 text-orange-300 border border-orange-500/30 rounded">
                 {breachedItems.length} Breached
               </span>
             )}
             {outOfStockItems.length > 0 && (
-              <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded-lg">
+              <span className="px-2.5 py-1 bg-rose-500/20 text-rose-300 border border-rose-500/30 rounded">
                 {outOfStockItems.length} Out of Stock
               </span>
             )}
@@ -261,7 +248,7 @@ export default function AutomatedLowStockNotification({
           <button
             type="button"
             onClick={() => setIsExpanded(!isExpanded)}
-            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-xl font-bold text-xs transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
+            className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg font-bold text-xs transition flex items-center gap-1.5 cursor-pointer border border-slate-700"
           >
             <span>{isExpanded ? 'Hide Proximity List' : `View Warning List (${alertList.length})`}</span>
             {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
@@ -431,10 +418,9 @@ export default function AutomatedLowStockNotification({
                               {buffer} units (under min)
                             </span>
                           ) : isNearing ? (
-                            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
-                              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                              <span>+{buffer} units to threshold</span>
-                            </div>
+                            <span className="inline-block px-2 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-bold">
+                              +{buffer} units to threshold
+                            </span>
                           ) : (
                             <span className="text-slate-400 text-xs">Safe</span>
                           )}
@@ -443,16 +429,16 @@ export default function AutomatedLowStockNotification({
                         {/* Alert Status Pill */}
                         <td className="px-4 py-3 text-center">
                           {isOut ? (
-                            <span className="px-2.5 py-1 bg-rose-600 text-white rounded-full font-bold uppercase text-[10px] tracking-wider inline-flex items-center gap-1 shadow-2xs">
-                              <AlertCircle size={11} /> Out of Stock
+                            <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block">
+                              Out of Stock
                             </span>
                           ) : isBreached ? (
-                            <span className="px-2.5 py-1 bg-orange-600 text-white rounded-full font-bold uppercase text-[10px] tracking-wider inline-flex items-center gap-1 shadow-2xs">
-                              <AlertTriangle size={11} /> Low Stock
+                            <span className="px-2.5 py-0.5 bg-orange-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block">
+                              Low Stock
                             </span>
                           ) : isNearing ? (
-                            <span className="px-2.5 py-1 bg-amber-500 text-slate-900 rounded-full font-extrabold uppercase text-[10px] tracking-wider inline-flex items-center gap-1 shadow-2xs">
-                              <Gauge size={11} /> Nearing Threshold
+                            <span className="px-2.5 py-0.5 bg-amber-500 text-slate-900 rounded font-bold uppercase text-[10px] tracking-wider inline-block">
+                              Nearing Threshold
                             </span>
                           ) : (
                             <span className="text-slate-400 text-xs">Healthy</span>
