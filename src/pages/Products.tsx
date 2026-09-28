@@ -39,6 +39,7 @@ export default function Products() {
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
   const [activeActionMenuId, setActiveActionMenuId] = useState<number | null>(null);
+  const [actionMenuCoords, setActionMenuCoords] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
 
   // Sync category from URL parameter whenever it changes
   useEffect(() => {
@@ -73,9 +74,18 @@ export default function Products() {
 
   useEffect(() => {
     loadProducts();
-    const handleClickOutside = () => setActiveActionMenuId(null);
-    window.addEventListener('click', handleClickOutside);
-    return () => window.removeEventListener('click', handleClickOutside);
+    const handleCloseMenu = () => {
+      setActiveActionMenuId(null);
+      setActionMenuCoords(null);
+    };
+    window.addEventListener('click', handleCloseMenu);
+    window.addEventListener('scroll', handleCloseMenu, true);
+    window.addEventListener('resize', handleCloseMenu);
+    return () => {
+      window.removeEventListener('click', handleCloseMenu);
+      window.removeEventListener('scroll', handleCloseMenu, true);
+      window.removeEventListener('resize', handleCloseMenu);
+    };
   }, []);
 
   const loadProducts = () => {
@@ -774,53 +784,79 @@ export default function Products() {
                         id={`product-action-btn-${p.id}`}
                         onClick={(e) => {
                           e.stopPropagation();
-                          setActiveActionMenuId(activeActionMenuId === p.id ? null : p.id);
+                          if (activeActionMenuId === p.id) {
+                            setActiveActionMenuId(null);
+                            setActionMenuCoords(null);
+                            return;
+                          }
+                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                          const menuWidth = 144;
+                          const menuHeight = 135;
+                          const spaceBelow = window.innerHeight - rect.bottom;
+                          const openUpward = spaceBelow < menuHeight + 20;
+
+                          const top = openUpward
+                            ? Math.max(10, rect.top - menuHeight - 4)
+                            : Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 4);
+                          const left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.right - menuWidth));
+
+                          setActionMenuCoords({ top, left, openUpward });
+                          setActiveActionMenuId(p.id);
                         }} 
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none"
+                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none cursor-pointer"
                         title="Actions"
                       >
                         <MoreVertical size={16} />
                       </button>
 
-                      {activeActionMenuId === p.id && (
+                      {activeActionMenuId === p.id && actionMenuCoords && (
                         <div 
-                          className="absolute right-0 mt-1 w-32 bg-white rounded border border-slate-200 shadow-xl py-1 z-30 animate-in fade-in zoom-in-95 duration-100 text-left"
+                          style={{ top: `${actionMenuCoords.top}px`, left: `${actionMenuCoords.left}px` }}
+                          className={`fixed w-36 bg-white rounded-lg border border-slate-200 shadow-2xl py-1 z-[9999] animate-in fade-in zoom-in-95 duration-100 text-left divide-y divide-slate-100 ${
+                            actionMenuCoords.openUpward ? 'origin-bottom-right' : 'origin-top-right'
+                          }`}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          <button 
-                            id={`action-adjust-${p.id}`}
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              openAdjust(p);
-                            }} 
-                            className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors"
-                          >
-                            <SlidersHorizontal size={14} className="text-amber-500" />
-                            <span>Adjust</span>
-                          </button>
-                          <button 
-                            id={`action-edit-${p.id}`}
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              handleEdit(p);
-                            }} 
-                            className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors"
-                          >
-                            <Edit size={14} className="text-blue-500" />
-                            <span>Edit</span>
-                          </button>
-                          <div className="border-t border-slate-100 my-0.5" />
-                          <button 
-                            id={`action-delete-${p.id}`}
-                            onClick={() => {
-                              setActiveActionMenuId(null);
-                              setDeletingProductId(p.id);
-                            }} 
-                            className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors"
-                          >
-                            <Trash2 size={14} className="text-rose-500" />
-                            <span>Delete</span>
-                          </button>
+                          <div className="py-0.5">
+                            <button 
+                              id={`action-adjust-${p.id}`}
+                              onClick={() => {
+                                setActiveActionMenuId(null);
+                                setActionMenuCoords(null);
+                                openAdjust(p);
+                              }} 
+                              className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <SlidersHorizontal size={14} className="text-amber-500" />
+                              <span>Adjust</span>
+                            </button>
+                            <button 
+                              id={`action-edit-${p.id}`}
+                              onClick={() => {
+                                setActiveActionMenuId(null);
+                                setActionMenuCoords(null);
+                                handleEdit(p);
+                              }} 
+                              className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <Edit size={14} className="text-blue-500" />
+                              <span>Edit</span>
+                            </button>
+                          </div>
+                          <div className="py-0.5">
+                            <button 
+                              id={`action-delete-${p.id}`}
+                              onClick={() => {
+                                setActiveActionMenuId(null);
+                                setActionMenuCoords(null);
+                                setDeletingProductId(p.id);
+                              }} 
+                              className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
+                            >
+                              <Trash2 size={14} className="text-rose-500" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
                         </div>
                       )}
                     </div>

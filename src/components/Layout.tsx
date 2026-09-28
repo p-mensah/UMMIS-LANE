@@ -5,9 +5,11 @@ import {
   Settings as SettingsIcon, Users as UsersIcon, CreditCard, Clock, 
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
   Store, Building2, Wallet, Menu, X, Lock,
-  SlidersHorizontal, UserCog, History, FolderTree, Scale, Search, User
+  SlidersHorizontal, UserCog, History, FolderTree, Scale, Search, User,
+  MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useChat } from '../context/ChatContext';
 import NotificationBell from './NotificationBell';
 import ProfileModal from './ProfileModal';
 import { fetchApi } from '../lib/api';
@@ -58,6 +60,7 @@ function LiveRealtimeClock() {
 
 export default function Layout({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
+  const { totalUnread } = useChat();
   const navigate = useNavigate();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -154,6 +157,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/products', icon: <Package size={18} />, label: 'Supplied Products' }
   ] : [
     { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
+    { to: '/communication', icon: <MessageSquare size={18} />, label: 'Team Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
     { to: '/sales', icon: <ShoppingCart size={18} />, label: 'Sales Terminal', badge: 'POS' },
     { to: '/returns', icon: <RotateCcw size={18} />, label: 'Returns & Credits' },
     { to: '/shifts', icon: <Clock size={18} />, label: 'Shift Register' },
@@ -174,6 +178,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const getPageTitle = () => {
     const path = location.pathname;
     if (path === '/') return user?.role === 'supplier' ? 'Supplier Portal Dashboard' : 'Executive Dashboard Overview';
+    if (path === '/communication') return 'Team Communication & Internal Comms';
     if (path === '/reports') return 'Financial Reports & Business Analytics';
     if (path === '/supplier-dashboard') return 'Supplier Portal & Restock Workflow';
     if (path.startsWith('/products/')) return 'Product Intelligence & Ledger';
@@ -506,6 +511,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
             {/* Real-time Ticking Digital Clock & Date */}
             <LiveRealtimeClock />
+
+            {/* Team Chat & Communication Trigger */}
+            <button
+              onClick={() => navigate('/communication')}
+              className="relative p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+              title={`Team Communication & Chat (${totalUnread} unread)`}
+            >
+              <MessageSquare size={18} />
+              {totalUnread > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 bg-blue-600 text-white text-[10px] font-black rounded-full flex items-center justify-center animate-pulse shadow-xs">
+                  {totalUnread > 99 ? '99+' : totalUnread}
+                </span>
+              )}
+            </button>
 
             {/* In-App Notifications Dropdown */}
             <NotificationBell />

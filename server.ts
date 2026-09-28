@@ -1,10 +1,12 @@
 import express from 'express';
+import http from 'http';
 import cors from 'cors';
 import bcrypt from 'bcryptjs';
 import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { initChatDb, setupChatRoutes, setupChatSocket, WEBSOCKET_AUTH_KEY } from './chatService';
 
 // --- Database Setup ---
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
@@ -592,6 +594,7 @@ function initDb() {
   // Populate initial demo database if fresh
   seedDatabase(db);
   seedSupplierDemoData(db);
+  initChatDb(db);
 }
 
 function seedSupplierDemoData(dbInstance: any) {
@@ -1463,6 +1466,7 @@ function checkStockAlerts() {
 
 // --- App Setup ---
 const app = express();
+const httpServer = http.createServer(app);
 const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_retailos_key_change_me';
 
@@ -1489,7 +1493,8 @@ app.use((req, res, next) => {
     req.url.startsWith('/audit-logs') ||
     req.url.startsWith('/notifications') ||
     req.url.startsWith('/health') ||
-    req.url.startsWith('/pos')
+    req.url.startsWith('/pos') ||
+    req.url.startsWith('/chat')
   )) {
     req.url = `/api${req.url.startsWith('/') ? req.url : `/${req.url}`}`;
   }
@@ -4002,12 +4007,23 @@ app.put('/api/users/:id/status', authenticate, requireAdmin, (req: any, res) => 
 });
 
 app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
-  const { name, role, department, password, profile_picture } = req.body;
+  const { name, email, role, department, password, profile_picture } = req.body;
   const targetId = Number(req.params.id);
 
   try {
     const target: any = db.prepare('SELECT id, name, email, role, department FROM users WHERE id = ?').get(targetId);
     if (!target) return res.status(404).json({ error: 'User not found' });
+
+    if (email && email.trim().toLowerCase() !== target.email.toLowerCase()) {
+      const trimmedEmail = email.trim().toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+        return res.status(400).json({ error: 'Invalid email address format' });
+      }
+      const existingUser: any = db.prepare('SELECT id FROM users WHERE LOWER(email) = ? AND id != ?').get(trimmedEmail, targetId);
+      if (existingUser) {
+        return res.status(400).json({ error: `Email "${trimmedEmail}" is already in use by another user.` });
+      }
+    }
 
     if (role) {
       const userRole = role.toLowerCase().trim();
@@ -4028,6 +4044,10 @@ app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
     if (name && name.trim()) {
       updates.push('name = ?');
       params.push(name.trim());
+    }
+    if (email && email.trim().toLowerCase() !== target.email.toLowerCase()) {
+      updates.push('email = ?');
+      params.push(email.trim().toLowerCase());
     }
     if (role) {
       updates.push('role = ?');
@@ -4052,6 +4072,7 @@ app.put('/api/users/:id', authenticate, requireAdmin, (req: any, res) => {
 
       const logDetails = `Updated user ${target.email}: ` + [
         name ? `name: "${name}"` : '',
+        email && email.trim().toLowerCase() !== target.email.toLowerCase() ? `email changed to: "${email.trim().toLowerCase()}"` : '',
         role ? `role: "${role}"` : '',
         department !== undefined ? `department: "${department || 'None'}"` : '',
         password ? 'password reset' : '',
@@ -5932,9 +5953,13 @@ app.delete('/api/notifications/clear-all', authenticate, (req, res) => {
   }
 });
 
+// --- Real-time Chat & Communication Routes ---
+setupChatRoutes(app, db, authenticate);
+
 // --- Server Startup ---
 async function startServer() {
   initDb();
+  setupChatSocket(httpServer, db, JWT_SECRET);
 
   // Run stock check & auto audit log cleanup if enabled
   try {
@@ -5971,8 +5996,9 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, "0.0.0.0", () => {
+  httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`Socket.IO real-time communication server initialized [WS-Key: ${WEBSOCKET_AUTH_KEY}]`);
   });
 }
 
@@ -5981,5 +6007,5 @@ if (!isServerless && process.env.NODE_ENV !== 'test') {
   startServer();
 }
 
-export { app, db, initDb };
+export { app, httpServer, db, initDb };
 export default app;

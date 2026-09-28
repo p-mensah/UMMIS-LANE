@@ -12,7 +12,7 @@ export class ApiError extends Error {
 
 export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
+export const fetchApi = async <T = any>(endpoint: string, options: RequestInit = {}): Promise<T> => {
   const token = localStorage.getItem('token');
   
   const headers: HeadersInit = {
@@ -31,8 +31,11 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
     (headers as Record<string, string>)['Authorization'] = bearer;
   }
 
-  // Ensure endpoint starts with a slash
-  const cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  // Ensure endpoint starts with a slash and prevent accidental double /api/api
+  let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
+  if (API_URL.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+    cleanEndpoint = cleanEndpoint.replace(/^\/api/, '');
+  }
   const url = `${API_URL}${cleanEndpoint}`;
 
   try {
@@ -99,7 +102,7 @@ export const fetchApi = async (endpoint: string, options: RequestInit = {}) => {
     try {
       return JSON.parse(text);
     } catch {
-      return text;
+      return text as unknown as T;
     }
   } catch (err: any) {
     if ((err.name === 'TypeError' && /fetch/i.test(err.message)) || err.message?.includes('Failed to fetch')) {

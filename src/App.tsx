@@ -7,6 +7,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import { NotificationProvider } from './context/NotificationContext';
+import { ChatProvider } from './context/ChatContext';
 import SessionTimeoutManager from './components/SessionTimeoutManager';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -27,6 +28,7 @@ import AuditLogs from './pages/AuditLogs';
 import ProductDetail from './pages/ProductDetail';
 import Returns from './pages/Returns';
 import SupplierDashboard from './pages/SupplierDashboard';
+import Communication from './pages/Communication';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -48,27 +50,30 @@ export default function App() {
       <BrowserRouter>
         <SessionTimeoutManager />
         <NotificationProvider>
-          <Routes>
-            <Route path="/login" element={<Login />} />
-            <Route path="/" element={<PrivateRoute><HomeRoute /></PrivateRoute>} />
-            <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard /></PrivateRoute>} />
-            <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
-            <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
-            <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />
-            <Route path="/returns" element={<PrivateRoute><Returns /></PrivateRoute>} />
-            <Route path="/purchases" element={<PrivateRoute><Purchases /></PrivateRoute>} />
-            <Route path="/adjustments" element={<PrivateRoute><Adjustments /></PrivateRoute>} />
-            <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
-            <Route path="/reports" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
-            <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
-            <Route path="/customers" element={<PrivateRoute><Customers /></PrivateRoute>} />
-            <Route path="/expenses" element={<PrivateRoute><Expenses /></PrivateRoute>} />
-            <Route path="/shifts" element={<PrivateRoute><Shifts /></PrivateRoute>} />
-            <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
-            <Route path="/suppliers" element={<PrivateRoute><Suppliers /></PrivateRoute>} />
-            <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
-            <Route path="/audit-logs" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
-          </Routes>
+          <ChatProvider>
+            <Routes>
+              <Route path="/login" element={<Login />} />
+              <Route path="/" element={<PrivateRoute><HomeRoute /></PrivateRoute>} />
+              <Route path="/communication" element={<PrivateRoute><Communication /></PrivateRoute>} />
+              <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard /></PrivateRoute>} />
+              <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
+              <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
+              <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />
+              <Route path="/returns" element={<PrivateRoute><Returns /></PrivateRoute>} />
+              <Route path="/purchases" element={<PrivateRoute><Purchases /></PrivateRoute>} />
+              <Route path="/adjustments" element={<PrivateRoute><Adjustments /></PrivateRoute>} />
+              <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
+              <Route path="/reports" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+              <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
+              <Route path="/customers" element={<PrivateRoute><Customers /></PrivateRoute>} />
+              <Route path="/expenses" element={<PrivateRoute><Expenses /></PrivateRoute>} />
+              <Route path="/shifts" element={<PrivateRoute><Shifts /></PrivateRoute>} />
+              <Route path="/categories" element={<PrivateRoute><Categories /></PrivateRoute>} />
+              <Route path="/suppliers" element={<PrivateRoute><Suppliers /></PrivateRoute>} />
+              <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
+              <Route path="/audit-logs" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
+            </Routes>
+          </ChatProvider>
         </NotificationProvider>
       </BrowserRouter>
     </AuthProvider>

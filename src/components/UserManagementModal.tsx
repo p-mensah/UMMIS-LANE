@@ -47,6 +47,7 @@ export default function UserManagementModal({
 
   // Profile fields
   const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
   const [role, setRole] = useState<string>('staff');
   const [department, setDepartment] = useState<string>('');
   const [profilePicture, setProfilePicture] = useState<string | null>(null);
@@ -103,6 +104,7 @@ export default function UserManagementModal({
   useEffect(() => {
     if (user && isOpen) {
       setName(user.name || '');
+      setEmail(user.email || '');
       setRole(user.role || 'staff');
       setDepartment(user.department || '');
       setProfilePicture(user.profile_picture || null);
@@ -157,7 +159,7 @@ export default function UserManagementModal({
   };
 
   const handleCopyEmail = () => {
-    navigator.clipboard.writeText(user.email);
+    navigator.clipboard.writeText(email || user.email);
     setEmailCopied(true);
     setTimeout(() => setEmailCopied(false), 2000);
   };
@@ -180,6 +182,7 @@ export default function UserManagementModal({
 
       const payload = {
         name: name.trim(),
+        email: email.trim().toLowerCase(),
         role,
         department: department ? department.trim() : null,
         profile_picture: profilePicture
@@ -192,7 +195,7 @@ export default function UserManagementModal({
 
       addToast({
         title: 'Profile Updated',
-        message: `Profile changes saved for ${user.email}.`,
+        message: `Profile changes saved for ${email.trim() || user.email}.`,
         type: 'success'
       });
 
@@ -454,7 +457,7 @@ export default function UserManagementModal({
                   </div>
 
                   <div className="flex items-center gap-2 text-slate-500">
-                    <span className="font-mono text-xs">{user.email}</span>
+                    <span className="font-mono text-xs">{email || user.email}</span>
                     <button
                       type="button"
                       onClick={handleCopyEmail}
@@ -514,14 +517,19 @@ export default function UserManagementModal({
                 </div>
 
                 <div>
-                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
-                    Email Address
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                      Email Address
+                    </label>
+                    <span className="text-[10px] text-slate-400">Used for login & notifications</span>
+                  </div>
                   <input
-                    disabled
+                    required
                     type="email"
-                    value={user.email}
-                    className="w-full px-3.5 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono text-slate-500 cursor-not-allowed"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                    placeholder="user@example.com"
+                    className="w-full px-3.5 py-2 bg-white border border-slate-200 rounded-xl text-xs font-mono font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-600 transition"
                   />
                 </div>
 

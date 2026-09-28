@@ -49,8 +49,29 @@ export default function ActionMenu({
   const { addToast } = useNotifications();
   const [isOpen, setIsOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [menuCoords, setMenuCoords] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const isActive = user.is_active === 1 || user.is_active === undefined;
+
+  const updateMenuPosition = () => {
+    if (!buttonRef.current) return;
+    const rect = buttonRef.current.getBoundingClientRect();
+    const menuWidth = 196;
+    const menuHeight = 220;
+
+    // Check if space below is insufficient -> open upward for latter rows
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const openUpward = spaceBelow < menuHeight + 20;
+
+    const top = openUpward
+      ? Math.max(10, rect.top - menuHeight - 6)
+      : Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 6);
+
+    const left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.right - menuWidth));
+
+    setMenuCoords({ top, left, openUpward });
+  };
 
   useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
@@ -65,14 +86,24 @@ export default function ActionMenu({
       }
     };
 
+    const handleScrollOrResize = () => {
+      if (isOpen) {
+        updateMenuPosition();
+      }
+    };
+
     if (isOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
       document.addEventListener('keydown', handleKeyDown);
+      window.addEventListener('scroll', handleScrollOrResize, true);
+      window.addEventListener('resize', handleScrollOrResize);
     }
 
     return () => {
       document.removeEventListener('mousedown', handleOutsideClick);
       document.removeEventListener('keydown', handleKeyDown);
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
     };
   }, [isOpen]);
 
@@ -82,7 +113,12 @@ export default function ActionMenu({
 
   const handleThreeDotsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsOpen(prev => !prev);
+    if (!isOpen) {
+      updateMenuPosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
+    }
   };
 
   const handleManageClick = (e: React.MouseEvent) => {
@@ -230,6 +266,7 @@ export default function ActionMenu({
   return (
     <div className="relative inline-block text-left" ref={menuRef}>
       <button
+        ref={buttonRef}
         type="button"
         onClick={handleThreeDotsClick}
         disabled={isProcessing}
@@ -246,10 +283,14 @@ export default function ActionMenu({
         )}
       </button>
 
-      {isOpen && (
+      {isOpen && menuCoords && (
         <div 
-          className="absolute right-0 top-full mt-1 w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[60] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100"
+          style={{ top: `${menuCoords.top}px`, left: `${menuCoords.left}px` }}
+          className={`fixed w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[9999] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100 ${
+            menuCoords.openUpward ? 'origin-bottom-right' : 'origin-top-right'
+          }`}
           role="menu"
+          onClick={(e) => e.stopPropagation()}
         >
           {/* View Profile Action */}
           <div className="py-1">

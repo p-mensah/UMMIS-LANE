@@ -523,107 +523,220 @@ export default function SupplierDashboard() {
       {/* 2. Top KPI Summary Grid */}
       <SupplierKPIs kpis={analyticsData?.kpis} loading={loading} />
 
-      {/* 3. Navigation Tabs */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-2xs p-1 flex items-center gap-1 overflow-x-auto text-xs">
-        <button
-          onClick={() => setActiveTab('pos')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'pos'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Truck size={14} />
-          <span>Purchase Orders ({purchases.length})</span>
-        </button>
+      {/* 3. Main Workspace: Nav Side bar in Supplier Dashboard + Active Content Area */}
+      <div className="flex flex-col lg:flex-row gap-5 items-start">
+        {/* Nav Side bar in the supplier dashboard */}
+        <aside className="w-full lg:w-72 shrink-0 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
+          {/* Active Vendor Header Card */}
+          <div className="p-3.5 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 text-white">
+            <div className="flex items-center justify-between gap-2 mb-1.5">
+              <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 flex items-center gap-1">
+                <Building2 size={12} /> Supplier Portal
+              </span>
+              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                Verified Vendor
+              </span>
+            </div>
+            <div className="font-black text-sm text-white truncate">{activeSupplier}</div>
+            <div className="text-[11px] text-slate-300 font-medium flex items-center gap-2 mt-1">
+              <span>{activeSupplierRecord.payment_terms || 'Net 30'}</span>
+              <span>•</span>
+              <span>Lead: {activeSupplierRecord.lead_time_days || 3}d</span>
+              <span>•</span>
+              <span className="text-emerald-400 font-bold">{activeSupplierRecord.quality_score || 95}% SLA</span>
+            </div>
+          </div>
 
-        <button
-          onClick={() => setActiveTab('replenishment')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'replenishment'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Boxes size={14} />
-          <span>ROP & Replenishment Triggers ({triggersData?.triggers?.length || 0})</span>
-        </button>
+          {/* Grouped Vertical Navigation Links */}
+          <nav className="p-2 space-y-3 flex-1">
+            {/* Group 1: Procurement & Orders */}
+            <div>
+              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Procurement & Orders
+              </div>
+              <div className="space-y-0.5 mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('pos')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'pos'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Truck size={15} className={activeTab === 'pos' ? 'text-white' : 'text-blue-600'} />
+                    <span className="truncate">Purchase Orders</span>
+                  </div>
+                  <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
+                    activeTab === 'pos' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
+                  }`}>
+                    {purchases.length}
+                  </span>
+                </button>
 
-        <button
-          onClick={() => setActiveTab('master_data')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'master_data'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <Building2 size={14} />
-          <span>Directory & Master Data</span>
-        </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('replenishment')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'replenishment'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Boxes size={15} className={activeTab === 'replenishment' ? 'text-white' : 'text-amber-600'} />
+                    <span className="truncate">ROP & Triggers</span>
+                  </div>
+                  {(triggersData?.triggers?.length || 0) > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
+                      activeTab === 'replenishment' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
+                    }`}>
+                      {triggersData.triggers.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
 
-        <button
-          onClick={() => setActiveTab('qc_rma')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'qc_rma'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <RotateCcw size={14} />
-          <span>Inspection QC & RMAs ({qcLogs.length + rmas.length})</span>
-        </button>
+            {/* Group 2: Quality & Directory */}
+            <div>
+              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Quality & Directory
+              </div>
+              <div className="space-y-0.5 mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('qc_rma')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'qc_rma'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <RotateCcw size={15} className={activeTab === 'qc_rma' ? 'text-white' : 'text-rose-600'} />
+                    <span className="truncate">Inspection & RMAs</span>
+                  </div>
+                  {(qcLogs.length + rmas.length) > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
+                      activeTab === 'qc_rma' ? 'bg-white/20 text-white' : 'bg-rose-50 text-rose-700'
+                    }`}>
+                      {qcLogs.length + rmas.length}
+                    </span>
+                  )}
+                </button>
 
-        <button
-          onClick={() => setActiveTab('financial')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'financial'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <CreditCard size={14} />
-          <span>3-Way Settlement & Invoicing</span>
-        </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('master_data')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'master_data'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <Building2 size={15} className={activeTab === 'master_data' ? 'text-white' : 'text-indigo-600'} />
+                    <span className="truncate">Master Directory</span>
+                  </div>
+                </button>
 
-        <button
-          onClick={() => setActiveTab('analytics')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'analytics'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <BarChart3 size={14} />
-          <span>Analytics & Scorecard</span>
-        </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('portal')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'portal'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <MessageSquare size={15} className={activeTab === 'portal' ? 'text-white' : 'text-blue-600'} />
+                    <span className="truncate">Supplier Messages</span>
+                  </div>
+                  {interactions.length > 0 && (
+                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
+                      activeTab === 'portal' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
+                    }`}>
+                      {interactions.length}
+                    </span>
+                  )}
+                </button>
+              </div>
+            </div>
 
-        <button
-          onClick={() => setActiveTab('reports')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'reports'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <FileText size={14} />
-          <span>Supplier Reports</span>
-        </button>
+            {/* Group 3: Financials & Reports */}
+            <div>
+              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
+                Finance & Reports
+              </div>
+              <div className="space-y-0.5 mt-0.5">
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('financial')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'financial'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <CreditCard size={15} className={activeTab === 'financial' ? 'text-white' : 'text-emerald-600'} />
+                    <span className="truncate">3-Way Settlement</span>
+                  </div>
+                </button>
 
-        <button
-          onClick={() => setActiveTab('portal')}
-          className={`px-3 py-2 rounded font-bold transition-all flex items-center gap-1.5 shrink-0 ${
-            activeTab === 'portal'
-              ? 'bg-blue-600 text-white shadow-xs'
-              : 'text-slate-600 hover:bg-slate-100'
-          }`}
-        >
-          <MessageSquare size={14} />
-          <span>Supplier Messages ({interactions.length})</span>
-        </button>
-      </div>
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('analytics')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'analytics'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <BarChart3 size={15} className={activeTab === 'analytics' ? 'text-white' : 'text-violet-600'} />
+                    <span className="truncate">Analytics Scorecard</span>
+                  </div>
+                </button>
 
-      {/* 4. Active Tab Content Panels */}
-      {activeTab === 'pos' && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('reports')}
+                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
+                    activeTab === 'reports'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <FileText size={15} className={activeTab === 'reports' ? 'text-white' : 'text-slate-600'} />
+                    <span className="truncate">Supplier Reports</span>
+                  </div>
+                </button>
+              </div>
+            </div>
+          </nav>
+
+          {/* Nav Side bar Quick Action Footer */}
+          <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2">
+            <button
+              onClick={() => {
+                if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
+                setShowCreatePoModal(true);
+              }}
+              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Plus size={14} /> Create & Issue PO
+            </button>
+          </div>
+        </aside>
+
+        {/* Right Active Content Panel */}
+        <main className="flex-1 min-w-0 w-full space-y-4">
+          {activeTab === 'pos' && (
         <POManagement
           purchases={purchases}
           activeSupplier={activeSupplier}
@@ -799,6 +912,8 @@ export default function SupplierDashboard() {
           </div>
         </div>
       )}
+        </main>
+      </div>
 
       {/* 5. Create & Issue Purchase Order Modal */}
       {showCreatePoModal && (
