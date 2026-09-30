@@ -36,6 +36,7 @@ export default function Communication() {
     startDirectMessage, 
     sendTypingStart, 
     sendTypingStop,
+    toggleReaction,
     refreshChannels,
     refreshTeamMembers
   } = useChat();
@@ -49,6 +50,9 @@ export default function Communication() {
   const [showNewDmModal, setShowNewDmModal] = useState(false);
   const [selectedMessageForReads, setSelectedMessageForReads] = useState<ChatMessage | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
+  const [activeReactionPickerMsgId, setActiveReactionPickerMsgId] = useState<number | null>(null);
+  const [isMsgSearchOpen, setIsMsgSearchOpen] = useState(false);
+  const [msgSearchQuery, setMsgSearchQuery] = useState('');
   const [isSending, setIsSending] = useState(false);
 
   // Attachments & Camera state
@@ -375,6 +379,18 @@ export default function Communication() {
     '📦 Stock verified',
     '💰 Register reconciled'
   ];
+
+  const quickReactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🚀', '🔥', '👏', '💯'];
+
+  // In-conversation message search filter by content, sender name, or role
+  const filteredMessages = messages.filter(msg => {
+    if (!msgSearchQuery.trim()) return true;
+    const q = msgSearchQuery.toLowerCase();
+    const matchContent = (msg.content || '').toLowerCase().includes(q);
+    const matchSender = (msg.sender_name || '').toLowerCase().includes(q);
+    const matchRole = (msg.sender_role || '').toLowerCase().includes(q);
+    return matchContent || matchSender || matchRole;
+  });
 
   return (
     <div className="flex flex-col h-[calc(100vh-4.5rem)] bg-slate-50 overflow-hidden -m-4 sm:-m-6">
@@ -807,12 +823,28 @@ export default function Communication() {
                     <span>Read Receipts Active</span>
                   </span>
 
+                  {/* In-Conversation Message Search Toggle */}
+                  <button
+                    onClick={() => {
+                      setIsMsgSearchOpen(prev => !prev);
+                      if (isMsgSearchOpen) setMsgSearchQuery('');
+                    }}
+                    className={`p-2 rounded-lg border transition cursor-pointer ${
+                      isMsgSearchOpen || msgSearchQuery.trim()
+                        ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-2xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200'
+                    }`}
+                    title="Search conversation messages by content or sender"
+                  >
+                    <Search size={16} />
+                  </button>
+
                   {/* Firm Presence Quick Sidebar Toggle */}
                   <button
                     onClick={() => setShowRosterSidebar(prev => !prev)}
-                    className={`p-2 rounded-lg border transition ${
+                    className={`p-2 rounded-lg border transition cursor-pointer ${
                       showRosterSidebar
-                        ? 'bg-blue-50 text-blue-600 border-blue-200'
+                        ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200'
                     }`}
                     title="View firm members and online presence"
@@ -821,6 +853,46 @@ export default function Communication() {
                   </button>
                 </div>
               </div>
+
+              {/* In-Conversation Message Filter Search Bar */}
+              {(isMsgSearchOpen || msgSearchQuery) && (
+                <div className="px-4 py-2 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3 animate-in fade-in slide-in-from-top-1 duration-150 shrink-0">
+                  <div className="flex-1 flex items-center gap-2 bg-white px-3 py-1.5 rounded-lg border border-slate-200 shadow-2xs focus-within:border-blue-500 focus-within:ring-2 focus-within:ring-blue-100">
+                    <Search size={14} className="text-slate-400 shrink-0" />
+                    <input
+                      type="text"
+                      value={msgSearchQuery}
+                      onChange={(e) => setMsgSearchQuery(e.target.value)}
+                      placeholder="Filter messages by content, keyword, sender name, or role..."
+                      className="w-full text-xs text-slate-800 placeholder-slate-400 focus:outline-none"
+                      autoFocus
+                    />
+                    {msgSearchQuery && (
+                      <button
+                        onClick={() => setMsgSearchQuery('')}
+                        className="text-slate-400 hover:text-slate-600 p-0.5 rounded-full hover:bg-slate-100 cursor-pointer"
+                        title="Clear search input"
+                      >
+                        <X size={13} />
+                      </button>
+                    )}
+                  </div>
+                  {msgSearchQuery && (
+                    <span className="text-[11px] font-bold text-slate-500 shrink-0">
+                      {filteredMessages.length} of {messages.length} found
+                    </span>
+                  )}
+                  <button
+                    onClick={() => {
+                      setIsMsgSearchOpen(false);
+                      setMsgSearchQuery('');
+                    }}
+                    className="text-xs font-semibold text-slate-500 hover:text-slate-800 px-2 py-1 hover:bg-slate-200 rounded transition cursor-pointer"
+                  >
+                    Close
+                  </button>
+                </div>
+              )}
 
               {/* Messages Feed */}
               <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-slate-50/50 custom-scrollbar">
@@ -839,8 +911,24 @@ export default function Communication() {
                       Be the first to send a message or attach a live camera snapshot in this channel. Staff, Managers, and Admins will see updates instantly.
                     </p>
                   </div>
+                ) : filteredMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-slate-400 space-y-2 text-center p-6">
+                    <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-500 flex items-center justify-center">
+                      <Search size={24} />
+                    </div>
+                    <h3 className="text-sm font-bold text-slate-700">No matching messages</h3>
+                    <p className="text-xs text-slate-400 max-w-sm">
+                      No messages in this conversation match "{msgSearchQuery}". Try a different search keyword or sender name.
+                    </p>
+                    <button
+                      onClick={() => setMsgSearchQuery('')}
+                      className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer"
+                    >
+                      Clear Search Filter
+                    </button>
+                  </div>
                 ) : (
-                  messages.map((msg) => {
+                  filteredMessages.map((msg) => {
                     const isMe = msg.sender_id === user?.id;
                     const canDelete = isMe || user?.role === 'admin';
                     const hasReplies = Boolean(msg.reply_preview);
@@ -940,23 +1028,71 @@ export default function Communication() {
                               msg.content && <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                             )}
 
-                            {/* Hover Actions: Reply & Delete */}
-                            {!msg.is_deleted && (
-                              <div className={`absolute top-1 ${isMe ? '-left-16' : '-right-16'} hidden group-hover/bubble:flex items-center gap-1 bg-white border border-slate-200 shadow-md rounded-lg p-1 z-10`}>
+                            {/* Floating Quick Emoji Reaction Bar when open */}
+                            {!msg.is_deleted && activeReactionPickerMsgId === msg.id && (
+                              <div 
+                                className={`absolute -top-10 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1 bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1 z-30 animate-in zoom-in-95 duration-100 text-slate-800`}
+                                onClick={e => e.stopPropagation()}
+                              >
+                                {quickReactionEmojis.map(emoji => (
+                                  <button
+                                    key={emoji}
+                                    type="button"
+                                    onClick={() => {
+                                      toggleReaction(msg.id, emoji);
+                                      setActiveReactionPickerMsgId(null);
+                                    }}
+                                    className="text-base hover:scale-130 transition-transform p-1 rounded-full hover:bg-slate-100 active:scale-95 cursor-pointer leading-none"
+                                    title={`React with ${emoji}`}
+                                  >
+                                    {emoji}
+                                  </button>
+                                ))}
                                 <button
+                                  type="button"
+                                  onClick={() => setActiveReactionPickerMsgId(null)}
+                                  className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 cursor-pointer"
+                                  title="Close picker"
+                                >
+                                  <X size={12} />
+                                </button>
+                              </div>
+                            )}
+
+                            {/* Hover Actions: Reaction, Reply & Delete */}
+                            {!msg.is_deleted && (
+                              <div className={`absolute top-1 ${isMe ? '-left-24' : '-right-24'} hidden group-hover/bubble:flex items-center gap-1 bg-white border border-slate-200 shadow-md rounded-lg p-1 z-10`}>
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
+                                  }}
+                                  className={`p-1 rounded transition cursor-pointer ${
+                                    activeReactionPickerMsgId === msg.id
+                                      ? 'bg-amber-100 text-amber-700'
+                                      : 'text-slate-500 hover:text-amber-600 hover:bg-slate-100'
+                                  }`}
+                                  title="Add emoji reaction"
+                                >
+                                  <Smile size={13} />
+                                </button>
+                                <button
+                                  type="button"
                                   onClick={() => {
                                     setReplyingTo(msg);
                                     textareaRef.current?.focus();
                                   }}
-                                  className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded transition"
+                                  className="p-1 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded transition cursor-pointer"
                                   title="Reply to message"
                                 >
                                   <CornerUpLeft size={13} />
                                 </button>
                                 {canDelete && (
                                   <button
+                                    type="button"
                                     onClick={() => handleDelete(msg)}
-                                    className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition"
+                                    className="p-1 text-slate-500 hover:text-red-600 hover:bg-red-50 rounded transition cursor-pointer"
                                     title="Delete message"
                                   >
                                     <Trash2 size={13} />
@@ -965,6 +1101,43 @@ export default function Communication() {
                               </div>
                             )}
                           </div>
+
+                          {/* Message Reactions Pills */}
+                          {!msg.is_deleted && msg.reactions && msg.reactions.length > 0 && (
+                            <div className={`flex flex-wrap gap-1 mt-1 ${isMe ? 'justify-end' : 'justify-start'}`}>
+                              {msg.reactions.map(rx => {
+                                const reactedByMe = rx.users.some(u => u.user_id === user?.id);
+                                const names = rx.users.map(u => u.user_name).join(', ');
+                                return (
+                                  <button
+                                    key={rx.emoji}
+                                    type="button"
+                                    onClick={() => toggleReaction(msg.id, rx.emoji)}
+                                    title={`${names} reacted with ${rx.emoji}. Click to toggle.`}
+                                    className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs transition cursor-pointer border ${
+                                      reactedByMe
+                                        ? 'bg-blue-100 border-blue-400 text-blue-900 font-bold shadow-2xs'
+                                        : 'bg-slate-100 hover:bg-slate-200 border-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    <span className="text-sm leading-none">{rx.emoji}</span>
+                                    <span className="text-[11px] font-semibold">{rx.count}</span>
+                                  </button>
+                                );
+                              })}
+                              <button
+                                type="button"
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
+                                }}
+                                className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-500 hover:text-slate-800 text-xs transition cursor-pointer"
+                                title="Add reaction"
+                              >
+                                <Smile size={11} />
+                              </button>
+                            </div>
+                          )}
 
                           {/* Footer with Read Status / Receipt */}
                           {!msg.is_deleted && (

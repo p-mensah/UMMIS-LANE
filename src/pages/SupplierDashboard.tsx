@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { fetchApi } from '../lib/api';
@@ -28,12 +29,20 @@ import {
   CreditCard,
   BarChart3,
   Sliders,
-  X
+  X,
+  Barcode,
+  Upload,
+  LayoutDashboard,
+  ArrowLeft
 } from 'lucide-react';
 
 import SupplierKPIs from '../components/supplier/SupplierKPIs';
+import SupplierOverview from '../components/supplier/SupplierOverview';
 import POManagement from '../components/supplier/POManagement';
 import CreatePOModal from '../components/supplier/CreatePOModal';
+import UploadInvoiceModal from '../components/supplier/UploadInvoiceModal';
+import SubmitASNModal from '../components/supplier/SubmitASNModal';
+import ItemMasterMapping from '../components/supplier/ItemMasterMapping';
 import ReplenishmentTriggers from '../components/supplier/ReplenishmentTriggers';
 import SupplierMasterData from '../components/supplier/SupplierMasterData';
 import QualityControlRMA from '../components/supplier/QualityControlRMA';
@@ -90,9 +99,44 @@ interface SupplierInteraction {
   created_at: string;
 }
 
-export default function SupplierDashboard() {
+export type SupplierModuleTab =
+  | 'overview'
+  | 'pos'
+  | 'replenishment'
+  | 'item_master'
+  | 'financial'
+  | 'analytics'
+  | 'qc_rma'
+  | 'master_data'
+  | 'reports'
+  | 'portal';
+
+interface SupplierDashboardProps {
+  initialTab?: SupplierModuleTab;
+}
+
+export default function SupplierDashboard({ initialTab }: SupplierDashboardProps = {}) {
   const { user } = useAuth();
   const { addToast, refreshNotifications } = useNotifications();
+  const navigate = useNavigate();
+  const location = useLocation();
+
+  // Helper to resolve active tab from route
+  const resolveTabFromUrl = (): SupplierModuleTab => {
+    if (initialTab) return initialTab;
+    const path = location.pathname;
+    if (path === '/' || path === '/supplier/overview' || path === '/supplier-dashboard') return 'overview';
+    if (path === '/supplier/pos' || path === '/purchases') return 'pos';
+    if (path === '/supplier/inventory') return 'replenishment';
+    if (path === '/supplier/catalog' || path === '/products') return 'item_master';
+    if (path === '/supplier/invoices') return 'financial';
+    if (path === '/supplier/analytics') return 'analytics';
+    if (path === '/supplier/qc') return 'qc_rma';
+    if (path === '/supplier/profile') return 'master_data';
+    if (path === '/supplier/reports') return 'reports';
+    if (path === '/supplier/messages') return 'portal';
+    return 'overview';
+  };
 
   // Active supplier state
   const isActualSupplier = user?.role === 'supplier';
@@ -105,9 +149,16 @@ export default function SupplierDashboard() {
   const [suppliersListFull, setSuppliersListFull] = useState<any[]>([]);
 
   // Active module tab
-  const [activeTab, setActiveTab] = useState<
-    'pos' | 'replenishment' | 'master_data' | 'qc_rma' | 'financial' | 'analytics' | 'reports' | 'portal'
-  >('pos');
+  const [activeTab, setActiveTab] = useState<SupplierModuleTab>(resolveTabFromUrl());
+
+  useEffect(() => {
+    setActiveTab(resolveTabFromUrl());
+  }, [location.pathname, initialTab]);
+
+  const handleNavigateTab = (tab: string, path: string) => {
+    setActiveTab(tab as SupplierModuleTab);
+    navigate(path);
+  };
 
   // Data states
   const [loading, setLoading] = useState(true);
@@ -119,8 +170,12 @@ export default function SupplierDashboard() {
   const [qcLogs, setQcLogs] = useState<any[]>([]);
   const [rmas, setRmas] = useState<any[]>([]);
 
-  // Create PO Modal State
+  // Modal States
   const [showCreatePoModal, setShowCreatePoModal] = useState(false);
+  const [showUploadInvoiceModal, setShowUploadInvoiceModal] = useState(false);
+  const [showSubmitAsnModal, setShowSubmitAsnModal] = useState(false);
+  const [invoiceModalPoId, setInvoiceModalPoId] = useState<number | undefined>(undefined);
+  const [asnModalPoId, setAsnModalPoId] = useState<number | undefined>(undefined);
   const [prefilledRestockItem, setPrefilledRestockItem] = useState<any>(null);
   const [poSelectedProductId, setPoSelectedProductId] = useState<number | ''>('');
   const [poQuantity, setPoQuantity] = useState<number>(50);
@@ -188,6 +243,41 @@ export default function SupplierDashboard() {
   useEffect(() => {
     loadSupplierData(activeSupplier);
   }, [activeSupplier]);
+
+  useEffect(() => {
+    const handleOpenNewPO = () => {
+      if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
+      setShowCreatePoModal(true);
+    };
+    const handleOpenUploadInvoice = (e: any) => {
+      setInvoiceModalPoId(e?.detail?.poId);
+      setShowUploadInvoiceModal(true);
+    };
+    const handleOpenSubmitASN = (e: any) => {
+      setAsnModalPoId(e?.detail?.poId);
+      setShowSubmitAsnModal(true);
+    };
+
+    window.addEventListener('supplier-open-new-po', handleOpenNewPO);
+    window.addEventListener('supplier-open-upload-invoice', handleOpenUploadInvoice);
+    window.addEventListener('supplier-open-submit-asn', handleOpenSubmitASN);
+
+    const params = new URLSearchParams(location.search);
+    const action = params.get('action');
+    if (action === 'new-po') {
+      setShowCreatePoModal(true);
+    } else if (action === 'upload-invoice') {
+      setShowUploadInvoiceModal(true);
+    } else if (action === 'submit-asn') {
+      setShowSubmitAsnModal(true);
+    }
+
+    return () => {
+      window.removeEventListener('supplier-open-new-po', handleOpenNewPO);
+      window.removeEventListener('supplier-open-upload-invoice', handleOpenUploadInvoice);
+      window.removeEventListener('supplier-open-submit-asn', handleOpenSubmitASN);
+    };
+  }, [location.search, catalog]);
 
   // Handler: Acknowledge PO
   const handleAcknowledgePO = async (poId: number, notes: string) => {
@@ -466,454 +556,336 @@ export default function SupplierDashboard() {
       quality_score: 95
     };
 
+  const MODULE_TABS = [
+    { id: 'overview', label: 'Supplier Overview', icon: LayoutDashboard, path: '/supplier/overview' },
+    { id: 'pos', label: 'PO & ASN Lifecycle', icon: Truck, path: '/supplier/pos', badge: purchases.length },
+    { id: 'replenishment', label: 'Inventory Alignment & VMI', icon: Boxes, path: '/supplier/inventory', badge: triggersData?.triggers?.length },
+    { id: 'item_master', label: 'Product Catalog & Item Master', icon: Barcode, path: '/supplier/catalog' },
+    { id: 'financial', label: 'Invoicing & 3-Way Match', icon: CreditCard, path: '/supplier/invoices' },
+    { id: 'analytics', label: 'Vendor Analytics & SLA', icon: BarChart3, path: '/supplier/analytics' },
+    { id: 'qc_rma', label: 'Inspection QC & RMAs', icon: RotateCcw, path: '/supplier/qc', badge: qcLogs.length + rmas.length },
+    { id: 'master_data', label: 'Supplier Master Profile', icon: Building2, path: '/supplier/profile' },
+    { id: 'reports', label: 'Procurement Reports', icon: FileText, path: '/supplier/reports' },
+    { id: 'portal', label: 'Supplier Messages', icon: MessageSquare, path: '/supplier/messages', badge: interactions.length },
+  ];
+
   return (
     <div className="space-y-5">
-      {/* 1. Header & Supplier Selector Bar */}
-      <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <div className="p-2.5 bg-blue-600 text-white rounded-lg shadow-xs">
-            <Building2 size={22} />
-          </div>
-          <div>
-            <h1 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
-              Supplier Relationship & Procurement Operations
-            </h1>
-            <p className="text-xs text-slate-500 font-medium">
-              Real-time purchase order lifecycle, inventory triggers, vendor SLAs, and 3-way reconciliation
-            </p>
-          </div>
-        </div>
-
-        <div className="flex flex-wrap items-center gap-2.5 w-full sm:w-auto">
-          <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
-            <span className="text-[11px] font-bold text-slate-500 uppercase">Vendor:</span>
-            <select
-              value={activeSupplier}
-              onChange={(e) => setActiveSupplier(e.target.value)}
-              className="bg-transparent text-xs font-black text-slate-900 focus:outline-none cursor-pointer"
-            >
-              {availableSuppliers.map((s) => (
-                <option key={s} value={s}>
-                  {s}
-                </option>
-              ))}
-            </select>
-          </div>
-
-          <button
-            onClick={() => loadSupplierData(activeSupplier)}
-            className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded border border-slate-200 transition-colors"
-            title="Refresh All Supplier Feeds"
-          >
-            <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
-          </button>
-
-          <button
-            onClick={() => {
-              if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
-              setShowCreatePoModal(true);
-            }}
-            className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
-          >
-            <Plus size={14} /> Create & Issue PO
-          </button>
-        </div>
-      </div>
-
-      {/* 2. Top KPI Summary Grid */}
-      <SupplierKPIs kpis={analyticsData?.kpis} loading={loading} />
-
-      {/* 3. Main Workspace: Nav Side bar in Supplier Dashboard + Active Content Area */}
-      <div className="flex flex-col lg:flex-row gap-5 items-start">
-        {/* Nav Side bar in the supplier dashboard */}
-        <aside className="w-full lg:w-72 shrink-0 bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
-          {/* Active Vendor Header Card */}
-          <div className="p-3.5 bg-gradient-to-br from-slate-900 via-slate-800 to-blue-950 text-white">
-            <div className="flex items-center justify-between gap-2 mb-1.5">
-              <span className="text-[10px] font-black uppercase tracking-wider text-blue-300 flex items-center gap-1">
-                <Building2 size={12} /> Supplier Portal
-              </span>
-              <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                Verified Vendor
-              </span>
-            </div>
-            <div className="font-black text-sm text-white truncate">{activeSupplier}</div>
-            <div className="text-[11px] text-slate-300 font-medium flex items-center gap-2 mt-1">
-              <span>{activeSupplierRecord.payment_terms || 'Net 30'}</span>
-              <span>•</span>
-              <span>Lead: {activeSupplierRecord.lead_time_days || 3}d</span>
-              <span>•</span>
-              <span className="text-emerald-400 font-bold">{activeSupplierRecord.quality_score || 95}% SLA</span>
-            </div>
-          </div>
-
-          {/* Grouped Vertical Navigation Links */}
-          <nav className="p-2 space-y-3 flex-1">
-            {/* Group 1: Procurement & Orders */}
-            <div>
-              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Procurement & Orders
-              </div>
-              <div className="space-y-0.5 mt-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('pos')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'pos'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Truck size={15} className={activeTab === 'pos' ? 'text-white' : 'text-blue-600'} />
-                    <span className="truncate">Purchase Orders</span>
-                  </div>
-                  <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
-                    activeTab === 'pos' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
-                  }`}>
-                    {purchases.length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('replenishment')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'replenishment'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Boxes size={15} className={activeTab === 'replenishment' ? 'text-white' : 'text-amber-600'} />
-                    <span className="truncate">ROP & Triggers</span>
-                  </div>
-                  {(triggersData?.triggers?.length || 0) > 0 && (
-                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
-                      activeTab === 'replenishment' ? 'bg-white/20 text-white' : 'bg-amber-100 text-amber-800'
-                    }`}>
-                      {triggersData.triggers.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Group 2: Quality & Directory */}
-            <div>
-              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Quality & Directory
-              </div>
-              <div className="space-y-0.5 mt-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('qc_rma')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'qc_rma'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <RotateCcw size={15} className={activeTab === 'qc_rma' ? 'text-white' : 'text-rose-600'} />
-                    <span className="truncate">Inspection & RMAs</span>
-                  </div>
-                  {(qcLogs.length + rmas.length) > 0 && (
-                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
-                      activeTab === 'qc_rma' ? 'bg-white/20 text-white' : 'bg-rose-50 text-rose-700'
-                    }`}>
-                      {qcLogs.length + rmas.length}
-                    </span>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('master_data')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'master_data'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <Building2 size={15} className={activeTab === 'master_data' ? 'text-white' : 'text-indigo-600'} />
-                    <span className="truncate">Master Directory</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('portal')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'portal'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <MessageSquare size={15} className={activeTab === 'portal' ? 'text-white' : 'text-blue-600'} />
-                    <span className="truncate">Supplier Messages</span>
-                  </div>
-                  {interactions.length > 0 && (
-                    <span className={`px-1.5 py-0.5 text-[10px] font-black rounded-full ${
-                      activeTab === 'portal' ? 'bg-white/20 text-white' : 'bg-blue-50 text-blue-700'
-                    }`}>
-                      {interactions.length}
-                    </span>
-                  )}
-                </button>
-              </div>
-            </div>
-
-            {/* Group 3: Financials & Reports */}
-            <div>
-              <div className="px-2.5 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400">
-                Finance & Reports
-              </div>
-              <div className="space-y-0.5 mt-0.5">
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('financial')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'financial'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <CreditCard size={15} className={activeTab === 'financial' ? 'text-white' : 'text-emerald-600'} />
-                    <span className="truncate">3-Way Settlement</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('analytics')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'analytics'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <BarChart3 size={15} className={activeTab === 'analytics' ? 'text-white' : 'text-violet-600'} />
-                    <span className="truncate">Analytics Scorecard</span>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setActiveTab('reports')}
-                  className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs font-bold transition-all text-left cursor-pointer ${
-                    activeTab === 'reports'
-                      ? 'bg-blue-600 text-white shadow-xs'
-                      : 'text-slate-700 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <FileText size={15} className={activeTab === 'reports' ? 'text-white' : 'text-slate-600'} />
-                    <span className="truncate">Supplier Reports</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-          </nav>
-
-          {/* Nav Side bar Quick Action Footer */}
-          <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2">
-            <button
-              onClick={() => {
-                if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
-                setShowCreatePoModal(true);
-              }}
-              className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-lg transition-colors flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
-            >
-              <Plus size={14} /> Create & Issue PO
-            </button>
-          </div>
-        </aside>
-
-        {/* Right Active Content Panel */}
-        <main className="flex-1 min-w-0 w-full space-y-4">
-          {activeTab === 'pos' && (
-        <POManagement
+      {/* If activeTab is overview, render the rich SupplierOverview component */}
+      {activeTab === 'overview' ? (
+        <SupplierOverview
           purchases={purchases}
-          activeSupplier={activeSupplier}
-          onRefresh={() => loadSupplierData(activeSupplier)}
-          onAcknowledgePO={handleAcknowledgePO}
-          onDispatchPO={handleDispatchPO}
-          onUploadAttachment={handleUploadAttachment}
-          onUpdateStatus={handleUpdateStatus}
-          onUpdateLogistics={handleUpdateLogistics}
-          onCreatePO={() => setShowCreatePoModal(true)}
-          userRole={user?.role}
-        />
-      )}
-
-      {activeTab === 'replenishment' && (
-        <ReplenishmentTriggers
           triggersData={triggersData}
-          onRestockItem={handleRestockItem}
-          onRefresh={() => loadSupplierData(activeSupplier)}
-          loading={loading}
-        />
-      )}
-
-      {activeTab === 'master_data' && (
-        <SupplierMasterData
-          supplier={activeSupplierRecord}
-          onSaveMasterData={handleSaveMasterData}
-          userRole={user?.role}
-        />
-      )}
-
-      {activeTab === 'qc_rma' && (
-        <QualityControlRMA
-          qcLogs={qcLogs}
-          rmas={rmas}
-          activeSupplier={activeSupplier}
-          onRefresh={() => loadSupplierData(activeSupplier)}
-          onCreateQCLog={handleCreateQCLog}
-          onCreateRMA={handleCreateRMA}
-          onUpdateRMAStatus={handleUpdateRMAStatus}
-          purchasesList={purchases}
-        />
-      )}
-
-      {activeTab === 'financial' && (
-        <FinancialSettlement
-          purchases={purchases}
-          activeSupplier={activeSupplier}
-          onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
-          userRole={user?.role}
-        />
-      )}
-
-      {activeTab === 'analytics' && (
-        <SupplierAnalytics
           analyticsData={analyticsData}
-          activeSupplier={activeSupplier}
-        />
-      )}
-
-      {activeTab === 'reports' && (
-        <SupplierReports
-          activeSupplier={activeSupplier}
-          purchases={purchases}
-          kpis={analyticsData?.kpis}
-          triggersData={triggersData}
           qcLogs={qcLogs}
           rmas={rmas}
-          financialData={purchases}
+          activeSupplier={activeSupplier}
+          activeSupplierRecord={activeSupplierRecord}
+          loading={loading}
+          onNewPO={() => {
+            if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
+            setShowCreatePoModal(true);
+          }}
+          onUploadInvoice={(poId) => {
+            setInvoiceModalPoId(poId);
+            setShowUploadInvoiceModal(true);
+          }}
+          onSubmitASN={(poId) => {
+            setAsnModalPoId(poId);
+            setShowSubmitAsnModal(true);
+          }}
+          onNavigateTab={handleNavigateTab}
         />
-      )}
+      ) : (
+        <>
+          {/* Header Bar for Dedicated Module Pages */}
+          <div className="bg-white p-4 rounded-lg border border-slate-200 shadow-2xs flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={() => handleNavigateTab('overview', '/supplier/overview')}
+                className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg transition-colors flex items-center gap-1.5 text-xs font-bold cursor-pointer"
+                title="Return to Supplier Overview"
+              >
+                <ArrowLeft size={16} />
+                <span className="hidden sm:inline">Overview</span>
+              </button>
 
-      {activeTab === 'portal' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-1 bg-white p-4 rounded-lg border border-slate-200 shadow-2xs space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <Send size={14} className="text-blue-600" />
-              Dispatch Collaboration Note
-            </h3>
+              <div className="h-6 w-px bg-slate-200 hidden sm:block" />
 
-            <form onSubmit={handleSendMessage} className="space-y-3 text-xs">
               <div>
-                <label className="font-bold text-slate-700 block mb-1">Message Type</label>
-                <select
-                  value={messageType}
-                  onChange={(e: any) => setMessageType(e.target.value)}
-                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
-                >
-                  <option value="dispatch">Logistics Dispatch Notice</option>
-                  <option value="note">Internal Procurement Note</option>
-                  <option value="inquiry">Pricing & SLA Inquiry</option>
-                </select>
+                <div className="flex items-center gap-2">
+                  <h1 className="text-base font-black text-slate-900 tracking-tight">
+                    {MODULE_TABS.find(t => t.id === activeTab)?.label || 'Supplier Portal'}
+                  </h1>
+                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-blue-50 text-blue-700 border border-blue-200">
+                    Dedicated Page
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 font-medium">
+                  Viewing operations for <strong className="text-slate-800">{activeSupplier}</strong> • {activeSupplierRecord?.payment_terms || 'Net 30'} • Lead: {activeSupplierRecord?.lead_time_days || 3}d
+                </p>
               </div>
+            </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Related Purchase Order (Optional)</label>
+            <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-end">
+              <div className="flex items-center gap-1.5 bg-slate-50 px-2.5 py-1.5 rounded border border-slate-200">
+                <span className="text-[11px] font-bold text-slate-500 uppercase">Vendor:</span>
                 <select
-                  value={relatedPoId}
-                  onChange={(e) => setRelatedPoId(e.target.value)}
-                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
+                  value={activeSupplier}
+                  onChange={(e) => setActiveSupplier(e.target.value)}
+                  className="bg-transparent text-xs font-black text-slate-900 focus:outline-none cursor-pointer"
                 >
-                  <option value="">General Supplier Communication</option>
-                  {purchases.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      PO #{p.id} - {formatGHS(p.total_amount)} ({p.status})
+                  {availableSuppliers.map((s) => (
+                    <option key={s} value={s}>
+                      {s}
                     </option>
                   ))}
                 </select>
               </div>
 
-              <div>
-                <label className="font-bold text-slate-700 block mb-1">Message Content</label>
-                <textarea
-                  rows={4}
-                  required
-                  placeholder="Type updates, container arrival times, invoice questions..."
-                  value={newMessage}
-                  onChange={(e) => setNewMessage(e.target.value)}
-                  className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500"
-                />
-              </div>
+              <button
+                onClick={() => loadSupplierData(activeSupplier)}
+                className="p-1.5 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded border border-slate-200 transition-colors cursor-pointer"
+                title="Refresh All Supplier Feeds"
+              >
+                <RefreshCw size={14} className={loading ? 'animate-spin' : ''} />
+              </button>
 
               <button
-                type="submit"
-                disabled={sendingMessage || !newMessage.trim()}
-                className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                type="button"
+                onClick={() => {
+                  if (catalog.length > 0) setPoSelectedProductId(catalog[0].id);
+                  setShowCreatePoModal(true);
+                }}
+                className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title="Create and issue new purchase order"
               >
-                <Send size={13} />
-                <span>{sendingMessage ? 'Sending...' : 'Send to Workflow Thread'}</span>
+                <Plus size={14} /> New PO
               </button>
-            </form>
-          </div>
 
-          <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 shadow-2xs p-4 flex flex-col justify-between space-y-3">
-            <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
-              <MessageSquare size={14} className="text-slate-600" />
-              Live Workflow & Collaboration Ledger ({activeSupplier})
-            </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  setInvoiceModalPoId(undefined);
+                  setShowUploadInvoiceModal(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title="Upload supplier invoice against fulfilled PO"
+              >
+                <FileText size={14} /> Upload Invoice
+              </button>
 
-            <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1 text-xs">
-              {interactions.map((msg) => (
-                <div
-                  key={msg.id}
-                  className="p-3 rounded-lg border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors"
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <span className="font-black text-slate-900">{msg.sender_name}</span>
-                      <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 uppercase">
-                        {msg.sender_role}
-                      </span>
-                      {msg.po_id && (
-                        <span className="text-[10px] font-mono font-bold text-blue-600">
-                          Ref: #PO-{msg.po_id}
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-[10px] text-slate-400">
-                      {new Date(msg.created_at).toLocaleString()}
-                    </span>
-                  </div>
-                  <p className="mt-1.5 text-slate-700 whitespace-pre-wrap leading-relaxed">{msg.message}</p>
-                </div>
-              ))}
-
-              {interactions.length === 0 && (
-                <div className="py-12 text-center text-slate-400 text-xs">
-                  <MessageSquare size={24} className="mx-auto mb-1.5 opacity-30" />
-                  No collaborative dispatch or status notes recorded for {activeSupplier} yet.
-                </div>
-              )}
+              <button
+                type="button"
+                onClick={() => {
+                  setAsnModalPoId(undefined);
+                  setShowSubmitAsnModal(true);
+                }}
+                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-blue-300 font-bold text-xs rounded border border-slate-700 transition-colors flex items-center gap-1.5 shadow-xs cursor-pointer"
+                title="Submit Advanced Shipping Notice (ASN)"
+              >
+                <Truck size={14} /> Submit ASN
+              </button>
             </div>
           </div>
-        </div>
+
+          {/* Dedicated Page Full-Width Content Container */}
+          <main className="w-full space-y-4">
+            {activeTab === 'pos' && (
+              <POManagement
+                purchases={purchases}
+                activeSupplier={activeSupplier}
+                onRefresh={() => loadSupplierData(activeSupplier)}
+                onAcknowledgePO={handleAcknowledgePO}
+                onDispatchPO={handleDispatchPO}
+                onUploadAttachment={handleUploadAttachment}
+                onUpdateStatus={handleUpdateStatus}
+                onUpdateLogistics={handleUpdateLogistics}
+                onCreatePO={() => setShowCreatePoModal(true)}
+                onOpenASNModal={(po) => {
+                  setAsnModalPoId(po.id);
+                  setShowSubmitAsnModal(true);
+                }}
+                onOpenInvoiceModal={(po) => {
+                  setInvoiceModalPoId(po.id);
+                  setShowUploadInvoiceModal(true);
+                }}
+                userRole={user?.role}
+              />
+            )}
+
+            {activeTab === 'replenishment' && (
+              <ReplenishmentTriggers
+                triggersData={triggersData}
+                onRestockItem={handleRestockItem}
+                onRefresh={() => loadSupplierData(activeSupplier)}
+                loading={loading}
+              />
+            )}
+
+            {activeTab === 'item_master' && (
+              <ItemMasterMapping
+                activeSupplier={activeSupplier}
+                userRole={user?.role}
+              />
+            )}
+
+            {activeTab === 'master_data' && (
+              <SupplierMasterData
+                supplier={activeSupplierRecord}
+                onSaveMasterData={handleSaveMasterData}
+                userRole={user?.role}
+              />
+            )}
+
+            {activeTab === 'qc_rma' && (
+              <QualityControlRMA
+                qcLogs={qcLogs}
+                rmas={rmas}
+                activeSupplier={activeSupplier}
+                onRefresh={() => loadSupplierData(activeSupplier)}
+                onCreateQCLog={handleCreateQCLog}
+                onCreateRMA={handleCreateRMA}
+                onUpdateRMAStatus={handleUpdateRMAStatus}
+                purchasesList={purchases}
+              />
+            )}
+
+            {activeTab === 'financial' && (
+              <FinancialSettlement
+                purchases={purchases}
+                activeSupplier={activeSupplier}
+                onUpdateInvoiceStatus={handleUpdateInvoiceStatus}
+                userRole={user?.role}
+              />
+            )}
+
+            {activeTab === 'analytics' && (
+              <SupplierAnalytics
+                analyticsData={analyticsData}
+                activeSupplier={activeSupplier}
+              />
+            )}
+
+            {activeTab === 'reports' && (
+              <SupplierReports
+                activeSupplier={activeSupplier}
+                purchases={purchases}
+                kpis={analyticsData?.kpis}
+                triggersData={triggersData}
+                qcLogs={qcLogs}
+                rmas={rmas}
+                financialData={purchases}
+              />
+            )}
+
+            {activeTab === 'portal' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-1 bg-white p-4 rounded-lg border border-slate-200 shadow-2xs space-y-3">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+                    <Send size={14} className="text-blue-600" />
+                    Dispatch Collaboration Note
+                  </h3>
+
+                  <form onSubmit={handleSendMessage} className="space-y-3 text-xs">
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Message Type</label>
+                      <select
+                        value={messageType}
+                        onChange={(e: any) => setMessageType(e.target.value)}
+                        className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
+                      >
+                        <option value="dispatch">Logistics Dispatch Notice</option>
+                        <option value="note">Internal Procurement Note</option>
+                        <option value="inquiry">Pricing & SLA Inquiry</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Related Purchase Order (Optional)</label>
+                      <select
+                        value={relatedPoId}
+                        onChange={(e) => setRelatedPoId(e.target.value)}
+                        className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500 bg-white"
+                      >
+                        <option value="">General Supplier Communication</option>
+                        {purchases.map((p) => (
+                          <option key={p.id} value={p.id}>
+                            PO #{p.id} - {formatGHS(p.total_amount)} ({p.status})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="font-bold text-slate-700 block mb-1">Message Content</label>
+                      <textarea
+                        rows={4}
+                        required
+                        placeholder="Type updates, container arrival times, invoice questions..."
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        className="w-full border border-slate-200 rounded p-2 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={sendingMessage || !newMessage.trim()}
+                      className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50 cursor-pointer"
+                    >
+                      <Send size={13} />
+                      <span>{sendingMessage ? 'Sending...' : 'Send to Workflow Thread'}</span>
+                    </button>
+                  </form>
+                </div>
+
+                <div className="lg:col-span-2 bg-white rounded-lg border border-slate-200 shadow-2xs p-4 flex flex-col justify-between space-y-3">
+                  <h3 className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-2 border-b border-slate-100 pb-2">
+                    <MessageSquare size={14} className="text-slate-600" />
+                    Live Workflow & Collaboration Ledger ({activeSupplier})
+                  </h3>
+
+                  <div className="space-y-2.5 max-h-96 overflow-y-auto pr-1 text-xs">
+                    {interactions.map((msg) => (
+                      <div
+                        key={msg.id}
+                        className="p-3 rounded-lg border border-slate-100 bg-slate-50/70 hover:bg-slate-50 transition-colors"
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <span className="font-black text-slate-900">{msg.sender_name}</span>
+                            <span className="text-[10px] font-bold px-1.5 py-0.2 rounded bg-slate-200 text-slate-700 uppercase">
+                              {msg.sender_role}
+                            </span>
+                            {msg.po_id && (
+                              <span className="text-[10px] font-mono font-bold text-blue-600">
+                                Ref: #PO-{msg.po_id}
+                              </span>
+                            )}
+                          </div>
+                          <span className="text-[10px] text-slate-400">
+                            {new Date(msg.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <p className="mt-1.5 text-slate-700 whitespace-pre-wrap leading-relaxed">{msg.message}</p>
+                      </div>
+                    ))}
+
+                    {interactions.length === 0 && (
+                      <div className="py-12 text-center text-slate-400 text-xs">
+                        <MessageSquare size={24} className="mx-auto mb-1.5 opacity-30" />
+                        No collaborative dispatch or status notes recorded for {activeSupplier} yet.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+            )}
+          </main>
+        </>
       )}
-        </main>
-      </div>
 
       {/* 5. Create & Issue Purchase Order Modal */}
       {showCreatePoModal && (
@@ -939,6 +911,42 @@ export default function SupplierDashboard() {
             });
             setShowCreatePoModal(false);
             setPrefilledRestockItem(null);
+            await loadSupplierData(activeSupplier);
+            await refreshNotifications();
+          }}
+        />
+      )}
+
+      {/* 6. Upload Supplier Invoice Modal */}
+      {showUploadInvoiceModal && (
+        <UploadInvoiceModal
+          isOpen={showUploadInvoiceModal}
+          onClose={() => {
+            setShowUploadInvoiceModal(false);
+            setInvoiceModalPoId(undefined);
+          }}
+          activeSupplier={activeSupplier}
+          purchases={purchases}
+          preselectedPoId={invoiceModalPoId}
+          onInvoiceUploaded={async () => {
+            await loadSupplierData(activeSupplier);
+            await refreshNotifications();
+          }}
+        />
+      )}
+
+      {/* 7. Submit Advanced Shipping Notice (ASN) Modal */}
+      {showSubmitAsnModal && (
+        <SubmitASNModal
+          isOpen={showSubmitAsnModal}
+          onClose={() => {
+            setShowSubmitAsnModal(false);
+            setAsnModalPoId(undefined);
+          }}
+          activeSupplier={activeSupplier}
+          purchases={purchases}
+          preselectedPoId={asnModalPoId}
+          onASNSubmitted={async () => {
             await loadSupplierData(activeSupplier);
             await refreshNotifications();
           }}

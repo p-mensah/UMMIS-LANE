@@ -39,9 +39,25 @@ function PrivateRoute({ children }: { children: React.ReactNode }) {
 function HomeRoute() {
   const { user } = useAuth();
   if (user?.role === 'supplier') {
-    return <SupplierDashboard />;
+    return <SupplierDashboard initialTab="overview" />;
   }
   return <Dashboard />;
+}
+
+function PurchasesRoute() {
+  const { user } = useAuth();
+  if (user?.role === 'supplier') {
+    return <SupplierDashboard initialTab="pos" />;
+  }
+  return <Purchases />;
+}
+
+function ProductsRoute() {
+  const { user } = useAuth();
+  if (user?.role === 'supplier') {
+    return <SupplierDashboard initialTab="item_master" />;
+  }
+  return <Products />;
 }
 
 export default function App() {
@@ -55,12 +71,22 @@ export default function App() {
               <Route path="/login" element={<Login />} />
               <Route path="/" element={<PrivateRoute><HomeRoute /></PrivateRoute>} />
               <Route path="/communication" element={<PrivateRoute><Communication /></PrivateRoute>} />
-              <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard /></PrivateRoute>} />
-              <Route path="/products" element={<PrivateRoute><Products /></PrivateRoute>} />
+              <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard initialTab="overview" /></PrivateRoute>} />
+              <Route path="/supplier/overview" element={<PrivateRoute><SupplierDashboard initialTab="overview" /></PrivateRoute>} />
+              <Route path="/supplier/pos" element={<PrivateRoute><SupplierDashboard initialTab="pos" /></PrivateRoute>} />
+              <Route path="/supplier/inventory" element={<PrivateRoute><SupplierDashboard initialTab="replenishment" /></PrivateRoute>} />
+              <Route path="/supplier/catalog" element={<PrivateRoute><SupplierDashboard initialTab="item_master" /></PrivateRoute>} />
+              <Route path="/supplier/invoices" element={<PrivateRoute><SupplierDashboard initialTab="financial" /></PrivateRoute>} />
+              <Route path="/supplier/analytics" element={<PrivateRoute><SupplierDashboard initialTab="analytics" /></PrivateRoute>} />
+              <Route path="/supplier/qc" element={<PrivateRoute><SupplierDashboard initialTab="qc_rma" /></PrivateRoute>} />
+              <Route path="/supplier/profile" element={<PrivateRoute><SupplierDashboard initialTab="master_data" /></PrivateRoute>} />
+              <Route path="/supplier/reports" element={<PrivateRoute><SupplierDashboard initialTab="reports" /></PrivateRoute>} />
+              <Route path="/supplier/messages" element={<PrivateRoute><SupplierDashboard initialTab="portal" /></PrivateRoute>} />
+              <Route path="/products" element={<PrivateRoute><ProductsRoute /></PrivateRoute>} />
               <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
               <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />
               <Route path="/returns" element={<PrivateRoute><Returns /></PrivateRoute>} />
-              <Route path="/purchases" element={<PrivateRoute><Purchases /></PrivateRoute>} />
+              <Route path="/purchases" element={<PrivateRoute><PurchasesRoute /></PrivateRoute>} />
               <Route path="/adjustments" element={<PrivateRoute><Adjustments /></PrivateRoute>} />
               <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
               <Route path="/reports" element={<PrivateRoute><Dashboard /></PrivateRoute>} />

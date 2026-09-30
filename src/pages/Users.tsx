@@ -33,6 +33,7 @@ export default function Users() {
   useModalDismiss(showAddModal, () => setShowAddModal(false));
   const [selectedUserForEdit, setSelectedUserForEdit] = useState<UserManagementData | null>(null);
   const [modalInitialTab, setModalInitialTab] = useState<'profile' | 'security'>('profile');
+  const [activeActionMenuUserId, setActiveActionMenuUserId] = useState<number | string | null>(null);
   const [formData, setFormData] = useState({ 
     name: '', 
     email: '', 
@@ -513,7 +514,9 @@ export default function Users() {
   };
 
   const handleManageUser = (targetUser: any, tab: 'profile' | 'security' = 'profile') => {
-    setSelectedUserForEdit(targetUser);
+    setActiveActionMenuUserId(null);
+    const freshUser = users.find(u => String(u.id) === String(targetUser.id)) || targetUser;
+    setSelectedUserForEdit(freshUser);
     setModalInitialTab(tab);
   };
 
@@ -875,6 +878,8 @@ export default function Users() {
                             <div className="flex items-center justify-end">
                               <ActionMenu
                                 user={u}
+                                isOpen={activeActionMenuUserId === u.id}
+                                onToggleOpen={(open) => setActiveActionMenuUserId(open ? u.id : null)}
                                 onManage={handleManageUser}
                                 onToggleStatus={handleToggleStatus}
                                 onDelete={handleDeleteUser}

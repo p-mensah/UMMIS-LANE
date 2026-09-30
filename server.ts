@@ -6,7 +6,17 @@ import jwt from 'jsonwebtoken';
 import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
+import { v2 as cloudinary } from 'cloudinary';
 import { initChatDb, setupChatRoutes, setupChatSocket, WEBSOCKET_AUTH_KEY } from './chatService';
+
+// Cloudinary Configuration
+// Key Name: Ummis | Product Environment: dnjvhtal5
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dnjvhtal5',
+  api_key: process.env.CLOUDINARY_API_KEY || '621649359688726',
+  api_secret: process.env.CLOUDINARY_API_SECRET || 'e86JxxBQDobHpIK4pLUrzNvth6s',
+  secure: true
+});
 
 // --- Database Setup ---
 const isServerless = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME || process.env.LAMBDA_TASK_ROOT);
@@ -520,7 +530,62 @@ function initDb() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       resolved_at DATETIME
     );
+
+    CREATE TABLE IF NOT EXISTS purchases_asns (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      po_id INTEGER NOT NULL,
+      supplier_name TEXT NOT NULL,
+      tracking_number TEXT,
+      carrier TEXT,
+      eta TEXT,
+      shipped_date TEXT,
+      is_split_shipment INTEGER DEFAULT 0,
+      notes TEXT,
+      document_url TEXT,
+      line_items TEXT,
+      client_ip TEXT,
+      created_by TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS purchases_invoices (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      po_id INTEGER NOT NULL,
+      supplier_name TEXT NOT NULL,
+      invoice_number TEXT NOT NULL,
+      invoice_date TEXT,
+      amount REAL NOT NULL,
+      payment_terms TEXT DEFAULT 'Net 30',
+      due_date TEXT,
+      payment_status TEXT DEFAULT 'unpaid',
+      match_status TEXT DEFAULT 'pending_grn',
+      document_url TEXT,
+      notes TEXT,
+      client_ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_item_master (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      product_id INTEGER,
+      supplier_name TEXT NOT NULL,
+      supplier_sku TEXT NOT NULL,
+      internal_sku TEXT NOT NULL,
+      product_name TEXT NOT NULL,
+      barcode TEXT,
+      unit_of_measure TEXT DEFAULT 'Units',
+      brand TEXT,
+      unit_cost REAL NOT NULL,
+      moq INTEGER DEFAULT 1,
+      tiered_discounts TEXT,
+      documents TEXT,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
+
+  addColumnOrIgnore('purchases', 'payment_terms', "TEXT DEFAULT 'Net 30'");
+  addColumnOrIgnore('purchases', 'payment_due_date', "TEXT");
+  addColumnOrIgnore('purchases', 'three_way_match_status', "TEXT DEFAULT 'pending_grn'");
 
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('receipt_header', 'Welcome to Ummis Lane Enterprise - Quality at Best Prices')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('receipt_footer', 'Goods sold in good condition are non-refundable after 7 days. Thank you for your business!')").run();
@@ -1288,10 +1353,17 @@ function seedAuditSecurityLedger() {
 // --- Audit & Notification Helpers ---
 function getClientIp(req: any): string {
   try {
+    const cfIp = req.headers?.['cf-connecting-ip'];
+    if (typeof cfIp === 'string' && cfIp.trim()) return cfIp.trim();
+
     const forwarded = req.headers?.['x-forwarded-for'];
-    if (typeof forwarded === 'string') {
+    if (typeof forwarded === 'string' && forwarded.trim()) {
       return forwarded.split(',')[0].trim();
     }
+
+    const realIp = req.headers?.['x-real-ip'];
+    if (typeof realIp === 'string' && realIp.trim()) return realIp.trim();
+
     return req.socket?.remoteAddress || req.ip || '127.0.0.1';
   } catch {
     return '127.0.0.1';
@@ -1471,7 +1543,7 @@ const PORT = 3000;
 const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_retailos_key_change_me';
 
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
 
 // Normalize incoming API requests (e.g. from Vercel rewrites or direct serverless routing)
 app.use((req, res, next) => {
@@ -2970,6 +3042,498 @@ app.put('/api/purchases/:id/invoice-status', authenticate, (req: any, res) => {
     );
 
     res.json({ success: true, invoice_status, invoice_number });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- CLOUDINARY UPLOAD PROXY (1MB limit strictly enforced) ---
+app.post(['/api/upload/cloudinary', '/api/upload'], authenticate, async (req: any, res) => {
+  try {
+    const { data, folder, name, resource_type } = req.body;
+    if (!data) {
+      return res.status(400).json({ error: 'Missing upload payload (data is required)' });
+    }
+
+    // Server-side strict size check: max 1MB (1,048,576 bytes)
+    // Base64 size estimation: (length * 3 / 4) - padding
+    const approximateBytes = Math.round((data.length * 3) / 4);
+    if (approximateBytes > 1048576) {
+      return res.status(400).json({
+        error: `File exceeds maximum allowed size of 1.0MB (${(approximateBytes / 1024 / 1024).toFixed(2)}MB). Please compress before uploading.`
+      });
+    }
+
+    const clientIp = getClientIp(req);
+    const targetFolder = folder || 'ummis_inventory';
+
+    const uploadOptions: any = {
+      folder: targetFolder,
+      resource_type: resource_type || 'auto'
+    };
+    if (name) {
+      const sanitizedName = name.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 60);
+      uploadOptions.public_id = `${sanitizedName}_${Date.now()}`;
+    }
+
+    const result = await cloudinary.uploader.upload(data, uploadOptions);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Uploaded File to Cloudinary',
+      'purchasing',
+      `Uploaded file (${result.bytes} bytes, format: ${result.format || 'doc'}) to Cloudinary [${result.public_id}]`,
+      clientIp
+    );
+
+    res.json({
+      success: true,
+      url: result.secure_url,
+      public_id: result.public_id,
+      format: result.format,
+      bytes: result.bytes
+    });
+  } catch (err: any) {
+    console.error('Cloudinary upload error:', err);
+    res.status(500).json({ error: err.message || 'Cloudinary upload failed' });
+  }
+});
+
+// --- PO ACCEPT / REJECT DECISION FLOW ---
+app.post('/api/purchases/:id/decision', authenticate, (req: any, res) => {
+  try {
+    const { action, reason, estimated_completion_date } = req.body; // action: 'accept' | 'reject'
+    const po: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+
+    const clientIp = getClientIp(req);
+    const newStatus = action === 'accept' ? 'confirmed' : 'cancelled';
+
+    db.prepare(`
+      UPDATE purchases 
+      SET status = ?, 
+          acknowledged_at = CURRENT_TIMESTAMP, 
+          acknowledged_by = ?,
+          acknowledgment_notes = ?,
+          expected_date = COALESCE(?, expected_date)
+      WHERE id = ?
+    `).run(
+      newStatus,
+      req.user.name,
+      reason || (action === 'accept' ? 'PO Accepted for production by vendor' : 'PO Rejected by vendor'),
+      estimated_completion_date || null,
+      req.params.id
+    );
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      action === 'accept' ? 'Accepted Purchase Order' : 'Rejected Purchase Order',
+      'purchasing',
+      `Supplier decision on PO #PO-${po.id}: ${action.toUpperCase()}. Reason/Note: ${reason || 'N/A'}`,
+      clientIp
+    );
+
+    // Notify Procurement team
+    createNotification(
+      `PO #${po.id} ${action === 'accept' ? 'Accepted ✅' : 'Rejected ❌'}`,
+      `Supplier "${po.supplier_name}" has ${action === 'accept' ? 'confirmed order acceptance' : 'declined PO'}. Notes: ${reason || 'N/A'}`,
+      action === 'accept' ? 'success' : 'danger',
+      '/supplier-dashboard'
+    );
+
+    res.json({ success: true, status: newStatus, po_id: po.id });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- ADVANCED SHIPPING NOTICE (ASN) & SPLIT SHIPMENTS ---
+app.post('/api/purchases/:id/asn', authenticate, (req: any, res) => {
+  try {
+    const { tracking_number, carrier, eta, shipped_date, is_split_shipment, notes, document_url, line_items } = req.body;
+    const po: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+
+    const clientIp = getClientIp(req);
+
+    // Process line items & backorders
+    const items = line_items || [];
+    let hasBackorder = false;
+    const processedItems = items.map((item: any) => {
+      const ordered = Number(item.quantity_ordered || item.quantity || 0);
+      const shipped = Number(item.quantity_shipped || ordered);
+      const backorder = Math.max(0, ordered - shipped);
+      if (backorder > 0) hasBackorder = true;
+      return {
+        product_id: item.product_id,
+        product_name: item.product_name,
+        sku: item.sku,
+        quantity_ordered: ordered,
+        quantity_shipped: shipped,
+        backorder_quantity: backorder,
+        batch_lot_number: item.batch_lot_number || 'LOT-' + Date.now().toString().slice(-6),
+        expiry_date: item.expiry_date || null
+      };
+    });
+
+    const asnResult = db.prepare(`
+      INSERT INTO purchases_asns (
+        po_id, supplier_name, tracking_number, carrier, eta, shipped_date,
+        is_split_shipment, notes, document_url, line_items, client_ip, created_by
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      po.id,
+      po.supplier_name,
+      tracking_number || `TRK-${Date.now().toString().slice(-8)}`,
+      carrier || 'Direct Supplier Fleet',
+      eta || new Date(Date.now() + 86400000 * 2).toISOString().slice(0, 10),
+      shipped_date || new Date().toISOString().slice(0, 10),
+      is_split_shipment || hasBackorder ? 1 : 0,
+      notes || null,
+      document_url || null,
+      JSON.stringify(processedItems),
+      clientIp,
+      req.user.name
+    );
+
+    // Update PO status to 'shipped' / 'in-transit' with tracking details
+    db.prepare(`
+      UPDATE purchases
+      SET status = 'shipped',
+          carrier = COALESCE(?, carrier),
+          tracking_number = COALESCE(?, tracking_number),
+          eta_window = COALESCE(?, eta_window),
+          dispatch_date = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(carrier || 'Direct Fleet', tracking_number || null, eta || null, req.params.id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Submitted Advanced Shipping Notice (ASN)',
+      'asn',
+      `Submitted ASN #${asnResult.lastInsertRowid} for PO #PO-${po.id} (Tracking: ${tracking_number}, Carrier: ${carrier}, Split/Backorder: ${hasBackorder ? 'Yes' : 'No'})`,
+      clientIp
+    );
+
+    createNotification(
+      `ASN Dispatched: PO #PO-${po.id} 🚚`,
+      `Supplier "${po.supplier_name}" submitted ASN #${asnResult.lastInsertRowid}. Tracking: ${tracking_number || 'N/A'}. ETA: ${eta || '2 days'}.`,
+      'info',
+      '/supplier-dashboard'
+    );
+
+    res.json({
+      success: true,
+      asn_id: asnResult.lastInsertRowid,
+      has_backorder: hasBackorder,
+      line_items: processedItems
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/purchases/:id/asns', authenticate, (req: any, res) => {
+  try {
+    const asns = db.prepare('SELECT * FROM purchases_asns WHERE po_id = ? ORDER BY created_at DESC').all(req.params.id) as any[];
+    const parsed = asns.map((a: any) => ({
+      ...a,
+      line_items: a.line_items ? JSON.parse(a.line_items) : []
+    }));
+    res.json(parsed);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/supplier/asns', authenticate, (req: any, res) => {
+  try {
+    let sql = 'SELECT * FROM purchases_asns';
+    const params: any[] = [];
+    if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+    const asns = db.prepare(sql).all(...params) as any[];
+    const parsed = asns.map((a: any) => ({
+      ...a,
+      line_items: a.line_items ? JSON.parse(a.line_items) : []
+    }));
+    res.json(parsed);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- INVOICE UPLOAD & 3-WAY MATCHING ---
+app.post('/api/purchases/:id/invoices', authenticate, (req: any, res) => {
+  try {
+    const { invoice_number, invoice_date, amount, payment_terms, document_url, notes } = req.body;
+    const po: any = db.prepare('SELECT * FROM purchases WHERE id = ?').get(req.params.id);
+    if (!po) return res.status(404).json({ error: 'Purchase order not found' });
+
+    const clientIp = getClientIp(req);
+    const invoiceAmt = Number(amount || po.total_amount);
+    const terms = payment_terms || 'Net 30';
+
+    // Calculate due date based on payment terms
+    const termDays = terms === 'Net 60' ? 60 : 30;
+    const dueDate = new Date(Date.now() + termDays * 86400000).toISOString().slice(0, 10);
+
+    // Compute automated 3-Way Match (PO Total vs GRN Receipt vs Invoice)
+    let matchStatus: 'matched' | 'discrepancy' | 'pending_grn' = 'pending_grn';
+    const isReceived = po.status === 'received';
+    const priceVariance = Math.abs(invoiceAmt - po.total_amount);
+
+    if (isReceived) {
+      if (priceVariance <= 0.5) {
+        matchStatus = 'matched';
+      } else {
+        matchStatus = 'discrepancy';
+      }
+    } else {
+      matchStatus = 'pending_grn';
+    }
+
+    const invResult = db.prepare(`
+      INSERT INTO purchases_invoices (
+        po_id, supplier_name, invoice_number, invoice_date, amount,
+        payment_terms, due_date, payment_status, match_status, document_url, notes, client_ip
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      po.id,
+      po.supplier_name,
+      invoice_number || `INV-${po.id}-${Date.now().toString().slice(-4)}`,
+      invoice_date || new Date().toISOString().slice(0, 10),
+      invoiceAmt,
+      terms,
+      dueDate,
+      'unpaid',
+      matchStatus,
+      document_url || null,
+      notes || null,
+      clientIp
+    );
+
+    // Update PO record
+    db.prepare(`
+      UPDATE purchases
+      SET invoice_number = ?,
+          invoice_status = 'unpaid',
+          payment_terms = ?,
+          payment_due_date = ?,
+          three_way_match_status = ?
+      WHERE id = ?
+    `).run(invoice_number, terms, dueDate, matchStatus, req.params.id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Uploaded Supplier Invoice',
+      'invoice',
+      `Uploaded invoice #${invoice_number} for PO #PO-${po.id} (Amt: ${invoiceAmt}, Terms: ${terms}, Match Status: ${matchStatus})`,
+      clientIp
+    );
+
+    createNotification(
+      `Invoice Uploaded: #${invoice_number}`,
+      `Supplier invoice #${invoice_number} uploaded for PO #PO-${po.id} (3-Way Match: ${matchStatus.toUpperCase()})`,
+      matchStatus === 'matched' ? 'success' : 'info',
+      '/supplier-dashboard'
+    );
+
+    res.json({
+      success: true,
+      invoice_id: invResult.lastInsertRowid,
+      match_status: matchStatus,
+      due_date: dueDate
+    });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/purchases/:id/invoices', authenticate, (req: any, res) => {
+  try {
+    const invoices = db.prepare('SELECT * FROM purchases_invoices WHERE po_id = ? ORDER BY created_at DESC').all(req.params.id);
+    res.json(invoices);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.get('/api/supplier/invoices', authenticate, (req: any, res) => {
+  try {
+    let sql = 'SELECT * FROM purchases_invoices';
+    const params: any[] = [];
+    if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    }
+    sql += ' ORDER BY created_at DESC LIMIT 50';
+    const invoices = db.prepare(sql).all(...params);
+    res.json(invoices);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// --- ITEM MASTER MAPPING & DOCUMENT REPOSITORY ---
+app.get('/api/supplier/item-master', authenticate, (req: any, res) => {
+  try {
+    const supplierName = (req.query.supplier_name as string) || '';
+    
+    // Seed initial cross-referenced catalog mapping if table is empty
+    const count: any = db.prepare('SELECT COUNT(*) as c FROM supplier_item_master').get();
+    if (count.c === 0) {
+      const sampleProducts = db.prepare('SELECT * FROM products LIMIT 15').all() as any[];
+      const insertStmt = db.prepare(`
+        INSERT INTO supplier_item_master (
+          product_id, supplier_name, supplier_sku, internal_sku, product_name,
+          barcode, unit_of_measure, brand, unit_cost, moq, tiered_discounts, documents
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (let i = 0; i < sampleProducts.length; i++) {
+        const prod = sampleProducts[i];
+        const suppName = i % 2 === 0 ? 'Nestlé Ghana Ltd' : 'Unilever Ghana PLC';
+        const suppSku = `VEND-${prod.sku || 'SKU'}-${100 + i}`;
+        const discounts = JSON.stringify([
+          { min_qty: 25, discount_pct: 3 },
+          { min_qty: 50, discount_pct: 6 },
+          { min_qty: 100, discount_pct: 10 }
+        ]);
+        const sampleDocs = JSON.stringify([
+          { id: `doc-sds-${prod.id}`, type: 'SDS', title: `${prod.name} Safety Data Sheet`, url: '#', file_size: '420 KB', uploaded_at: new Date().toISOString() },
+          { id: `doc-coa-${prod.id}`, type: 'CoA', title: `${prod.name} Certificate of Analysis`, url: '#', file_size: '315 KB', uploaded_at: new Date().toISOString() }
+        ]);
+
+        insertStmt.run(
+          prod.id,
+          suppName,
+          suppSku,
+          prod.sku || `SKU-${prod.id}`,
+          prod.name,
+          prod.barcode || `0793573${1000 + i}`,
+          'Units',
+          prod.brand || suppName.replace(/ghana/i, '').replace(/ltd/i, '').trim(),
+          prod.cost_price || 20,
+          12,
+          discounts,
+          sampleDocs
+        );
+      }
+    }
+
+    let sql = `
+      SELECT sim.*, p.stock_quantity as current_stock, COALESCE(p.min_stock_level, 10) as reorder_point,
+             ROUND(COALESCE(p.min_stock_level, 10) * 0.5) as safety_stock,
+             COALESCE(sl.lead_time_days, 3) as lead_time_days
+      FROM supplier_item_master sim
+      LEFT JOIN products p ON sim.product_id = p.id
+      LEFT JOIN suppliers_list sl ON LOWER(sim.supplier_name) = LOWER(sl.name)
+    `;
+    const params: any[] = [];
+    if (supplierName) {
+      sql += ' WHERE LOWER(sim.supplier_name) LIKE ?';
+      params.push(`%${supplierName.toLowerCase()}%`);
+    }
+    sql += ' ORDER BY sim.product_name ASC';
+
+    const items = db.prepare(sql).all(...params) as any[];
+    const parsed = items.map((it: any) => ({
+      ...it,
+      tiered_discounts: it.tiered_discounts ? JSON.parse(it.tiered_discounts) : [],
+      documents: it.documents ? JSON.parse(it.documents) : []
+    }));
+
+    res.json(parsed);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/item-master', authenticate, (req: any, res) => {
+  try {
+    const {
+      product_id, supplier_name, supplier_sku, internal_sku, product_name,
+      barcode, unit_of_measure, brand, unit_cost, moq, tiered_discounts
+    } = req.body;
+
+    const result = db.prepare(`
+      INSERT INTO supplier_item_master (
+        product_id, supplier_name, supplier_sku, internal_sku, product_name,
+        barcode, unit_of_measure, brand, unit_cost, moq, tiered_discounts, documents
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      product_id || null,
+      supplier_name,
+      supplier_sku,
+      internal_sku,
+      product_name,
+      barcode || null,
+      unit_of_measure || 'Units',
+      brand || null,
+      Number(unit_cost || 0),
+      Number(moq || 1),
+      JSON.stringify(tiered_discounts || []),
+      JSON.stringify([])
+    );
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Added Item Master Mapping',
+      'purchasing',
+      `Mapped SKU ${internal_sku} ↔ ${supplier_sku} for ${supplier_name}`,
+      getClientIp(req)
+    );
+
+    res.json({ success: true, id: result.lastInsertRowid });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/documents', authenticate, (req: any, res) => {
+  try {
+    const { item_id, type, title, url, file_size } = req.body; // type: 'SDS' | 'CoA' | 'Spec Sheet'
+    const item: any = db.prepare('SELECT * FROM supplier_item_master WHERE id = ?').get(item_id);
+    if (!item) return res.status(404).json({ error: 'Item master record not found' });
+
+    let docs: any[] = [];
+    try {
+      if (item.documents) docs = JSON.parse(item.documents);
+    } catch (e) {
+      docs = [];
+    }
+
+    const newDoc = {
+      id: `doc-${Date.now()}`,
+      type: type || 'Spec Sheet',
+      title: title || `${type} Document`,
+      url: url || '#',
+      file_size: file_size || '250 KB',
+      uploaded_at: new Date().toISOString()
+    };
+
+    docs.push(newDoc);
+    db.prepare('UPDATE supplier_item_master SET documents = ? WHERE id = ?').run(JSON.stringify(docs), item_id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Uploaded Compliance Document',
+      'purchasing',
+      `Uploaded ${type} for ${item.product_name} (${item.internal_sku})`,
+      getClientIp(req)
+    );
+
+    res.json({ success: true, document: newDoc });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

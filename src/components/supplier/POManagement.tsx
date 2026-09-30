@@ -109,6 +109,8 @@ interface POManagementProps {
   onUpdateStatus: (poId: number, status: string) => Promise<void>;
   onUpdateLogistics?: (poId: number, logistics: any) => Promise<void>;
   onCreatePO?: () => void;
+  onOpenASNModal?: (po: PurchaseOrder) => void;
+  onOpenInvoiceModal?: (po: PurchaseOrder) => void;
   catalogProducts?: any[];
   userRole?: string;
 }
@@ -123,6 +125,8 @@ export default function POManagement({
   onUpdateStatus,
   onUpdateLogistics,
   onCreatePO,
+  onOpenASNModal,
+  onOpenInvoiceModal,
   catalogProducts = [],
   userRole = 'admin'
 }: POManagementProps) {
@@ -170,12 +174,14 @@ export default function POManagement({
 
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Quick pipeline metric counts
+  // Quick pipeline metric counts according to Module 2 lifecycle
   const allCount = purchases.length;
-  const pendingCount = purchases.filter((p) => ['pending', 'pending_confirmation', 'submitted', 'ordered'].includes(p.status.toLowerCase())).length;
-  const readyCount = purchases.filter((p) => ['ready_for_pickup', 'preparing'].includes(p.status.toLowerCase())).length;
-  const transitCount = purchases.filter((p) => ['in-transit', 'out_for_delivery'].includes(p.status.toLowerCase())).length;
-  const receivedCount = purchases.filter((p) => p.status.toLowerCase() === 'received').length;
+  const draftCount = purchases.filter((p) => p.status.toLowerCase() === 'draft').length;
+  const sentCount = purchases.filter((p) => ['sent', 'pending', 'pending_confirmation', 'submitted', 'ordered'].includes(p.status.toLowerCase()) && !p.acknowledged_at).length;
+  const confirmedCount = purchases.filter((p) => p.status.toLowerCase() === 'confirmed' || (p.acknowledged_at && p.status.toLowerCase() !== 'received' && p.status.toLowerCase() !== 'cancelled')).length;
+  const productionCount = purchases.filter((p) => ['in_production', 'preparing', 'ready_for_pickup'].includes(p.status.toLowerCase())).length;
+  const shippedCount = purchases.filter((p) => ['shipped', 'in-transit', 'out_for_delivery'].includes(p.status.toLowerCase())).length;
+  const deliveredCount = purchases.filter((p) => ['delivered', 'received'].includes(p.status.toLowerCase())).length;
   const canceledCount = purchases.filter((p) => p.status.toLowerCase() === 'cancelled').length;
 
   const totalSpend = purchases.reduce((acc, p) => acc + (p.total_amount || 0), 0);
@@ -260,18 +266,20 @@ export default function POManagement({
     let matchesStatus = true;
     if (statusFilter !== 'all') {
       const st = po.status.toLowerCase();
-      if (statusFilter === 'pending_confirmation') {
-        matchesStatus = ['pending', 'pending_confirmation', 'submitted', 'ordered'].includes(st);
-      } else if (statusFilter === 'ready_for_pickup') {
-        matchesStatus = st === 'ready_for_pickup' || st === 'preparing';
-      } else if (statusFilter === 'in-transit') {
-        matchesStatus = st === 'in-transit' || st === 'out_for_delivery';
-      } else if (statusFilter === 'received') {
-        matchesStatus = st === 'received';
+      if (statusFilter === 'draft') {
+        matchesStatus = st === 'draft';
+      } else if (statusFilter === 'sent') {
+        matchesStatus = ['sent', 'pending', 'pending_confirmation', 'submitted', 'ordered'].includes(st) && !po.acknowledged_at;
+      } else if (statusFilter === 'confirmed') {
+        matchesStatus = st === 'confirmed' || (!!po.acknowledged_at && st !== 'received' && st !== 'cancelled');
+      } else if (statusFilter === 'in_production') {
+        matchesStatus = ['in_production', 'preparing', 'ready_for_pickup'].includes(st);
+      } else if (statusFilter === 'shipped') {
+        matchesStatus = ['shipped', 'in-transit', 'out_for_delivery'].includes(st);
+      } else if (statusFilter === 'delivered' || statusFilter === 'received') {
+        matchesStatus = ['delivered', 'received'].includes(st);
       } else if (statusFilter === 'cancelled') {
         matchesStatus = st === 'cancelled';
-      } else if (statusFilter === 'draft') {
-        matchesStatus = st === 'draft';
       }
     }
 
@@ -437,7 +445,7 @@ export default function POManagement({
             <Clock size={14} className="text-amber-500" />
           </div>
           <div className="text-lg font-black text-amber-900 font-mono">{formatGHS(pendingSpend)}</div>
-          <div className="text-[11px] text-amber-700 font-semibold mt-0.5">{pendingCount} orders awaiting SLA delivery</div>
+          <div className="text-[11px] text-amber-700 font-semibold mt-0.5">{sentCount} orders awaiting SLA delivery</div>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
@@ -445,8 +453,8 @@ export default function POManagement({
             <span className="text-[10px] font-bold uppercase tracking-wider">Active Logistics</span>
             <Truck size={14} className="text-blue-500" />
           </div>
-          <div className="text-lg font-black text-blue-900 font-mono">{transitCount + readyCount} Shipments</div>
-          <div className="text-[11px] text-blue-700 font-semibold mt-0.5">{transitCount} in-transit, {readyCount} ready for pickup</div>
+          <div className="text-lg font-black text-blue-900 font-mono">{shippedCount + productionCount} Shipments</div>
+          <div className="text-[11px] text-blue-700 font-semibold mt-0.5">{shippedCount} in-transit, {productionCount} in production</div>
         </div>
 
         <div className="bg-white p-3.5 rounded-xl border border-slate-200 shadow-2xs">
@@ -455,7 +463,7 @@ export default function POManagement({
             <CheckCircle2 size={14} className="text-emerald-500" />
           </div>
           <div className="text-lg font-black text-emerald-900 font-mono">{formatGHS(receivedSpend)}</div>
-          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">{receivedCount} GRNs completed & stocked</div>
+          <div className="text-[11px] text-emerald-700 font-semibold mt-0.5">{deliveredCount} GRNs completed & stocked</div>
         </div>
       </div>
 
@@ -474,20 +482,22 @@ export default function POManagement({
             />
           </div>
 
-          {/* Quick Filters with live counts */}
+          {/* Quick Filters with live counts: [Draft, Sent, Confirmed, In Production, Shipped, Delivered, Cancelled] */}
           <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg text-xs overflow-x-auto">
             {[
               { id: 'all', label: 'All', count: allCount },
-              { id: 'pending_confirmation', label: 'Pending', count: pendingCount },
-              { id: 'ready_for_pickup', label: 'Ready', count: readyCount },
-              { id: 'in-transit', label: 'In-Transit', count: transitCount },
-              { id: 'received', label: 'Received', count: receivedCount },
-              { id: 'cancelled', label: 'Canceled', count: canceledCount }
+              { id: 'draft', label: 'Draft', count: draftCount },
+              { id: 'sent', label: 'Sent', count: sentCount },
+              { id: 'confirmed', label: 'Confirmed', count: confirmedCount },
+              { id: 'in_production', label: 'In Production', count: productionCount },
+              { id: 'shipped', label: 'Shipped', count: shippedCount },
+              { id: 'delivered', label: 'Delivered', count: deliveredCount },
+              { id: 'cancelled', label: 'Cancelled', count: canceledCount }
             ].map((st) => (
               <button
                 key={st.id}
                 onClick={() => setStatusFilter(st.id)}
-                className={`px-2.5 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
+                className={`px-2 py-1 rounded-md text-[11px] font-semibold whitespace-nowrap transition-colors cursor-pointer flex items-center gap-1.5 ${
                   statusFilter === st.id ? 'bg-white text-slate-900 shadow-xs border border-slate-200/60 font-bold' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -680,39 +690,48 @@ export default function POManagement({
 
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Action: Confirm Order */}
+                            {/* Action: Supplier Accept / Reject Decision */}
                             {(isDraft || (isPending && !po.acknowledged_at)) && (
-                              <button
-                                onClick={() => {
-                                  setAckModalPo(po);
-                                  setAckNotes(`Order #PO-${po.id} accepted and confirmed for production.`);
-                                }}
-                                className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] rounded border border-amber-200 transition cursor-pointer"
-                                title="Confirm Order / Acknowledgment"
-                              >
-                                Confirm
-                              </button>
+                              <>
+                                <button
+                                  onClick={() => {
+                                    setAckModalPo(po);
+                                    setAckNotes(`Order #PO-${po.id} accepted and confirmed for production.`);
+                                  }}
+                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] rounded border border-amber-200 transition cursor-pointer"
+                                  title="Accept PO Order"
+                                >
+                                  Accept
+                                </button>
+                                <button
+                                  onClick={() => onUpdateStatus(po.id, 'cancelled')}
+                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 font-semibold text-[11px] rounded border border-rose-200 transition cursor-pointer"
+                                  title="Reject PO Order"
+                                >
+                                  Reject
+                                </button>
+                              </>
                             )}
 
-                            {/* Action: Mark Ready for Pickup */}
-                            {(isPending || isDraft) && !isReadyPickup && (
-                              <button
-                                onClick={() => onUpdateStatus(po.id, 'ready_for_pickup')}
-                                className="px-2.5 py-1 bg-purple-50 hover:bg-purple-100 text-purple-800 font-semibold text-[11px] rounded border border-purple-200 transition cursor-pointer"
-                                title="Vendor has packed order; ready for pickup"
-                              >
-                                Ready
-                              </button>
-                            )}
-
-                            {/* Action: Dispatch / Configure Logistics */}
+                            {/* Action: Submit ASN (Advance Shipping Notice) */}
                             {!isReceived && po.status !== 'cancelled' && (
                               <button
-                                onClick={() => handleOpenLogistics(po)}
-                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-semibold text-[11px] rounded border border-blue-200 transition cursor-pointer flex items-center gap-1"
-                                title="Configure Direct Delivery or Warehouse Pickup Logistics"
+                                onClick={() => onOpenASNModal ? onOpenASNModal(po) : handleOpenLogistics(po)}
+                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] rounded transition shadow-2xs flex items-center gap-1 cursor-pointer"
+                                title="Submit Advanced Shipping Notice (ASN) with tracking & batch/lot details"
                               >
-                                <Truck size={11} /> {isInTransit ? 'Logistics' : 'Dispatch'}
+                                <Truck size={11} /> ASN
+                              </button>
+                            )}
+
+                            {/* Action: Upload Invoice */}
+                            {po.status !== 'cancelled' && (
+                              <button
+                                onClick={() => onOpenInvoiceModal ? onOpenInvoiceModal(po) : setAttachModalPo(po)}
+                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-[11px] rounded border border-emerald-200 transition cursor-pointer flex items-center gap-1"
+                                title="Upload Supplier Invoice & 3-Way Match"
+                              >
+                                <FileText size={11} className="text-emerald-600" /> Invoice
                               </button>
                             )}
 

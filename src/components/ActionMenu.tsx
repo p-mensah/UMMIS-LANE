@@ -21,6 +21,8 @@ export interface ActionMenuItemUser {
 
 interface ActionMenuProps {
   user: ActionMenuItemUser;
+  isOpen?: boolean;
+  onToggleOpen?: (open: boolean) => void;
   onManage?: (user: ActionMenuItemUser) => void;
   onView?: (user: ActionMenuItemUser) => void;
   onSecurity?: (user: ActionMenuItemUser) => void;
@@ -35,6 +37,8 @@ interface ActionMenuProps {
 
 export default function ActionMenu({
   user,
+  isOpen: controlledIsOpen,
+  onToggleOpen,
   onManage,
   onView,
   onSecurity,
@@ -47,52 +51,65 @@ export default function ActionMenu({
   disabled = false
 }: ActionMenuProps) {
   const { addToast } = useNotifications();
-  const [isOpen, setIsOpen] = useState(false);
+  const [internalIsOpen, setInternalIsOpen] = useState(false);
+  const isMenuOpen = controlledIsOpen !== undefined ? controlledIsOpen : internalIsOpen;
+
   const [isProcessing, setIsProcessing] = useState(false);
-  const [menuCoords, setMenuCoords] = useState<{ top: number; left: number; openUpward: boolean } | null>(null);
+  const [menuCoords, setMenuCoords] = useState<{ top: number; bottom: number; right: number; openUpward: boolean } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const isActive = user.is_active === 1 || user.is_active === undefined;
 
+  const setOpenState = (open: boolean) => {
+    if (onToggleOpen) {
+      onToggleOpen(open);
+    } else {
+      setInternalIsOpen(open);
+    }
+  };
+
   const updateMenuPosition = () => {
     if (!buttonRef.current) return;
     const rect = buttonRef.current.getBoundingClientRect();
-    const menuWidth = 196;
-    const menuHeight = 220;
-
-    // Check if space below is insufficient -> open upward for latter rows
     const spaceBelow = window.innerHeight - rect.bottom;
-    const openUpward = spaceBelow < menuHeight + 20;
+    const openUpward = spaceBelow < 155;
 
-    const top = openUpward
-      ? Math.max(10, rect.top - menuHeight - 6)
-      : Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 6);
+    const top = rect.bottom + 4;
+    const bottom = window.innerHeight - rect.top + 4;
+    const right = Math.max(10, window.innerWidth - rect.right);
 
-    const left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.right - menuWidth));
-
-    setMenuCoords({ top, left, openUpward });
+    setMenuCoords({ top, bottom, right, openUpward });
   };
 
   useEffect(() => {
+    if (isMenuOpen) {
+      updateMenuPosition();
+    }
+  }, [isMenuOpen]);
+
+  useEffect(() => {
     const handleOutsideClick = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
-        setIsOpen(false);
+      if (
+        menuRef.current && !menuRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
+        setOpenState(false);
       }
     };
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setIsOpen(false);
+        setOpenState(false);
       }
     };
 
     const handleScrollOrResize = () => {
-      if (isOpen) {
+      if (isMenuOpen) {
         updateMenuPosition();
       }
     };
 
-    if (isOpen) {
+    if (isMenuOpen) {
       document.addEventListener('mousedown', handleOutsideClick);
       document.addEventListener('keydown', handleKeyDown);
       window.addEventListener('scroll', handleScrollOrResize, true);
@@ -105,7 +122,7 @@ export default function ActionMenu({
       window.removeEventListener('scroll', handleScrollOrResize, true);
       window.removeEventListener('resize', handleScrollOrResize);
     };
-  }, [isOpen]);
+  }, [isMenuOpen]);
 
   if (disabled) {
     return null;
@@ -113,17 +130,17 @@ export default function ActionMenu({
 
   const handleThreeDotsClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (!isOpen) {
+    if (!isMenuOpen) {
       updateMenuPosition();
-      setIsOpen(true);
+      setOpenState(true);
     } else {
-      setIsOpen(false);
+      setOpenState(false);
     }
   };
 
   const handleManageClick = (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsOpen(false);
+    setOpenState(false);
     if (onManage) {
       onManage(user);
     } else if (onEdit) {
@@ -135,7 +152,7 @@ export default function ActionMenu({
 
   const handleToggleStatusClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsOpen(false); // Hide the three dots menu
+    setOpenState(false); // Hide the three dots menu
     const actionLabel = isActive ? 'suspend' : 'activate';
     
     if (!confirm(`Are you sure you want to ${actionLabel} user "${user.name}" (${user.email})?`)) {
@@ -201,7 +218,7 @@ export default function ActionMenu({
 
   const handleDeleteClick = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    setIsOpen(false); // Hide the three dots menu
+    setOpenState(false); // Hide the three dots menu
     if (isPrimaryAdmin || user.email === 'rabbi@ummis.com' || user.email === 'admin@admin.com') {
       alert('Security Policy: The primary administrator account cannot be deleted.');
       return;
@@ -264,17 +281,17 @@ export default function ActionMenu({
   };
 
   return (
-    <div className="relative inline-block text-left" ref={menuRef}>
+    <div className="relative inline-block text-left">
       <button
         ref={buttonRef}
         type="button"
         onClick={handleThreeDotsClick}
         disabled={isProcessing}
-        className={`p-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 ${
-          isOpen ? 'bg-slate-200 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
+        className={`p-1.5 rounded-lg transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500/20 disabled:opacity-50 cursor-pointer ${
+          isMenuOpen ? 'bg-slate-200 text-slate-900' : 'text-slate-500 hover:text-slate-900 hover:bg-slate-100'
         }`}
-        title="More user actions"
-        aria-expanded={isOpen}
+        title={`Actions for ${user.name}`}
+        aria-expanded={isMenuOpen}
       >
         {isProcessing ? (
           <Loader2 size={16} className="animate-spin text-blue-600" />
@@ -283,21 +300,31 @@ export default function ActionMenu({
         )}
       </button>
 
-      {isOpen && menuCoords && (
+      {isMenuOpen && menuCoords && (
         <div 
-          style={{ top: `${menuCoords.top}px`, left: `${menuCoords.left}px` }}
-          className={`fixed w-48 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[9999] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100 ${
+          ref={menuRef}
+          style={menuCoords.openUpward 
+            ? { bottom: `${menuCoords.bottom}px`, right: `${menuCoords.right}px` }
+            : { top: `${menuCoords.top}px`, right: `${menuCoords.right}px` }
+          }
+          className={`fixed w-52 bg-white rounded-xl shadow-2xl border border-slate-200 py-1 z-[9999] divide-y divide-slate-100 animate-in fade-in zoom-in-95 duration-100 ${
             menuCoords.openUpward ? 'origin-bottom-right' : 'origin-top-right'
           }`}
           role="menu"
           onClick={(e) => e.stopPropagation()}
         >
+          {/* Active Target User Header Card */}
+          <div className="px-3.5 py-2 bg-slate-50 border-b border-slate-100">
+            <div className="text-xs font-black text-slate-900 truncate">{user.name}</div>
+            <div className="text-[10px] text-slate-500 truncate">{user.email}</div>
+          </div>
+
           {/* View Profile Action */}
           <div className="py-1">
             <button
               type="button"
               onClick={handleManageClick}
-              className="w-full px-3.5 py-2.5 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors text-left"
+              className="w-full px-3.5 py-2 text-xs font-semibold text-slate-800 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
               role="menuitem"
             >
               <User size={15} className="text-blue-600 shrink-0" />
@@ -315,18 +342,18 @@ export default function ActionMenu({
               <button
                 type="button"
                 onClick={handleToggleStatusClick}
-                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors text-left"
+                className="w-full px-3.5 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-50 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
                 role="menuitem"
               >
                 {isActive ? (
                   <>
                     <UserX size={14} className="text-amber-600 shrink-0" />
-                    <span className="text-amber-700">Suspend Account</span>
+                    <span className="text-amber-700 font-bold">Suspend Account</span>
                   </>
                 ) : (
                   <>
                     <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                    <span className="text-emerald-700">Reactivate Account</span>
+                    <span className="text-emerald-700 font-bold">Reactivate Account</span>
                   </>
                 )}
               </button>
@@ -338,11 +365,11 @@ export default function ActionMenu({
               <button
                 type="button"
                 onClick={handleDeleteClick}
-                className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors text-left"
+                className="w-full px-3.5 py-2 text-xs font-semibold text-rose-600 hover:bg-rose-50 flex items-center gap-2.5 transition-colors text-left cursor-pointer"
                 role="menuitem"
               >
-                <Trash2 size={14} className="shrink-0" />
-                <span>Delete Account</span>
+                <Trash2 size={14} className="shrink-0 text-rose-600" />
+                <span className="font-bold">Delete Account</span>
               </button>
             </div>
           )}

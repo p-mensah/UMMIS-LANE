@@ -6,7 +6,7 @@ import {
   UserCheck, Tag, Inbox, ArrowLeftRight, ShieldCheck, RotateCcw,
   Store, Building2, Wallet, Menu, X, Lock,
   SlidersHorizontal, UserCog, History, FolderTree, Scale, Search, User,
-  MessageSquare
+  MessageSquare, Boxes, Barcode, BarChart3, Plus
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -153,8 +153,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
 
   // Flat & Standalone Navigation Links
   const navItems: NavItemConfig[] = user?.role === 'supplier' ? [
-    { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders' },
-    { to: '/products', icon: <Package size={18} />, label: 'Supplied Products' }
+    { to: '/', icon: <LayoutDashboard size={18} />, label: 'Supplier Overview' },
+    { to: '/supplier/pos', icon: <Truck size={18} />, label: 'PO & ASN Lifecycle' },
+    { to: '/supplier/inventory', icon: <Boxes size={18} />, label: 'Inventory Alignment & VMI' },
+    { to: '/supplier/catalog', icon: <Barcode size={18} />, label: 'Product Catalog & Item Master' },
+    { to: '/supplier/invoices', icon: <CreditCard size={18} />, label: 'Invoicing & 3-Way Match' },
+    { to: '/supplier/analytics', icon: <BarChart3 size={18} />, label: 'Vendor Analytics & SLA' },
+    { to: '/supplier/qc', icon: <RotateCcw size={18} />, label: 'Inspection QC & RMAs' },
+    { to: '/supplier/profile', icon: <Building2 size={18} />, label: 'Supplier Master Profile' },
+    { to: '/supplier/reports', icon: <FileText size={18} />, label: 'Procurement Reports' },
+    { to: '/supplier/messages', icon: <MessageSquare size={18} />, label: 'Supplier Messages' },
   ] : [
     { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/communication', icon: <MessageSquare size={18} />, label: 'Team Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
@@ -165,6 +173,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
+    { to: '/supplier-dashboard', icon: <Truck size={18} />, label: 'Supplier Portal', adminOnly: true },
     { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
     { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
     { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },
@@ -177,7 +186,16 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   // Helper to determine current page title for topbar header
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path === '/') return user?.role === 'supplier' ? 'Supplier Portal Dashboard' : 'Executive Dashboard Overview';
+    if (path === '/' || path === '/supplier/overview') return user?.role === 'supplier' ? 'Supplier Portal Dashboard & Overview' : 'Executive Dashboard Overview';
+    if (path === '/supplier/pos') return 'PO & ASN Lifecycle Management';
+    if (path === '/supplier/inventory') return 'Inventory Alignment & Vendor Managed Inventory (VMI)';
+    if (path === '/supplier/catalog') return 'Product Catalog, Barcodes & Item Master';
+    if (path === '/supplier/invoices') return 'Supplier Invoicing & 3-Way Matching';
+    if (path === '/supplier/analytics') return 'Vendor Performance & Analytics Scorecard';
+    if (path === '/supplier/qc') return 'Inspection Quality Control & RMAs';
+    if (path === '/supplier/profile') return 'Supplier Master Profile & Compliance';
+    if (path === '/supplier/reports') return 'Procurement & Vendor Fulfillment Reports';
+    if (path === '/supplier/messages') return 'Supplier Procurement Communications';
     if (path === '/communication') return 'Team Communication & Internal Comms';
     if (path === '/reports') return 'Financial Reports & Business Analytics';
     if (path === '/supplier-dashboard') return 'Supplier Portal & Restock Workflow';
@@ -204,6 +222,13 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {navItems.map((item) => {
         if (item.adminOnly && user?.role !== 'admin') return null;
 
+        const isItemActive = item.to === '/'
+          ? (location.pathname === '/' || location.pathname === '/supplier/overview' || (user?.role === 'supplier' && location.pathname === '/supplier-dashboard'))
+          : (location.pathname === item.to || 
+             (item.to === '/supplier/pos' && location.pathname === '/purchases') || 
+             (item.to === '/supplier/catalog' && location.pathname === '/products') ||
+             (item.to === '/supplier/messages' && location.pathname === '/communication'));
+
         return (
           <NavLink
             key={item.to}
@@ -211,9 +236,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             end={item.to === '/'}
             onClick={() => setMobileMenuOpen(false)}
             title={isNavCollapsed ? item.label : undefined}
-            className={({ isActive }) =>
+            className={() =>
               `group flex items-center ${isNavCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 rounded-lg text-xs font-bold transition-all ${
-                isActive
+                isItemActive
                   ? 'bg-blue-600 text-white shadow-2xs'
                   : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
               }`
@@ -236,6 +261,62 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       })}
     </nav>
   );
+
+  const renderSupplierQuickActions = () => {
+    if (user?.role !== 'supplier' || isNavCollapsed) return null;
+    return (
+      <div className="p-2.5 border-t border-slate-800 bg-slate-950/60 space-y-1.5">
+        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block px-1">
+          Quick Actions
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setMobileMenuOpen(false);
+            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
+              navigate('/supplier/pos');
+            }
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('supplier-open-new-po'));
+            }, 50);
+          }}
+          className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+        >
+          <Plus size={13} /> New Purchase Order
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMobileMenuOpen(false);
+            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
+              navigate('/supplier/invoices');
+            }
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('supplier-open-upload-invoice'));
+            }, 50);
+          }}
+          className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+        >
+          <FileText size={13} /> Upload Invoice
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            setMobileMenuOpen(false);
+            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
+              navigate('/supplier/pos');
+            }
+            setTimeout(() => {
+              window.dispatchEvent(new CustomEvent('supplier-open-submit-asn'));
+            }, 50);
+          }}
+          className="w-full py-1.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-blue-300 border border-slate-700 font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
+        >
+          <Truck size={13} /> Submit ASN
+        </button>
+      </div>
+    );
+  };
 
   const renderUserProfileFooter = () => (
     <div className={`p-2.5 border-t border-slate-800 bg-slate-950/70 text-xs ${isNavCollapsed ? 'flex flex-col items-center space-y-2' : 'space-y-2'}`}>
@@ -341,6 +422,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         {/* Navigation List */}
         {renderNavList()}
 
+        {/* Supplier Quick Actions */}
+        {renderSupplierQuickActions()}
+
         {/* User Profile Footer */}
         {renderUserProfileFooter()}
       </aside>
@@ -375,6 +459,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
 
             {renderNavList()}
+            {renderSupplierQuickActions()}
             {renderUserProfileFooter()}
           </div>
         </div>

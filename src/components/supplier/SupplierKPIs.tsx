@@ -13,7 +13,10 @@ import {
   Navigation,
   MapPin,
   ArrowUpRight,
-  ShieldCheck
+  ShieldCheck,
+  Plus,
+  FileText,
+  Upload
 } from 'lucide-react';
 
 interface SupplierKPIsProps {
@@ -35,37 +38,49 @@ interface SupplierKPIsProps {
     received_orders_count?: number;
     total_supplied_product_lines?: number;
     total_active_vendors?: number;
+    outstanding_payable_balance?: number;
+    defect_rate?: number;
     fulfillment_modes?: {
       supplier_delivery?: number;
       store_pickup?: number;
     };
   };
   loading?: boolean;
+  onNewPO?: () => void;
+  onUploadInvoice?: () => void;
+  onSubmitASN?: () => void;
 }
 
-export default function SupplierKPIs({ kpis, loading = false }: SupplierKPIsProps) {
+export default function SupplierKPIs({
+  kpis,
+  loading = false,
+  onNewPO,
+  onUploadInvoice,
+  onSubmitASN
+}: SupplierKPIsProps) {
   const activeCount = kpis?.active_pos_count ?? kpis?.total_active_pos ?? 0;
   const activeValue = kpis?.active_pos_value ?? 0;
-  const totalSpend = kpis?.total_order_spend ?? kpis?.total_spend ?? 0;
   const otdRate = kpis?.otd_rate ?? 96.5;
   const fulfillmentAccuracy = kpis?.fulfillment_accuracy ?? 98.2;
+  const defectRate = kpis?.defect_rate ?? Math.max(0.5, Number((100 - fulfillmentAccuracy).toFixed(1)));
   const leadTimeDays = kpis?.average_lead_time_days ?? '2.8';
   const leadTimeHours = kpis?.average_lead_time_hours ?? Math.round(Number(leadTimeDays) * 24);
+  const outstandingPayables = kpis?.outstanding_payable_balance ?? activeValue;
   const pendingCount = kpis?.pending_orders_count ?? kpis?.pending_orders ?? 0;
   const readyPickupCount = kpis?.ready_for_pickup_count ?? 0;
   const inTransitCount = kpis?.out_for_delivery_count ?? 0;
   const receivedCount = kpis?.received_orders_count ?? kpis?.received_count ?? 0;
-  const activeVendors = kpis?.total_active_vendors ?? 8;
   const directDeliveryCount = kpis?.fulfillment_modes?.supplier_delivery ?? 0;
   const storePickupCount = kpis?.fulfillment_modes?.store_pickup ?? 0;
 
+  // 5 Required Core KPI Cards according to Module 1
   const primaryCards = [
     {
       id: 'kpi-active-pos',
-      label: 'Active POs (Volume & Value)',
+      label: 'Active Purchase Orders',
       value: `${activeCount} Orders`,
       extra: activeValue > 0 ? formatGHS(activeValue) : 'Ongoing Pipeline',
-      subtext: 'Purchase orders currently active',
+      subtext: 'POs in production or transit',
       icon: Truck,
       color: 'text-blue-600',
       bgColor: 'bg-blue-50',
@@ -73,11 +88,11 @@ export default function SupplierKPIs({ kpis, loading = false }: SupplierKPIsProp
       badge: 'Active POs'
     },
     {
-      id: 'kpi-otd-rate',
-      label: 'On-Time Delivery / Pickup',
+      id: 'kpi-otif-rate',
+      label: 'On-Time In-Full (OTIF) %',
       value: `${otdRate}%`,
       extra: 'Target SLA: ≥95.0%',
-      subtext: 'Delivered or ready on schedule',
+      subtext: 'Delivered complete on schedule',
       icon: Clock,
       color: otdRate >= 95 ? 'text-emerald-600' : 'text-amber-600',
       bgColor: otdRate >= 95 ? 'bg-emerald-50' : 'bg-amber-50',
@@ -85,52 +100,40 @@ export default function SupplierKPIs({ kpis, loading = false }: SupplierKPIsProp
       badge: otdRate >= 95 ? 'Within SLA' : 'Review SLA'
     },
     {
-      id: 'kpi-fulfillment-accuracy',
-      label: 'Fulfillment & Accuracy',
-      value: `${fulfillmentAccuracy}%`,
-      extra: 'Undamaged & Complete',
-      subtext: 'QC inspection pass standard',
-      icon: CheckCircle2,
-      color: 'text-emerald-600',
-      bgColor: 'bg-emerald-50',
-      borderColor: 'border-emerald-100',
-      badge: 'QC Pass'
-    },
-    {
-      id: 'kpi-total-spend',
-      label: 'Total Order Volume / Spend',
-      value: formatGHS(totalSpend),
-      extra: 'Aggregate Spend',
-      subtext: 'Cumulated vendor procurement',
-      icon: TrendingUp,
-      color: 'text-purple-600',
-      bgColor: 'bg-purple-50',
-      borderColor: 'border-purple-100',
-      badge: 'Spend'
-    },
-    {
       id: 'kpi-avg-lead-time',
-      label: 'Average Lead Time',
+      label: 'Average Lead Time (Days)',
       value: `${leadTimeDays} Days`,
-      extra: `~${leadTimeHours} hrs turnaround`,
-      subtext: 'PO issuance to warehouse dock',
-      icon: Clock,
+      extra: `~${leadTimeHours} hrs dock turnaround`,
+      subtext: 'PO issuance to receipt',
+      icon: Navigation,
       color: 'text-indigo-600',
       bgColor: 'bg-indigo-50',
       borderColor: 'border-indigo-100',
-      badge: 'Turnaround'
+      badge: 'Lead Time'
     },
     {
-      id: 'kpi-active-vendors',
-      label: 'Active Local Vendors',
-      value: `${activeVendors} Suppliers`,
-      extra: `${kpis?.total_supplied_product_lines ?? 12} Product Lines`,
-      subtext: 'Direct delivery & pickup partners',
-      icon: Building2,
-      color: 'text-slate-800',
-      bgColor: 'bg-slate-100',
-      borderColor: 'border-slate-200',
-      badge: 'Partners'
+      id: 'kpi-quality-defect-rate',
+      label: 'Quality / Defect Rate (%)',
+      value: `${defectRate}%`,
+      extra: `${fulfillmentAccuracy}% Inspection Pass`,
+      subtext: 'Damaged or rejected lots',
+      icon: CheckCircle2,
+      color: defectRate <= 2.5 ? 'text-emerald-600' : 'text-rose-600',
+      bgColor: defectRate <= 2.5 ? 'bg-emerald-50' : 'bg-rose-50',
+      borderColor: defectRate <= 2.5 ? 'border-emerald-100' : 'border-rose-100',
+      badge: defectRate <= 2.5 ? 'Low Defect' : 'Elevated'
+    },
+    {
+      id: 'kpi-outstanding-payables',
+      label: 'Outstanding Payable Balances',
+      value: formatGHS(outstandingPayables),
+      extra: 'Net 30/60 Invoices',
+      subtext: 'Pending vendor disbursements',
+      icon: TrendingUp,
+      color: 'text-amber-600',
+      bgColor: 'bg-amber-50',
+      borderColor: 'border-amber-100',
+      badge: 'Payables'
     }
   ];
 
@@ -182,6 +185,46 @@ export default function SupplierKPIs({ kpis, loading = false }: SupplierKPIsProp
             </div>
           );
         })}
+
+        {/* 6th Slot: Quick Action Direct Launchers */}
+        <div className="bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl p-3 border border-slate-700 shadow-2xs flex flex-col justify-between text-white">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black uppercase tracking-wider text-slate-300">
+              Procurement Actions
+            </span>
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+          </div>
+
+          <div className="space-y-1.5 my-1">
+            <button
+              type="button"
+              onClick={onNewPO}
+              className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded font-bold text-[11px] transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
+            >
+              <Plus size={12} /> New Purchase Order
+            </button>
+
+            <button
+              type="button"
+              onClick={onUploadInvoice}
+              className="w-full py-1 px-2 bg-slate-800 hover:bg-slate-700 text-emerald-300 hover:text-emerald-200 border border-slate-700 rounded font-bold text-[10px] transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <FileText size={11} /> Upload Invoice
+            </button>
+
+            <button
+              type="button"
+              onClick={onSubmitASN}
+              className="w-full py-1 px-2 bg-slate-800 hover:bg-slate-700 text-blue-300 hover:text-blue-200 border border-slate-700 rounded font-bold text-[10px] transition flex items-center justify-center gap-1.5 cursor-pointer"
+            >
+              <Truck size={11} /> Submit ASN
+            </button>
+          </div>
+
+          <div className="text-[9px] text-slate-400 truncate">
+            Instant workflow launchers
+          </div>
+        </div>
       </div>
 
       {/* Operational Lifecycle Quick Counters */}
