@@ -581,6 +581,85 @@ function initDb() {
       documents TEXT,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    CREATE TABLE IF NOT EXISTS supplier_products (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      supplier_id INTEGER,
+      supplier_name TEXT NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT,
+      supplier_sku TEXT NOT NULL,
+      internal_sku TEXT,
+      barcode TEXT,
+      unit_cost REAL NOT NULL DEFAULT 0,
+      selling_price REAL DEFAULT 0,
+      moq INTEGER NOT NULL DEFAULT 1,
+      current_stock INTEGER NOT NULL DEFAULT 0,
+      reorder_point INTEGER DEFAULT 10,
+      safety_stock INTEGER DEFAULT 5,
+      status TEXT NOT NULL DEFAULT 'pending_approval',
+      category TEXT DEFAULT 'General',
+      unit TEXT DEFAULT 'Units',
+      admin_approved INTEGER DEFAULT 0,
+      approved_by TEXT,
+      approved_at DATETIME,
+      documents TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_shipments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      shipment_number TEXT NOT NULL UNIQUE,
+      po_id INTEGER,
+      supplier_name TEXT NOT NULL,
+      carrier TEXT NOT NULL,
+      tracking_number TEXT NOT NULL,
+      eta TEXT NOT NULL,
+      shipped_date TEXT NOT NULL,
+      delivered_date TEXT,
+      status TEXT NOT NULL DEFAULT 'preparing',
+      items TEXT NOT NULL,
+      item_count INTEGER DEFAULT 0,
+      total_units INTEGER DEFAULT 0,
+      total_value REAL DEFAULT 0,
+      destination TEXT DEFAULT 'Main Store Warehouse',
+      notes TEXT,
+      invoice_attached INTEGER DEFAULT 0,
+      invoice_id INTEGER,
+      invoice_number TEXT,
+      verified_at DATETIME,
+      verified_by TEXT,
+      verification_notes TEXT,
+      client_ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS supplier_invoices_ledger (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      invoice_number TEXT NOT NULL UNIQUE,
+      shipment_id INTEGER,
+      shipment_number TEXT,
+      po_id INTEGER,
+      supplier_name TEXT NOT NULL,
+      invoice_date TEXT NOT NULL,
+      due_date TEXT NOT NULL,
+      amount REAL NOT NULL,
+      payment_terms TEXT DEFAULT 'Net 30',
+      status TEXT NOT NULL DEFAULT 'unpaid',
+      match_status TEXT DEFAULT 'pending_verification',
+      document_url TEXT,
+      file_name TEXT,
+      notes TEXT,
+      payment_method TEXT,
+      paid_at DATETIME,
+      paid_by TEXT,
+      scheduled_date TEXT,
+      client_ip TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
   `);
 
   addColumnOrIgnore('purchases', 'payment_terms', "TEXT DEFAULT 'Net 30'");
@@ -2241,6 +2320,28 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
       '/purchases'
     );
 
+    // Notify supplier of incoming Purchase Order
+    createNotification(
+      'New Store Owner PO Received',
+      `Store Owner issued Purchase Order #PO-${purchaseId} for "${supplier_name}" (Total: GHS ${total_amount.toFixed(2)}). Awaiting fulfillment.`,
+      'info',
+      '/supplier/shipments'
+    );
+
+    try {
+      db.prepare(`
+        INSERT INTO supplier_interactions (
+          supplier_name, user_id, sender_name, sender_role, message_type, po_id, message
+        ) VALUES (?, ?, ?, 'store_owner', 'po_created', ?, ?)
+      `).run(
+        supplier_name,
+        req.user.id,
+        req.user.name,
+        purchaseId,
+        `Store Owner issued PO #PO-${purchaseId} for ${items.length} line items (Total: GHS ${total_amount.toFixed(2)}). Expected Delivery: ${expected_date || 'Standard SLA'}. Notes: ${notes || 'Fulfillment requested'}`
+      );
+    } catch (e) {}
+
     logAuditEvent(
       req.user.id, 
       req.user.name, 
@@ -2270,14 +2371,14 @@ app.get('/api/purchases', authenticate, (req: any, res) => {
     const conditions: string[] = [];
 
     // Filter by supplier if query specified or if user is a supplier
-    if (req.user?.role === 'supplier') {
+    if (req.query.supplier) {
+      conditions.push(`(LOWER(p.supplier_name) LIKE ? OR p.supplier_id = ?)`);
+      params.push(`%${(req.query.supplier as string).toLowerCase()}%`, req.query.supplier);
+    } else if (req.user?.role === 'supplier') {
       const email = (req.user.email || '').toLowerCase();
       const name = (req.user.name || '').replace(/supplier/i, '').trim().toLowerCase();
       conditions.push(`(LOWER(p.supplier_name) LIKE ? OR LOWER(p.supplier_contact) LIKE ? OR ? LIKE ('%' || LOWER(p.supplier_name) || '%'))`);
       params.push(`%${name || email.split('@')[0]}%`, `%${email}%`, req.user.name.toLowerCase());
-    } else if (req.query.supplier) {
-      conditions.push(`(LOWER(p.supplier_name) LIKE ? OR p.supplier_id = ?)`);
-      params.push(`%${(req.query.supplier as string).toLowerCase()}%`, req.query.supplier);
     }
 
     if (req.query.status && req.query.status !== 'all') {
@@ -2862,7 +2963,7 @@ app.post('/api/purchases/:id/acknowledge', authenticate, (req: any, res) => {
       SET acknowledged_at = CURRENT_TIMESTAMP,
           acknowledgment_notes = ?,
           expected_date = COALESCE(?, expected_date),
-          status = CASE WHEN status = 'draft' OR status = 'pending' THEN 'ordered' ELSE status END
+          status = CASE WHEN status IN ('draft', 'pending', 'pending_confirmation') THEN 'acknowledged' ELSE status END
       WHERE id = ?
     `).run(notes || 'Supplier acknowledged and confirmed order acceptance.', promised_date || null, req.params.id);
 
@@ -3135,13 +3236,28 @@ app.post('/api/purchases/:id/decision', authenticate, (req: any, res) => {
       clientIp
     );
 
-    // Notify Procurement team
+    // Notify Store Owner & Procurement team
     createNotification(
       `PO #${po.id} ${action === 'accept' ? 'Accepted ✅' : 'Rejected ❌'}`,
       `Supplier "${po.supplier_name}" has ${action === 'accept' ? 'confirmed order acceptance' : 'declined PO'}. Notes: ${reason || 'N/A'}`,
       action === 'accept' ? 'success' : 'danger',
-      '/supplier-dashboard'
+      '/purchases'
     );
+
+    try {
+      db.prepare(`
+        INSERT INTO supplier_interactions (
+          supplier_name, user_id, sender_name, sender_role, message_type, po_id, message
+        ) VALUES (?, ?, ?, 'supplier', ?, ?, ?)
+      `).run(
+        po.supplier_name,
+        req.user.id,
+        req.user.name,
+        action === 'accept' ? 'po_accepted' : 'po_rejected',
+        po.id,
+        `Supplier ${action === 'accept' ? 'ACCEPTED' : 'REJECTED'} Purchase Order #PO-${po.id}. Notes/Reason: ${reason || 'N/A'}`
+      );
+    } catch (e) {}
 
     res.json({ success: true, status: newStatus, po_id: po.id });
   } catch (err: any) {
@@ -3538,6 +3654,743 @@ app.post('/api/supplier/documents', authenticate, (req: any, res) => {
     res.status(400).json({ error: err.message });
   }
 });
+
+// ==========================================
+// DEDICATED SUPPLIER OPERATIONS ENDPOINTS
+// ==========================================
+
+// 1. Supplier Products (CRUD + Admin Approval)
+app.get('/api/supplier/products', authenticate, (req: any, res) => {
+  try {
+    const supplierName = (req.query.supplier_name as string) || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : '');
+    
+    // Seed initial products if table is empty
+    const countCheck: any = db.prepare('SELECT COUNT(*) as c FROM supplier_products').get();
+    if (countCheck.c === 0) {
+      const initialProducts = [
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Carnation Evaporated Milk 160g (Pack of 24)', description: 'Full cream evaporated milk in easy-open tins', supplier_sku: 'NEST-CARN-160G', internal_sku: 'CARN-160G-24PK', barcode: '6151000210014', unit_cost: 165.0, selling_price: 195.0, moq: 10, current_stock: 45, reorder_point: 20, safety_stock: 10, status: 'active', category: 'Dairy & Milks', unit: 'Carton', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Ideal Evaporated Milk 390g (Pack of 24)', description: 'Creamy evaporated milk enriched with vitamin D', supplier_sku: 'NEST-IDEAL-390G', internal_sku: 'IDEAL-390G-24PK', barcode: '6151000210021', unit_cost: 210.0, selling_price: 245.0, moq: 10, current_stock: 12, reorder_point: 25, safety_stock: 15, status: 'active', category: 'Dairy & Milks', unit: 'Carton', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Milo Energy Chocolate Food Drink 400g Tin', description: 'Malted barley energy drink powder', supplier_sku: 'NEST-MILO-400G', internal_sku: 'MILO-400G-TIN', barcode: '6151000210038', unit_cost: 58.0, selling_price: 68.0, moq: 20, current_stock: 80, reorder_point: 30, safety_stock: 20, status: 'active', category: 'Beverages', unit: 'Tins', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Nescafé Classic Pure Instant Coffee 200g Jar', description: '100% natural pure instant coffee granules', supplier_sku: 'NEST-NESC-200G', internal_sku: 'NESC-200G-JAR', barcode: '6151000210045', unit_cost: 72.0, selling_price: 85.0, moq: 15, current_stock: 28, reorder_point: 15, safety_stock: 10, status: 'active', category: 'Beverages', unit: 'Jars', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Cerelac Infant Wheat & Honey Cereal 400g Tin', description: 'Infant cereal with milk, iron, and zinc', supplier_sku: 'NEST-CEREL-400G', internal_sku: 'CEREL-400G-TIN', barcode: '6151000210052', unit_cost: 64.0, selling_price: 76.0, moq: 12, current_stock: 6, reorder_point: 15, safety_stock: 10, status: 'active', category: 'Baby Foods', unit: 'Tins', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Nido Fortified Milk Powder 400g Pouch', description: 'Fortified dry whole milk powder for family nutrition', supplier_sku: 'NEST-NIDO-400G', internal_sku: 'NIDO-400G-PCH', barcode: '6151000210069', unit_cost: 52.0, selling_price: 62.0, moq: 24, current_stock: 0, reorder_point: 20, safety_stock: 12, status: 'out_of_stock', category: 'Dairy & Milks', unit: 'Pouches', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Maggi Seasoning Cubes (Pack of 100)', description: 'Flavor-rich bouillon seasoning cubes with iodized salt', supplier_sku: 'NEST-MAGG-100PK', internal_sku: 'MAGG-CUBE-100PK', barcode: '6151000210076', unit_cost: 42.0, selling_price: 50.0, moq: 30, current_stock: 150, reorder_point: 50, safety_stock: 30, status: 'active', category: 'Condiments', unit: 'Boxes', admin_approved: 1, approved_by: 'Rabbi Admin' },
+        { supplier_name: 'Nestlé Ghana Ltd', title: 'Milo Ready-To-Drink Can 240ml (Pack of 24)', description: 'New formulation ready-to-drink malt beverage', supplier_sku: 'NEST-MILO-RTD24', internal_sku: 'MILO-RTD24-CAN', barcode: '6151000210083', unit_cost: 110.0, selling_price: 135.0, moq: 10, current_stock: 50, reorder_point: 20, safety_stock: 10, status: 'pending_approval', category: 'Beverages', unit: 'Carton', admin_approved: 0, approved_by: null }
+      ];
+
+      const insertStmt = db.prepare(`
+        INSERT INTO supplier_products (
+          supplier_name, title, description, supplier_sku, internal_sku, barcode,
+          unit_cost, selling_price, moq, current_stock, reorder_point, safety_stock,
+          status, category, unit, admin_approved, approved_by, approved_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+      `);
+
+      for (const p of initialProducts) {
+        insertStmt.run(
+          p.supplier_name, p.title, p.description, p.supplier_sku, p.internal_sku, p.barcode,
+          p.unit_cost, p.selling_price, p.moq, p.current_stock, p.reorder_point, p.safety_stock,
+          p.status, p.category, p.unit, p.admin_approved, p.approved_by
+        );
+      }
+    }
+
+    let sql = 'SELECT * FROM supplier_products';
+    const params: any[] = [];
+    if (supplierName && req.user?.role === 'supplier') {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${supplierName.toLowerCase()}%`);
+    } else if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    }
+
+    sql += ' ORDER BY id DESC';
+    const products = db.prepare(sql).all(...params);
+    res.json(products);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/products', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const supplierName = req.body.supplier_name || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : 'Nestlé Ghana Ltd');
+    const {
+      title, description, supplier_sku, internal_sku, barcode,
+      unit_cost, selling_price, moq, current_stock, reorder_point, safety_stock,
+      category, unit
+    } = req.body;
+
+    if (!title || !supplier_sku || unit_cost === undefined) {
+      return res.status(400).json({ error: 'Title, Supplier SKU, and Unit Cost are required' });
+    }
+
+    // Suppliers submit as pending_approval; admin can directly create active
+    const isAdmin = req.user?.role === 'admin';
+    const initialStatus = req.body.status || (isAdmin ? 'active' : 'pending_approval');
+    const adminApproved = isAdmin ? 1 : 0;
+    const approvedBy = isAdmin ? req.user.name : null;
+
+    const result = db.prepare(`
+      INSERT INTO supplier_products (
+        supplier_name, title, description, supplier_sku, internal_sku, barcode,
+        unit_cost, selling_price, moq, current_stock, reorder_point, safety_stock,
+        status, category, unit, admin_approved, approved_by, approved_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ${adminApproved ? 'CURRENT_TIMESTAMP' : 'NULL'})
+    `).run(
+      supplierName,
+      title.trim(),
+      description ? description.trim() : null,
+      supplier_sku.trim(),
+      internal_sku ? internal_sku.trim() : null,
+      barcode ? barcode.trim() : null,
+      parseFloat(unit_cost) || 0,
+      parseFloat(selling_price) || 0,
+      parseInt(moq) || 1,
+      parseInt(current_stock) || 0,
+      parseInt(reorder_point) || 10,
+      parseInt(safety_stock) || 5,
+      initialStatus,
+      category ? category.trim() : 'General',
+      unit ? unit.trim() : 'Units',
+      adminApproved,
+      approvedBy
+    );
+
+    const newProduct = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(result.lastInsertRowid);
+
+    // Audit Logging with IP
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Created Supplier Product',
+      'product',
+      `Supplier Product "${title}" (${supplier_sku}) submitted with status "${initialStatus}". MOQ: ${moq || 1}`,
+      clientIp
+    );
+
+    // Notify admins if submitted by supplier
+    if (!isAdmin) {
+      createNotification(
+        'New Product Awaiting Approval',
+        `Supplier "${supplierName}" submitted "${title}" (SKU: ${supplier_sku}) for approval.`,
+        'info',
+        '/supplier-dashboard'
+      );
+    }
+
+    res.status(201).json(newProduct);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/supplier/products/:id', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const existing: any = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Product not found' });
+
+    const {
+      title, description, supplier_sku, internal_sku, barcode,
+      unit_cost, selling_price, moq, current_stock, reorder_point, safety_stock,
+      status, category, unit
+    } = req.body;
+
+    db.prepare(`
+      UPDATE supplier_products SET
+        title = COALESCE(?, title),
+        description = COALESCE(?, description),
+        supplier_sku = COALESCE(?, supplier_sku),
+        internal_sku = COALESCE(?, internal_sku),
+        barcode = COALESCE(?, barcode),
+        unit_cost = COALESCE(?, unit_cost),
+        selling_price = COALESCE(?, selling_price),
+        moq = COALESCE(?, moq),
+        current_stock = COALESCE(?, current_stock),
+        reorder_point = COALESCE(?, reorder_point),
+        safety_stock = COALESCE(?, safety_stock),
+        status = COALESCE(?, status),
+        category = COALESCE(?, category),
+        unit = COALESCE(?, unit),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(
+      title, description, supplier_sku, internal_sku, barcode,
+      unit_cost !== undefined ? parseFloat(unit_cost) : null,
+      selling_price !== undefined ? parseFloat(selling_price) : null,
+      moq !== undefined ? parseInt(moq) : null,
+      current_stock !== undefined ? parseInt(current_stock) : null,
+      reorder_point !== undefined ? parseInt(reorder_point) : null,
+      safety_stock !== undefined ? parseInt(safety_stock) : null,
+      status, category, unit,
+      id
+    );
+
+    const updated: any = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Updated Supplier Product',
+      'product',
+      `Updated product #${id} "${updated?.title}" (${updated?.supplier_sku})`,
+      clientIp
+    );
+
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/products/:id/approve', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const existing: any = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Product not found' });
+
+    db.prepare(`
+      UPDATE supplier_products SET
+        status = 'active',
+        admin_approved = 1,
+        approved_by = ?,
+        approved_at = CURRENT_TIMESTAMP,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(req.user.name, id);
+
+    // Also check if internal SKU exists in main products table; if not, add it
+    const checkProduct = db.prepare('SELECT id FROM products WHERE sku = ? OR name = ?').get(existing.internal_sku || existing.supplier_sku, existing.title);
+    if (!checkProduct) {
+      db.prepare(`
+        INSERT INTO products (
+          name, sku, barcode, category, cost_price, selling_price, stock_quantity,
+          min_stock_level, unit, description
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(
+        existing.title,
+        existing.internal_sku || existing.supplier_sku,
+        existing.barcode || null,
+        existing.category || 'General',
+        existing.unit_cost,
+        existing.selling_price || (existing.unit_cost * 1.25),
+        existing.current_stock || 0,
+        existing.reorder_point || 10,
+        existing.unit || 'Units',
+        existing.description || `Supplier: ${existing.supplier_name}`
+      );
+    }
+
+    const approved: any = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Approved Supplier Product',
+      'product',
+      `Product #${id} "${approved?.title}" approved and marked active by Store Admin.`,
+      clientIp
+    );
+
+    res.json(approved);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 2. Restock Shipments (Lifecycle: preparing -> in_transit -> delivered -> verified)
+app.get('/api/supplier/shipments', authenticate, (req: any, res) => {
+  try {
+    const supplierName = (req.query.supplier_name as string) || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : '');
+
+    // Seed initial shipments if empty
+    const countCheck: any = db.prepare('SELECT COUNT(*) as c FROM supplier_shipments').get();
+    if (countCheck.c === 0) {
+      const sampleShipments = [
+        {
+          shipment_number: 'SHP-2026-001',
+          supplier_name: 'Nestlé Ghana Ltd',
+          carrier: 'FedEx Freight Ghana',
+          tracking_number: 'FX-GH-9021884',
+          eta: new Date(Date.now() + 86400000).toISOString().slice(0, 10),
+          shipped_date: new Date(Date.now() - 86400000).toISOString().slice(0, 10),
+          status: 'in_transit',
+          items: JSON.stringify([
+            { product_id: 1, product_name: 'Carnation Evaporated Milk 160g', sku: 'CARN-160G-24PK', quantity: 60, unit_cost: 165.0, batch_lot_number: 'LOT-2026-A1' },
+            { product_id: 2, product_name: 'Ideal Evaporated Milk 390g', sku: 'IDEAL-390G-24PK', quantity: 40, unit_cost: 210.0, batch_lot_number: 'LOT-2026-A2' }
+          ]),
+          item_count: 2,
+          total_units: 100,
+          total_value: 18300.0,
+          notes: 'Priority morning delivery to Tema dock.',
+          invoice_attached: 0
+        },
+        {
+          shipment_number: 'SHP-2026-002',
+          supplier_name: 'Nestlé Ghana Ltd',
+          carrier: 'DHL Supply Chain',
+          tracking_number: 'DHL-EXP-441092',
+          eta: new Date(Date.now() - 172800000).toISOString().slice(0, 10),
+          shipped_date: new Date(Date.now() - 259200000).toISOString().slice(0, 10),
+          delivered_date: new Date(Date.now() - 172800000).toISOString().slice(0, 10),
+          status: 'verified',
+          items: JSON.stringify([
+            { product_id: 3, product_name: 'Milo Energy Chocolate 400g Tin', sku: 'MILO-400G-TIN', quantity: 150, unit_cost: 58.0, batch_lot_number: 'LOT-2026-M4' }
+          ]),
+          item_count: 1,
+          total_units: 150,
+          total_value: 8700.0,
+          notes: 'Full pallet delivery accepted.',
+          invoice_attached: 1,
+          invoice_number: 'INV-NEST-8821',
+          verified_at: new Date(Date.now() - 172800000).toISOString(),
+          verified_by: 'Rabbi Admin',
+          verification_notes: '150 tins inspected and stocked into main inventory.'
+        }
+      ];
+
+      const insertStmt = db.prepare(`
+        INSERT INTO supplier_shipments (
+          shipment_number, supplier_name, carrier, tracking_number, eta, shipped_date,
+          delivered_date, status, items, item_count, total_units, total_value, notes,
+          invoice_attached, invoice_number, verified_at, verified_by, verification_notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const s of sampleShipments) {
+        insertStmt.run(
+          s.shipment_number, s.supplier_name, s.carrier, s.tracking_number, s.eta, s.shipped_date,
+          s.delivered_date || null, s.status, s.items, s.item_count, s.total_units, s.total_value, s.notes,
+          s.invoice_attached || 0, s.invoice_number || null, s.verified_at || null, s.verified_by || null, s.verification_notes || null
+        );
+      }
+    }
+
+    let sql = 'SELECT * FROM supplier_shipments';
+    const params: any[] = [];
+    if (supplierName && req.user?.role === 'supplier') {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${supplierName.toLowerCase()}%`);
+    } else if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    }
+
+    sql += ' ORDER BY id DESC';
+    const rows = db.prepare(sql).all(...params);
+
+    const parsed = rows.map((r: any) => {
+      let items = [];
+      try {
+        items = JSON.parse(r.items);
+      } catch (e) {
+        items = [];
+      }
+      return { ...r, items };
+    });
+
+    res.json(parsed);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const supplierName = req.body.supplier_name || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : 'Nestlé Ghana Ltd');
+    const { carrier, tracking_number, eta, items, notes, destination, po_id } = req.body;
+
+    if (!carrier || !tracking_number || !items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Carrier, tracking number, and at least one item are required' });
+    }
+
+    const shipmentNumber = `SHP-${new Date().getFullYear()}-${Math.floor(1000 + Math.random() * 9000)}`;
+    const shippedDate = req.body.shipped_date || new Date().toISOString().slice(0, 10);
+    const etaDate = eta || new Date(Date.now() + 2 * 86400000).toISOString().slice(0, 10);
+
+    let totalUnits = 0;
+    let totalValue = 0;
+    for (const item of items) {
+      const q = parseInt(item.quantity) || 0;
+      const c = parseFloat(item.unit_cost) || 0;
+      totalUnits += q;
+      totalValue += q * c;
+    }
+
+    const result = db.prepare(`
+      INSERT INTO supplier_shipments (
+        shipment_number, po_id, supplier_name, carrier, tracking_number, eta, shipped_date,
+        status, items, item_count, total_units, total_value, destination, notes, client_ip
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_transit', ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      shipmentNumber,
+      po_id ? Number(po_id) : null,
+      supplierName,
+      carrier.trim(),
+      tracking_number.trim(),
+      etaDate,
+      shippedDate,
+      JSON.stringify(items),
+      items.length,
+      totalUnits,
+      totalValue,
+      destination ? destination.trim() : 'Main Store Warehouse',
+      notes ? notes.trim() : null,
+      clientIp
+    );
+
+    // If shipment is tied to a Store PO, transition the PO to in-transit
+    if (po_id) {
+      try {
+        db.prepare(`
+          UPDATE purchases
+          SET status = 'in-transit', carrier = ?, tracking_number = ?, dispatch_date = CURRENT_TIMESTAMP
+          WHERE id = ?
+        `).run(carrier.trim(), tracking_number.trim(), po_id);
+
+        db.prepare(`
+          INSERT INTO supplier_interactions (
+            supplier_name, user_id, sender_name, sender_role, message_type, po_id, message
+          ) VALUES (?, ?, ?, 'supplier', 'dispatch_update', ?, ?)
+        `).run(
+          supplierName,
+          req.user.id,
+          req.user.name,
+          po_id,
+          `Supplier dispatched PO #PO-${po_id} via ${carrier.trim()} (Tracking: ${tracking_number.trim()}). Restock Shipment: ${shipmentNumber}.`
+        );
+
+        createNotification(
+          'Store PO Dispatched by Supplier',
+          `Supplier "${supplierName}" dispatched shipment ${shipmentNumber} for PO #PO-${po_id} via ${carrier.trim()} (Tracking: ${tracking_number.trim()}).`,
+          'info',
+          '/purchases'
+        );
+      } catch (poErr) {
+        console.warn('Failed to auto-update PO on shipment dispatch:', poErr);
+      }
+    }
+
+    const created: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(result.lastInsertRowid);
+    if (created) created.items = items;
+
+    // Audit Logging with IP
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Created Restock Shipment',
+      'shipment',
+      `Restock shipment ${shipmentNumber} dispatched via ${carrier} (Tracking: ${tracking_number}). Total units: ${totalUnits}`,
+      clientIp
+    );
+
+    // Notify admins
+    createNotification(
+      'New Restock Shipment Dispatched',
+      `Supplier "${supplierName}" dispatched shipment ${shipmentNumber} with ${totalUnits} units via ${carrier}.`,
+      'info',
+      '/supplier/shipments'
+    );
+
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/supplier/shipments/:id/status', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const { status, notes } = req.body; // 'preparing' | 'in_transit' | 'delivered' | 'verified'
+
+    const shipment: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+    if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+    let deliveredDate = shipment.delivered_date;
+    if (status === 'delivered' && !deliveredDate) {
+      deliveredDate = new Date().toISOString().slice(0, 10);
+    }
+
+    db.prepare(`
+      UPDATE supplier_shipments SET
+        status = ?,
+        delivered_date = ?,
+        notes = COALESCE(?, notes),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, deliveredDate, notes, id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Updated Shipment Status',
+      'shipment',
+      `Shipment #${id} (${shipment.shipment_number}) status changed to "${status}".`,
+      clientIp
+    );
+
+    const updated: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+    try { updated.items = JSON.parse(updated.items); } catch (e) { updated.items = []; }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// Admin Verification Step for Restock Shipments -> Automatically adjusts store inventory!
+app.post('/api/supplier/shipments/:id/verify', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const { verification_notes } = req.body;
+
+    const shipment: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+    if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
+
+    let items: any[] = [];
+    try {
+      items = JSON.parse(shipment.items);
+    } catch (e) {
+      items = [];
+    }
+
+    // Automatically update inventory for each item in main store products
+    for (const item of items) {
+      const qty = parseInt(item.quantity) || 0;
+      if (qty <= 0) continue;
+
+      // Find product by SKU or name
+      const targetProd: any = db.prepare('SELECT id, stock_quantity FROM products WHERE sku = ? OR name = ?').get(item.sku, item.product_name);
+      if (targetProd) {
+        db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(qty, targetProd.id);
+        
+        // Log stock movement
+        db.prepare(`
+          INSERT INTO stock_movements (product_id, type, quantity, user_id, notes)
+          VALUES (?, 'purchase', ?, ?, ?)
+        `).run(targetProd.id, qty, req.user.id, `Restock verification from shipment ${shipment.shipment_number}`);
+      }
+    }
+
+    db.prepare(`
+      UPDATE supplier_shipments SET
+        status = 'verified',
+        delivered_date = COALESCE(delivered_date, CURRENT_TIMESTAMP),
+        verified_at = CURRENT_TIMESTAMP,
+        verified_by = ?,
+        verification_notes = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(req.user.name, verification_notes || 'All items inspected and added to live store inventory.', id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Verified Restock Shipment',
+      'shipment',
+      `Admin verified shipment ${shipment.shipment_number}. Stock auto-adjusted for ${items.length} line items.`,
+      clientIp
+    );
+
+    // Notify supplier
+    createNotification(
+      'Shipment Verified & Stocked',
+      `Store Admin verified shipment ${shipment.shipment_number}. Goods received and stocked.`,
+      'success',
+      '/supplier/shipments'
+    );
+
+    const updated: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+    try { updated.items = JSON.parse(updated.items); } catch (e) { updated.items = []; }
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+// 3. Supplier Invoices Ledger (Linked to verified/delivered shipments)
+app.get('/api/supplier/invoices-ledger', authenticate, (req: any, res) => {
+  try {
+    const supplierName = (req.query.supplier_name as string) || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : '');
+
+    // Seed initial invoices if empty
+    const countCheck: any = db.prepare('SELECT COUNT(*) as c FROM supplier_invoices_ledger').get();
+    if (countCheck.c === 0) {
+      const sampleInvoices = [
+        {
+          invoice_number: 'INV-NEST-8821',
+          shipment_id: 2,
+          shipment_number: 'SHP-2026-002',
+          supplier_name: 'Nestlé Ghana Ltd',
+          invoice_date: new Date(Date.now() - 172800000).toISOString().slice(0, 10),
+          due_date: new Date(Date.now() + 28 * 86400000).toISOString().slice(0, 10),
+          amount: 8700.0,
+          payment_terms: 'Net 30',
+          status: 'scheduled',
+          match_status: 'matched',
+          document_url: 'https://res.cloudinary.com/dnjvhtal5/image/upload/v1/samples/invoice-sample.pdf',
+          file_name: 'INV-NEST-8821.pdf',
+          notes: 'Attached to delivered shipment SHP-2026-002. Approved for Net 30 payment.'
+        }
+      ];
+
+      const insertStmt = db.prepare(`
+        INSERT INTO supplier_invoices_ledger (
+          invoice_number, shipment_id, shipment_number, supplier_name, invoice_date,
+          due_date, amount, payment_terms, status, match_status, document_url, file_name, notes
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+
+      for (const inv of sampleInvoices) {
+        insertStmt.run(
+          inv.invoice_number, inv.shipment_id, inv.shipment_number, inv.supplier_name,
+          inv.invoice_date, inv.due_date, inv.amount, inv.payment_terms, inv.status,
+          inv.match_status, inv.document_url, inv.file_name, inv.notes
+        );
+      }
+    }
+
+    let sql = 'SELECT * FROM supplier_invoices_ledger';
+    const params: any[] = [];
+    if (supplierName && req.user?.role === 'supplier') {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${supplierName.toLowerCase()}%`);
+    } else if (req.query.supplier_name) {
+      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
+    }
+
+    sql += ' ORDER BY id DESC';
+    const rows = db.prepare(sql).all(...params);
+    res.json(rows);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/supplier/invoices-ledger', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const supplierName = req.body.supplier_name || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : 'Nestlé Ghana Ltd');
+    const {
+      invoice_number, shipment_id, shipment_number, amount,
+      invoice_date, due_date, payment_terms, document_url, file_name, notes
+    } = req.body;
+
+    if (!invoice_number || !amount || parseFloat(amount) <= 0) {
+      return res.status(400).json({ error: 'Invoice number and a valid amount are required' });
+    }
+
+    const invDate = invoice_date || new Date().toISOString().slice(0, 10);
+    const terms = payment_terms || 'Net 30';
+    const days = terms === 'Net 60' ? 60 : 30;
+    const dueDate = due_date || new Date(Date.now() + days * 86400000).toISOString().slice(0, 10);
+
+    const result = db.prepare(`
+      INSERT INTO supplier_invoices_ledger (
+        invoice_number, shipment_id, shipment_number, supplier_name, invoice_date,
+        due_date, amount, payment_terms, status, match_status, document_url, file_name, notes, client_ip
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'unpaid', 'matched', ?, ?, ?, ?)
+    `).run(
+      invoice_number.trim(),
+      shipment_id || null,
+      shipment_number || null,
+      supplierName,
+      invDate,
+      dueDate,
+      parseFloat(amount),
+      terms,
+      document_url || null,
+      file_name || null,
+      notes ? notes.trim() : null,
+      clientIp
+    );
+
+    // If attached to a shipment, mark shipment invoice_attached = 1
+    if (shipment_id) {
+      db.prepare(`
+        UPDATE supplier_shipments SET
+          invoice_attached = 1,
+          invoice_id = ?,
+          invoice_number = ?,
+          updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `).run(result.lastInsertRowid, invoice_number.trim(), shipment_id);
+    }
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Attached Supplier Invoice',
+      'invoice',
+      `Attached invoice #${invoice_number} (Amount: GHS ${amount}, Terms: ${terms}) to shipment ${shipment_number || 'N/A'}`,
+      clientIp
+    );
+
+    createNotification(
+      'New Supplier Invoice Received',
+      `Supplier "${supplierName}" uploaded invoice ${invoice_number} for GHS ${amount} (${terms}).`,
+      'info',
+      '/supplier/invoices'
+    );
+
+    const created = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(result.lastInsertRowid);
+    res.status(201).json(created);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/supplier/invoices-ledger/:id/status', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const { status, payment_method, notes } = req.body; // 'unpaid' | 'scheduled' | 'paid'
+
+    const invoice: any = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    let paidAt = invoice.paid_at;
+    let paidBy = invoice.paid_by;
+    if (status === 'paid') {
+      paidAt = new Date().toISOString();
+      paidBy = req.user.name;
+    }
+
+    db.prepare(`
+      UPDATE supplier_invoices_ledger SET
+        status = ?,
+        payment_method = COALESCE(?, payment_method),
+        notes = COALESCE(?, notes),
+        paid_at = ?,
+        paid_by = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(status, payment_method, notes, paidAt, paidBy, id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Updated Invoice Settlement Status',
+      'invoice',
+      `Invoice #${invoice.invoice_number} settlement status updated to "${status}".`,
+      clientIp
+    );
+
+    const updated = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 
 // Inventory & Replenishment Triggers
 app.get('/api/supplier/replenishment-triggers', authenticate, (req: any, res) => {

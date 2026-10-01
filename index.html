@@ -3,6 +3,33 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <script>
+      (function() {
+        function isBenignWsError(err) {
+          if (!err) return false;
+          var str = String(err.message || err.reason || err.stack || err || '');
+          return (
+            str.indexOf('WebSocket') !== -1 ||
+            str.indexOf('closed without opened') !== -1 ||
+            str.indexOf('failed to connect to websocket') !== -1
+          );
+        }
+        window.addEventListener('unhandledrejection', function(e) {
+          if (isBenignWsError(e.reason)) {
+            e.preventDefault();
+            if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+        window.addEventListener('error', function(e) {
+          if (isBenignWsError(e.error) || isBenignWsError(e.message)) {
+            e.preventDefault();
+            if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+            return false;
+          }
+        }, true);
+      })();
+    </script>
     <title>Ummis Lane Enterprise</title>
     <meta name="description" content="A lightweight inventory and retail management system with sales, purchases, reporting, and role-based access control." />
     <meta property="og:title" content="Ummis Lane Enterprise" />

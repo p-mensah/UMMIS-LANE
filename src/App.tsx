@@ -47,7 +47,7 @@ function HomeRoute() {
 function PurchasesRoute() {
   const { user } = useAuth();
   if (user?.role === 'supplier') {
-    return <SupplierDashboard initialTab="pos" />;
+    return <SupplierDashboard initialTab="shipments" />;
   }
   return <Purchases />;
 }
@@ -55,7 +55,7 @@ function PurchasesRoute() {
 function ProductsRoute() {
   const { user } = useAuth();
   if (user?.role === 'supplier') {
-    return <SupplierDashboard initialTab="item_master" />;
+    return <SupplierDashboard initialTab="products" />;
   }
   return <Products />;
 }
@@ -73,15 +73,17 @@ export default function App() {
               <Route path="/communication" element={<PrivateRoute><Communication /></PrivateRoute>} />
               <Route path="/supplier-dashboard" element={<PrivateRoute><SupplierDashboard initialTab="overview" /></PrivateRoute>} />
               <Route path="/supplier/overview" element={<PrivateRoute><SupplierDashboard initialTab="overview" /></PrivateRoute>} />
-              <Route path="/supplier/pos" element={<PrivateRoute><SupplierDashboard initialTab="pos" /></PrivateRoute>} />
-              <Route path="/supplier/inventory" element={<PrivateRoute><SupplierDashboard initialTab="replenishment" /></PrivateRoute>} />
-              <Route path="/supplier/catalog" element={<PrivateRoute><SupplierDashboard initialTab="item_master" /></PrivateRoute>} />
-              <Route path="/supplier/invoices" element={<PrivateRoute><SupplierDashboard initialTab="financial" /></PrivateRoute>} />
+              <Route path="/supplier/products" element={<PrivateRoute><SupplierDashboard initialTab="products" /></PrivateRoute>} />
+              <Route path="/supplier/shipments" element={<PrivateRoute><SupplierDashboard initialTab="shipments" /></PrivateRoute>} />
+              <Route path="/supplier/invoices" element={<PrivateRoute><SupplierDashboard initialTab="invoices" /></PrivateRoute>} />
+              <Route path="/supplier/pos" element={<PrivateRoute><SupplierDashboard initialTab="shipments" /></PrivateRoute>} />
+              <Route path="/supplier/inventory" element={<PrivateRoute><SupplierDashboard initialTab="products" /></PrivateRoute>} />
+              <Route path="/supplier/catalog" element={<PrivateRoute><SupplierDashboard initialTab="products" /></PrivateRoute>} />
               <Route path="/supplier/analytics" element={<PrivateRoute><SupplierDashboard initialTab="analytics" /></PrivateRoute>} />
               <Route path="/supplier/qc" element={<PrivateRoute><SupplierDashboard initialTab="qc_rma" /></PrivateRoute>} />
               <Route path="/supplier/profile" element={<PrivateRoute><SupplierDashboard initialTab="master_data" /></PrivateRoute>} />
               <Route path="/supplier/reports" element={<PrivateRoute><SupplierDashboard initialTab="reports" /></PrivateRoute>} />
-              <Route path="/supplier/messages" element={<PrivateRoute><SupplierDashboard initialTab="portal" /></PrivateRoute>} />
+              <Route path="/supplier/messages" element={<PrivateRoute><Communication /></PrivateRoute>} />
               <Route path="/products" element={<PrivateRoute><ProductsRoute /></PrivateRoute>} />
               <Route path="/products/:id" element={<PrivateRoute><ProductDetail /></PrivateRoute>} />
               <Route path="/sales" element={<PrivateRoute><Sales /></PrivateRoute>} />

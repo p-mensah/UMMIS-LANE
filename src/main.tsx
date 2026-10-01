@@ -12,17 +12,24 @@ if (typeof window !== 'undefined') {
       reasonStr.includes('WebSocket') ||
       messageStr.includes('WebSocket') ||
       reasonStr.includes('closed without opened') ||
+      messageStr.includes('closed without opened') ||
       messageStr.includes('failed to connect to websocket')
     ) {
       event.preventDefault();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
     }
-  });
+  }, true);
   window.addEventListener('error', (event) => {
     const msg = String(event.message || '');
     if (msg.includes('WebSocket') || msg.includes('closed without opened')) {
       event.preventDefault();
+      if (typeof event.stopImmediatePropagation === 'function') {
+        event.stopImmediatePropagation();
+      }
     }
-  });
+  }, true);
 }
 
 createRoot(document.getElementById('root')!).render(

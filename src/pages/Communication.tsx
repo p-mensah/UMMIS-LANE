@@ -702,7 +702,7 @@ export default function Communication() {
               <div className="p-3">
                 {/* Role Filter Pills */}
                 <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-                  {['all', 'admin', 'manager', 'staff', 'cashier'].map(r => (
+                  {['all', 'admin', 'manager', 'supplier', 'staff', 'cashier'].map(r => (
                     <button
                       key={r}
                       onClick={() => setRoleFilter(r)}
@@ -1386,7 +1386,7 @@ export default function Communication() {
               </div>
 
               <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-                {['all', 'admin', 'manager', 'staff', 'cashier'].map(r => (
+                {['all', 'admin', 'manager', 'supplier', 'staff', 'cashier'].map(r => (
                   <button
                     key={r}
                     onClick={() => setRosterRoleFilter(r)}

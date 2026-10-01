@@ -131,6 +131,13 @@ export function initChatDb(db: any) {
         description: 'Important executive broadcasts, policy updates, and staff announcements',
         type: 'channel',
         allowed_roles: 'admin,manager,staff,cashier'
+      },
+      {
+        id: 'channel_suppliers',
+        name: 'Supplier & Vendor Procurement',
+        description: 'Direct procurement channel for Store Owner, Managers, and Suppliers',
+        type: 'channel',
+        allowed_roles: 'admin,manager,supplier,staff'
       }
     ];
 

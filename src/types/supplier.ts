@@ -1,101 +1,59 @@
-// TypeScript interfaces for Supplier Management & Procurement System
-// Strict Type Safety Definitions
+// Central TypeScript interfaces for Supplier Management & Operations
+// Comprehensive Type Safety Definitions for Dual-Perspective Supplier & Admin Sync
 
-export interface Supplier {
+// Status Enums as specified:
+// ProductStatus [Active, OutOfStock, Draft]
+export enum ProductStatus {
+  Active = 'Active',
+  OutOfStock = 'OutOfStock',
+  Draft = 'Draft'
+}
+
+// ShipmentStatus [Preparing, InTransit, Delivered, Verified]
+export enum ShipmentStatus {
+  Preparing = 'Preparing',
+  InTransit = 'InTransit',
+  Delivered = 'Delivered',
+  Verified = 'Verified'
+}
+
+// InvoiceStatus [Unpaid, Scheduled, Paid]
+export enum InvoiceStatus {
+  Unpaid = 'Unpaid',
+  Scheduled = 'Scheduled',
+  Paid = 'Paid'
+}
+
+// Interoperable Type Aliases
+export type ProductStatusType = ProductStatus | 'Active' | 'OutOfStock' | 'Draft' | 'active' | 'out_of_stock' | 'draft' | 'pending_approval' | string;
+export type ShipmentStatusType = ShipmentStatus | 'Preparing' | 'InTransit' | 'Delivered' | 'Verified' | 'preparing' | 'in_transit' | 'delivered' | 'verified' | string;
+export type InvoiceStatusType = InvoiceStatus | 'Unpaid' | 'Scheduled' | 'Paid' | 'unpaid' | 'scheduled' | 'paid' | string;
+
+export type SupplierProductStatus = ProductStatusType;
+export type SupplierInvoiceStatus = InvoiceStatusType;
+
+export interface SupplierProduct {
   id: number;
   name: string;
-  contact_person?: string;
-  email?: string;
-  phone?: string;
-  address?: string;
-  tax_id?: string;
-  business_license?: string;
-  payment_terms?: string; // 'Net 30' | 'Net 60' | 'COD'
-  currency?: string;
-  bank_name?: string;
-  bank_account?: string;
-  bank_branch?: string;
-  lead_time_days?: number;
-  moq?: number;
-  certifications?: string;
-  tier_pricing?: string;
-  quality_score?: number;
-  created_at?: string;
-}
-
-export interface PurchaseOrderItem {
-  id?: number;
-  purchase_id?: number;
-  product_id: number;
-  product_name?: string;
-  sku?: string;
+  sku: string;
+  unitCost: number;
+  moq: number;
+  status: ProductStatusType;
+  // Extended and backward-compatible properties
+  title?: string;
+  description?: string;
   supplier_sku?: string;
-  quantity: number;
-  unit_price: number;
-  shipped_quantity?: number;
-  received_quantity?: number;
-  backorder_quantity?: number;
-  batch_lot_number?: string;
-  notes?: string;
-}
-
-export interface PurchaseOrder {
-  id: number;
-  user_id: number;
-  user_name?: string;
-  supplier_name: string;
-  supplier_contact?: string;
-  total_amount: number;
-  status: 'draft' | 'sent' | 'confirmed' | 'in_production' | 'shipped' | 'delivered' | 'received' | 'cancelled';
-  notes?: string;
-  expected_date?: string;
-  received_at?: string;
-  confirmed_by?: string;
-  created_at: string;
-  items?: PurchaseOrderItem[];
-  item_count?: number;
-  total_units?: number;
-  // Logistics & ASN details
-  carrier?: string;
-  tracking_number?: string;
-  eta_window?: string;
-  fulfillment_mode?: 'direct_delivery' | 'store_pickup';
-  dock_slot?: string;
-  dock_time_window?: string;
-  dispatched_at?: string;
-  acknowledged_at?: string;
-  acknowledged_by?: string;
-  acknowledgment_notes?: string;
-  // Invoicing & 3-Way Matching
-  invoice_number?: string;
-  invoice_date?: string;
-  invoice_amount?: number;
-  invoice_status?: 'unpaid' | 'scheduled' | 'partially_paid' | 'paid';
-  invoice_url?: string;
-  three_way_match_status?: 'matched' | 'discrepancy' | 'pending_grn';
-  payment_terms?: string;
-  payment_due_date?: string;
-  attachments?: string | any[];
-  asns?: ASN[];
-}
-
-export interface SupplierItem {
-  id: number;
-  product_id: number;
-  internal_sku: string;
-  supplier_sku: string;
-  product_name: string;
-  category?: string;
+  internal_sku?: string;
   barcode?: string;
-  unit_of_measure: string;
-  brand?: string;
-  unit_cost: number;
-  moq: number; // Minimum Order Quantity
+  unit_cost?: number;
+  selling_price?: number;
+  current_stock?: number;
+  reorder_point?: number;
+  safety_stock?: number;
+  category?: string;
+  unit?: string;
+  lead_time_days?: number;
   tiered_discounts?: { min_qty: number; discount_pct: number }[];
-  current_stock: number;
-  reorder_point: number;
-  safety_stock: number;
-  lead_time_days: number;
   documents?: {
     id: string;
     type: 'SDS' | 'CoA' | 'Spec Sheet';
@@ -104,64 +62,137 @@ export interface SupplierItem {
     file_size?: string;
     uploaded_at: string;
   }[];
+  supplier_name?: string;
+  supplier_id?: number;
+  admin_approved?: boolean | number;
+  approved_by?: string;
+  approved_at?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface ASNLineItem {
+export interface ShipmentItem {
+  id?: number;
+  shipment_id?: number;
   product_id: number;
-  product_name?: string;
+  product_name: string;
   sku?: string;
   supplier_sku?: string;
-  quantity_ordered: number;
-  quantity_shipped: number;
-  backorder_quantity: number;
-  batch_lot_number: string;
+  quantity: number;
+  unit_cost?: number;
+  batch_lot_number?: string;
   expiry_date?: string;
+  notes?: string;
 }
 
-export interface ASN {
-  id: string | number;
-  po_id: number;
-  supplier_name: string;
-  tracking_number: string;
+export interface Shipment {
+  id: number;
+  items: Array<any>;
+  trackingId: string;
   carrier: string;
   eta: string;
-  shipped_date: string;
-  is_split_shipment: boolean;
+  status: ShipmentStatusType;
+  // Extended and backward-compatible properties
+  tracking_number?: string;
+  shipment_number?: string;
+  po_id?: number;
+  supplier_name?: string;
+  shipped_date?: string;
+  delivered_date?: string;
+  item_count?: number;
+  total_units?: number;
+  total_value?: number;
+  destination?: string;
   notes?: string;
-  document_url?: string;
-  line_items: ASNLineItem[];
-  created_at: string;
-  created_by?: string;
+  invoice_attached?: boolean | number;
+  invoice_id?: number;
+  invoice_number?: string;
+  verified_at?: string;
+  verified_by?: string;
+  verification_notes?: string;
   client_ip?: string;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface Invoice {
-  id: string | number;
-  po_id: number;
-  supplier_name: string;
-  invoice_number: string;
-  invoice_date: string;
+export type InvoiceMatchStatus = 'matched' | 'discrepancy' | 'pending_verification';
+
+export interface SupplierInvoice {
+  id: number;
+  shipmentId: number;
   amount: number;
-  payment_terms: 'Net 30' | 'Net 60' | 'COD' | string;
-  due_date: string;
-  payment_status: 'unpaid' | 'scheduled' | 'paid';
-  match_status: 'matched' | 'discrepancy' | 'pending_grn';
+  status: InvoiceStatusType;
+  dueDate: string;
+  // Extended and backward-compatible properties
+  shipment_id?: number;
+  invoice_number?: string;
+  shipment_number?: string;
+  po_id?: number;
+  supplier_name?: string;
+  invoice_date?: string;
+  due_date?: string;
+  payment_terms?: 'Net 30' | 'Net 60' | 'COD' | string;
+  match_status?: InvoiceMatchStatus;
   document_url?: string;
+  file_name?: string;
   notes?: string;
-  created_at: string;
+  payment_method?: string;
+  paid_at?: string;
+  paid_by?: string;
+  scheduled_date?: string;
   client_ip?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export type MessageContextType = 'sku' | 'shipment' | 'invoice' | 'general';
+
+export interface Message {
+  id: number;
+  sender_id: number;
+  sender_name: string;
+  sender_role: 'admin' | 'manager' | 'supplier' | 'staff' | string;
+  recipient_id?: number;
+  recipient_name?: string;
+  recipient_role?: string;
+  content: string;
+  context_type?: MessageContextType;
+  context_id?: string;
+  reference_title?: string;
+  attachments?: {
+    id: string;
+    name: string;
+    url: string;
+    type: string;
+  }[];
+  is_read: boolean;
+  created_at: string;
 }
 
 export interface AuditLog {
   id: number;
-  user_id?: number | null;
-  user_name?: string | null;
-  actor_role?: string | null;
+  user_id?: number;
+  user_name: string;
+  actor_role: string;
   action: string;
-  category: 'purchasing' | 'invoice' | 'asn' | 'stock' | 'auth' | 'settings' | 'general';
-  details?: string | null;
-  ip_address?: string | null;
+  category: string;
+  sub_category?: string;
+  details: string;
+  ip_address: string;
+  pre_state?: string;
+  post_state?: string;
+  delta?: string;
+  device_terminal?: string;
+  location?: string;
   created_at: string;
-  pre_state?: string | null;
-  post_state?: string | null;
+}
+
+export interface SupplierKPIsData {
+  active_shipments_count: number;
+  pending_approvals_count: number;
+  low_stock_alerts_count: number;
+  unpaid_invoices_balance: number;
+  average_lead_time_days: number;
+  quality_acceptance_rate: number;
+  on_time_delivery_rate: number;
 }

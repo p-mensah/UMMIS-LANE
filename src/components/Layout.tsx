@@ -12,6 +12,7 @@ import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
 import NotificationBell from './NotificationBell';
 import ProfileModal from './ProfileModal';
+import Sidebar from './Sidebar';
 import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
@@ -151,52 +152,14 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     navigate('/login');
   };
 
-  // Flat & Standalone Navigation Links
-  const navItems: NavItemConfig[] = user?.role === 'supplier' ? [
-    { to: '/', icon: <LayoutDashboard size={18} />, label: 'Supplier Overview' },
-    { to: '/supplier/pos', icon: <Truck size={18} />, label: 'PO & ASN Lifecycle' },
-    { to: '/supplier/inventory', icon: <Boxes size={18} />, label: 'Inventory Alignment & VMI' },
-    { to: '/supplier/catalog', icon: <Barcode size={18} />, label: 'Product Catalog & Item Master' },
-    { to: '/supplier/invoices', icon: <CreditCard size={18} />, label: 'Invoicing & 3-Way Match' },
-    { to: '/supplier/analytics', icon: <BarChart3 size={18} />, label: 'Vendor Analytics & SLA' },
-    { to: '/supplier/qc', icon: <RotateCcw size={18} />, label: 'Inspection QC & RMAs' },
-    { to: '/supplier/profile', icon: <Building2 size={18} />, label: 'Supplier Master Profile' },
-    { to: '/supplier/reports', icon: <FileText size={18} />, label: 'Procurement Reports' },
-    { to: '/supplier/messages', icon: <MessageSquare size={18} />, label: 'Supplier Messages' },
-  ] : [
-    { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-    { to: '/communication', icon: <MessageSquare size={18} />, label: 'Team Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
-    { to: '/sales', icon: <ShoppingCart size={18} />, label: 'Sales Terminal', badge: 'POS' },
-    { to: '/returns', icon: <RotateCcw size={18} />, label: 'Returns & Credits' },
-    { to: '/shifts', icon: <Clock size={18} />, label: 'Shift Register' },
-    { to: '/products', icon: <Package size={18} />, label: 'Products Catalog' },
-    { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
-    { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
-    { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
-    { to: '/supplier-dashboard', icon: <Truck size={18} />, label: 'Supplier Portal', adminOnly: true },
-    { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
-    { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
-    { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },
-    { to: '/customers', icon: <UserCheck size={18} />, label: 'Customers Directory' },
-    { to: '/users', icon: <UsersIcon size={18} />, label: 'User Management', adminOnly: true },
-    { to: '/audit-logs', icon: <ShieldCheck size={18} />, label: 'Audit Security Logs', adminOnly: true },
-    { to: '/settings', icon: <SettingsIcon size={18} />, label: 'Store Settings', adminOnly: true },
-  ];
-
   // Helper to determine current page title for topbar header
   const getPageTitle = () => {
     const path = location.pathname;
-    if (path === '/' || path === '/supplier/overview') return user?.role === 'supplier' ? 'Supplier Portal Dashboard & Overview' : 'Executive Dashboard Overview';
-    if (path === '/supplier/pos') return 'PO & ASN Lifecycle Management';
-    if (path === '/supplier/inventory') return 'Inventory Alignment & Vendor Managed Inventory (VMI)';
-    if (path === '/supplier/catalog') return 'Product Catalog, Barcodes & Item Master';
-    if (path === '/supplier/invoices') return 'Supplier Invoicing & 3-Way Matching';
-    if (path === '/supplier/analytics') return 'Vendor Performance & Analytics Scorecard';
-    if (path === '/supplier/qc') return 'Inspection Quality Control & RMAs';
-    if (path === '/supplier/profile') return 'Supplier Master Profile & Compliance';
-    if (path === '/supplier/reports') return 'Procurement & Vendor Fulfillment Reports';
-    if (path === '/supplier/messages') return 'Supplier Procurement Communications';
-    if (path === '/communication') return 'Team Communication & Internal Comms';
+    if (path === '/' || path === '/supplier/overview') return user?.role === 'supplier' ? 'Supplier Overview' : 'Executive Dashboard Overview';
+    if (path === '/supplier/products' || (user?.role === 'supplier' && path.startsWith('/products'))) return 'Products';
+    if (path === '/supplier/shipments' || (user?.role === 'supplier' && path === '/purchases')) return 'Shipments';
+    if (path === '/supplier/invoices') return 'Invoices';
+    if (path === '/communication' || path === '/supplier/messages') return 'Communications';
     if (path === '/reports') return 'Financial Reports & Business Analytics';
     if (path === '/supplier-dashboard') return 'Supplier Portal & Restock Workflow';
     if (path.startsWith('/products/')) return 'Product Intelligence & Ledger';
@@ -217,253 +180,20 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     return 'Store Operations';
   };
 
-  const renderNavList = () => (
-    <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto custom-scrollbar">
-      {navItems.map((item) => {
-        if (item.adminOnly && user?.role !== 'admin') return null;
-
-        const isItemActive = item.to === '/'
-          ? (location.pathname === '/' || location.pathname === '/supplier/overview' || (user?.role === 'supplier' && location.pathname === '/supplier-dashboard'))
-          : (location.pathname === item.to || 
-             (item.to === '/supplier/pos' && location.pathname === '/purchases') || 
-             (item.to === '/supplier/catalog' && location.pathname === '/products') ||
-             (item.to === '/supplier/messages' && location.pathname === '/communication'));
-
-        return (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            end={item.to === '/'}
-            onClick={() => setMobileMenuOpen(false)}
-            title={isNavCollapsed ? item.label : undefined}
-            className={() =>
-              `group flex items-center ${isNavCollapsed ? 'justify-center px-2' : 'justify-between px-3'} py-2 rounded-lg text-xs font-bold transition-all ${
-                isItemActive
-                  ? 'bg-blue-600 text-white shadow-2xs'
-                  : 'text-slate-400 hover:bg-slate-800/80 hover:text-slate-100'
-              }`
-            }
-          >
-            <div className={`flex items-center ${isNavCollapsed ? 'justify-center' : 'gap-2.5'} min-w-0`}>
-              <span className="shrink-0 transition-transform group-hover:scale-105">
-                {item.icon}
-              </span>
-              {!isNavCollapsed && <span className="truncate">{item.label}</span>}
-            </div>
-
-            {!isNavCollapsed && item.badge && (
-              <span className="px-1.5 py-0.5 bg-blue-500/20 text-blue-300 border border-blue-500/30 text-[9px] font-black rounded uppercase">
-                {item.badge}
-              </span>
-            )}
-          </NavLink>
-        );
-      })}
-    </nav>
-  );
-
-  const renderSupplierQuickActions = () => {
-    if (user?.role !== 'supplier' || isNavCollapsed) return null;
-    return (
-      <div className="p-2.5 border-t border-slate-800 bg-slate-950/60 space-y-1.5">
-        <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 block px-1">
-          Quick Actions
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            setMobileMenuOpen(false);
-            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
-              navigate('/supplier/pos');
-            }
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('supplier-open-new-po'));
-            }, 50);
-          }}
-          className="w-full py-1.5 px-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-        >
-          <Plus size={13} /> New Purchase Order
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMobileMenuOpen(false);
-            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
-              navigate('/supplier/invoices');
-            }
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('supplier-open-upload-invoice'));
-            }, 50);
-          }}
-          className="w-full py-1.5 px-2 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-        >
-          <FileText size={13} /> Upload Invoice
-        </button>
-        <button
-          type="button"
-          onClick={() => {
-            setMobileMenuOpen(false);
-            if (location.pathname !== '/' && !location.pathname.startsWith('/supplier')) {
-              navigate('/supplier/pos');
-            }
-            setTimeout(() => {
-              window.dispatchEvent(new CustomEvent('supplier-open-submit-asn'));
-            }, 50);
-          }}
-          className="w-full py-1.5 px-2 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-blue-300 border border-slate-700 font-bold text-xs rounded transition-colors flex items-center justify-center gap-1.5 shadow-2xs cursor-pointer"
-        >
-          <Truck size={13} /> Submit ASN
-        </button>
-      </div>
-    );
-  };
-
-  const renderUserProfileFooter = () => (
-    <div className={`p-2.5 border-t border-slate-800 bg-slate-950/70 text-xs ${isNavCollapsed ? 'flex flex-col items-center space-y-2' : 'space-y-2'}`}>
-      <div 
-        onClick={() => setShowProfileModal(true)}
-        className={`flex items-center ${isNavCollapsed ? 'justify-center p-1.5' : 'justify-between gap-2 p-2'} bg-slate-900 hover:bg-slate-850 rounded-lg border border-slate-800 hover:border-slate-700 w-full cursor-pointer transition group`}
-        title="Manage Account Profile"
-      >
-        <div className={`flex items-center ${isNavCollapsed ? 'justify-center' : 'gap-2'} min-w-0`}>
-          {user?.profile_picture ? (
-            <img 
-              src={user.profile_picture} 
-              alt={user.name} 
-              className="w-7 h-7 rounded-full object-cover border border-slate-700 shrink-0 group-hover:ring-2 group-hover:ring-blue-500/40" 
-            />
-          ) : (
-            <div className="w-7 h-7 rounded bg-blue-900/60 border border-blue-700/50 text-blue-200 font-bold text-xs flex items-center justify-center uppercase shrink-0 group-hover:border-blue-400">
-              {user?.name?.charAt(0) || 'U'}
-            </div>
-          )}
-          {!isNavCollapsed && (
-            <div className="min-w-0 text-left">
-              <div className="font-bold text-slate-100 truncate text-[11px] group-hover:text-blue-300 transition-colors">{user?.name}</div>
-              <div className="flex items-center gap-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                <span className="text-[9px] text-slate-400 uppercase font-bold tracking-wider">
-                  {user?.role}
-                </span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        {!isNavCollapsed && (
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                setShowProfileModal(true);
-              }}
-              className="p-1.5 text-slate-400 hover:text-blue-300 hover:bg-slate-850 rounded transition"
-              title="Edit Profile"
-            >
-              <User size={13} />
-            </button>
-            <button
-              type="button"
-              onClick={(e) => {
-                e.stopPropagation();
-                handleLockTerminal();
-              }}
-              className="p-1.5 text-slate-400 hover:text-amber-300 hover:bg-slate-850 rounded transition"
-              title="Lock Terminal (Quick Sign Out)"
-            >
-              <Lock size={13} />
-            </button>
-          </div>
-        )}
-      </div>
-
-      <button
-        onClick={handleLogout}
-        className={`w-full flex items-center justify-center gap-2 py-1.5 ${isNavCollapsed ? 'px-1' : 'px-3'} bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 rounded font-bold text-xs border border-rose-500/20 transition-colors`}
-        title="Sign Out"
-      >
-        <LogOut size={13} />
-        {!isNavCollapsed && <span>Sign Out</span>}
-      </button>
-    </div>
-  );
-
   return (
     <div className="flex h-[100dvh] max-h-[100dvh] w-full bg-slate-100 font-sans text-slate-900 overflow-hidden overscroll-none">
-      {/* Desktop Sidebar (Fluid Flex layout with collapsible Navigation Slider) */}
-      <aside className={`hidden md:flex flex-col ${isNavCollapsed ? 'w-16' : 'w-56 lg:w-64'} bg-slate-900 text-slate-100 border-r border-slate-800 shrink-0 z-20 shadow-xl transition-all duration-300 ease-in-out print:hidden`}>
-        {/* Brand Header */}
-        <div className={`p-3.5 border-b border-slate-800 bg-slate-950/60 flex items-center ${isNavCollapsed ? 'justify-center' : 'justify-between'} gap-2.5`}>
-          <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shadow-sm shrink-0">
-              <Store size={16} />
-            </div>
-            {!isNavCollapsed && (
-              <div className="min-w-0">
-                <h1 className="text-xs font-black uppercase tracking-widest text-white truncate">
-                  UMMIS LANE ENT
-                </h1>
-                <p className="text-[10px] text-slate-400 font-medium tracking-wide truncate">Retail OS</p>
-              </div>
-            )}
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setIsNavCollapsed(!isNavCollapsed)}
-            className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-md transition"
-            title={isNavCollapsed ? "Expand Navigation Slider" : "Collapse Navigation Slider"}
-          >
-            <SlidersHorizontal size={14} />
-          </button>
-        </div>
-
-        {/* Navigation List */}
-        {renderNavList()}
-
-        {/* Supplier Quick Actions */}
-        {renderSupplierQuickActions()}
-
-        {/* User Profile Footer */}
-        {renderUserProfileFooter()}
-      </aside>
-
-      {/* Mobile Drawer (Accessible on small screens) */}
-      {mobileMenuOpen && (
-        <div 
-          className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex md:hidden animate-in fade-in duration-150 print:hidden"
-          onClick={() => setMobileMenuOpen(false)}
-        >
-          <div 
-            className="w-72 max-w-[80vw] h-full bg-slate-900 text-slate-100 flex flex-col shadow-2xl animate-in slide-in-from-left duration-200"
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b border-slate-800 bg-slate-950 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded bg-blue-600 flex items-center justify-center text-white shrink-0">
-                  <Store size={16} />
-                </div>
-                <div>
-                  <h2 className="text-xs font-black uppercase tracking-wider text-white">UMMIS LANE ENT</h2>
-                  <p className="text-[10px] text-slate-400">Retail OS</p>
-                </div>
-              </div>
-              <button
-                onClick={() => setMobileMenuOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-slate-800"
-                title="Close menu"
-              >
-                <X size={18} />
-              </button>
-            </div>
-
-            {renderNavList()}
-            {renderSupplierQuickActions()}
-            {renderUserProfileFooter()}
-          </div>
-        </div>
-      )}
+      {/* Dedicated Clean Sidebar Component */}
+      <Sidebar
+        isNavCollapsed={isNavCollapsed}
+        onToggleCollapse={() => setIsNavCollapsed(!isNavCollapsed)}
+        mobileMenuOpen={mobileMenuOpen}
+        onCloseMobileMenu={() => setMobileMenuOpen(false)}
+        onOpenProfile={() => setShowProfileModal(true)}
+        onLockTerminal={handleLockTerminal}
+        onLogout={handleLogout}
+        user={user}
+        totalUnread={totalUnread}
+      />
 
       {/* Main Content Area (Fluid flex viewport with auto-fit container) */}
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-100 relative print:overflow-visible print:h-auto">

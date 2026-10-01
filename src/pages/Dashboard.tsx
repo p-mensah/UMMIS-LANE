@@ -21,6 +21,7 @@ import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
 import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
+import CreatePOModal from '../components/CreatePOModal';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -114,10 +115,18 @@ export default function Dashboard() {
   const [dailySummary, setDailySummary] = useState<any>(null);
   const [dailySummaryLoading, setDailySummaryLoading] = useState(false);
 
+  // Create Purchase Order Modal
+  const [showCreatePoModal, setShowCreatePoModal] = useState(false);
+  const [poPreselectedProduct, setPoPreselectedProduct] = useState<any>(null);
+
   useModalDismiss(showAdminReportsModal, () => setShowAdminReportsModal(false));
   useModalDismiss(showRestockModal, () => setShowRestockModal(false));
   useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
   useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
+  useModalDismiss(showCreatePoModal, () => {
+    setShowCreatePoModal(false);
+    setPoPreselectedProduct(null);
+  });
 
   // Initial Load
   useEffect(() => {
@@ -430,6 +439,14 @@ export default function Dashboard() {
           )}
 
           <button
+            onClick={() => setShowCreatePoModal(true)}
+            className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            title="Create and issue a Purchase Order to supplier"
+          >
+            <Plus size={15} /> Create Purchase Order
+          </button>
+
+          <button
             onClick={() => setShowAdminReportsModal(true)}
             className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
           >
@@ -461,6 +478,15 @@ export default function Dashboard() {
           <span className="text-[10px] text-blue-600">Slide ↔</span>
         </div>
         <div className="flex sm:grid sm:grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] overflow-x-auto snap-x snap-mandatory gap-2.5 pb-2 sm:pb-0 custom-scrollbar">
+          <button
+            type="button"
+            onClick={() => setShowCreatePoModal(true)}
+            className="p-3 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start cursor-pointer"
+          >
+            <Truck size={20} className="text-emerald-600 group-hover:scale-110 transition-transform" />
+            <span className="text-xs font-black uppercase tracking-wider">Create PO</span>
+          </button>
+
           <Link
             to="/sales"
             className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
@@ -1626,6 +1652,19 @@ export default function Dashboard() {
         isOpen={showAdminReportsModal}
         onClose={() => setShowAdminReportsModal(false)}
         defaultTab="daily"
+      />
+
+      {/* CREATE PURCHASE ORDER MODAL */}
+      <CreatePOModal
+        isOpen={showCreatePoModal}
+        onClose={() => {
+          setShowCreatePoModal(false);
+          setPoPreselectedProduct(null);
+        }}
+        onSuccess={() => {
+          loadDashboardData();
+        }}
+        preselectedProduct={poPreselectedProduct}
       />
     </div>
   );

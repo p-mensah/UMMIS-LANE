@@ -19,10 +19,11 @@ export function getSocket(token?: string | null): Socket {
       query: {
         wsKey: WEBSOCKET_KEY
       },
-      transports: ['websocket', 'polling'],
+      transports: ['polling', 'websocket'],
+      upgrade: true,
       reconnection: true,
-      reconnectionAttempts: 25,
-      reconnectionDelay: 1000,
+      reconnectionAttempts: 15,
+      reconnectionDelay: 1500,
       reconnectionDelayMax: 5000,
       timeout: 20000
     });
@@ -32,11 +33,15 @@ export function getSocket(token?: string | null): Socket {
     });
 
     socket.on('connect_error', (err) => {
-      console.warn('Socket connection notice:', err.message);
+      // Benign connection fallback notice
+    });
+
+    socket.on('error', () => {
+      // Benign socket error suppressor
     });
 
     socket.on('disconnect', (reason) => {
-      console.log('Socket disconnected:', reason);
+      // Benign disconnect notice
     });
   }
 
