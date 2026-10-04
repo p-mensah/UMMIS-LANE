@@ -22,6 +22,7 @@ export default function Categories() {
   const [filterType, setFilterType] = useState<'all' | 'with_products' | 'empty'>('all');
 
   const { addToast, confirmModal } = useNotifications();
+  const canAddCategory = user?.role === 'admin' || user?.role === 'supplier';
 
   // Modal State
   const [showModal, setShowModal] = useState<boolean>(false);
@@ -177,10 +178,10 @@ export default function Categories() {
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
 
-          {user?.role === 'admin' ? (
+          {canAddCategory ? (
             <button
               onClick={() => setShowModal(true)}
-              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2 cursor-pointer"
             >
               <Plus size={16} /> Add Category
             </button>

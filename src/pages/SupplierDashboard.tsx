@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -152,6 +152,60 @@ export default function SupplierDashboard({ initialTab }: SupplierDashboardProps
 
   useEffect(() => {
     loadSupplierData(activeSupplier);
+  }, [activeSupplier]);
+
+  // Real-time PO Tracking & Toast Alert System
+  const knownPoIdsRef = useRef<Set<number> | null>(null);
+
+  useEffect(() => {
+    if (!purchases || purchases.length === 0) return;
+
+    if (knownPoIdsRef.current === null) {
+      // Baseline initialization
+      knownPoIdsRef.current = new Set(purchases.map((p: any) => p.id));
+      return;
+    }
+
+    const brandNewPOs = purchases.filter((p: any) => !knownPoIdsRef.current!.has(p.id));
+    if (brandNewPOs.length > 0) {
+      for (const newPo of brandNewPOs) {
+        knownPoIdsRef.current.add(newPo.id);
+        const storeName = newPo.store_name || "Ummi's Lane Enterprise";
+        const totalGHS = Number(newPo.total_amount || newPo.total_cost || 0).toFixed(2);
+        const lineCount = Array.isArray(newPo.items) ? newPo.items.length : 1;
+
+        addToast({
+          title: '📦 New Purchase Order Created!',
+          message: `${storeName} owner created PO #PO-${newPo.id} (${lineCount} line item${lineCount === 1 ? '' : 's'} • GHS ${totalGHS}). Click to open shipment details.`,
+          type: 'info',
+          link: `/supplier/shipments?po_id=${newPo.id}`,
+          duration: 9000
+        });
+      }
+    }
+  }, [purchases, addToast]);
+
+  // Background poller for live POs and shipments every 7 seconds
+  useEffect(() => {
+    const interval = setInterval(async () => {
+      try {
+        const [posRes, shipmentsRes] = await Promise.all([
+          fetchApi(`/purchases?supplier=${encodeURIComponent(activeSupplier)}`).catch(() => null),
+          fetchApi(`/api/supplier/shipments?supplier_name=${encodeURIComponent(activeSupplier)}`).catch(() => null)
+        ]);
+
+        if (Array.isArray(posRes)) {
+          setPurchases(posRes);
+        }
+        if (Array.isArray(shipmentsRes)) {
+          setSupplierShipments(shipmentsRes);
+        }
+      } catch (err) {
+        // Silently ignore background polling hiccup
+      }
+    }, 7000);
+
+    return () => clearInterval(interval);
   }, [activeSupplier]);
 
   const activeSupplierRecord =

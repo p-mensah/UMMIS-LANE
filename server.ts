@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import http from 'http';
 import cors from 'cors';
@@ -486,6 +487,13 @@ function initDb() {
   addColumnOrIgnore('purchases', 'pickup_confirmed_at', "DATETIME");
   addColumnOrIgnore('purchases', 'dock_slot', "TEXT");
   addColumnOrIgnore('purchases', 'dock_time_window', "TEXT");
+  addColumnOrIgnore('purchases', 'store_name', "TEXT DEFAULT 'Ummi''s Lane Enterprise'");
+  addColumnOrIgnore('purchases', 'manager_name', "TEXT DEFAULT 'Ing. Mensah (Store Owner)'");
+  addColumnOrIgnore('supplier_shipments', 'store_name', "TEXT DEFAULT 'Ummi''s Lane Enterprise'");
+  addColumnOrIgnore('supplier_shipments', 'manager_name', "TEXT DEFAULT 'Ing. Mensah (Store Owner)'");
+  addColumnOrIgnore('supplier_shipments', 'manager_email', "TEXT DEFAULT 'Ing.mensah@gmail.com'");
+  addColumnOrIgnore('supplier_shipments', 'stage', "TEXT DEFAULT 'order_confirmed'");
+  addColumnOrIgnore('supplier_shipments', 'history', "TEXT DEFAULT '[]'");
   addColumnOrIgnore('purchases', 'discrepancy_reported', "INTEGER DEFAULT 0");
   addColumnOrIgnore('purchases', 'discrepancy_details', "TEXT");
   addColumnOrIgnore('purchases', 'estimated_lead_hours', "REAL DEFAULT 24");
@@ -1624,9 +1632,59 @@ const JWT_SECRET = process.env.JWT_SECRET || 'supersecret_retailos_key_change_me
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
+// Supabase Network Proxy: ensure relative Supabase calls point to the Supabase URL
+// and are never intercepted by a fallback 404 or document handler
+const SUPABASE_BASE_URL = (
+  process.env.SUPABASE_URL ||
+  process.env.VITE_SUPABASE_URL ||
+  'https://puxzctsfjlztnburbplf.supabase.co'
+)
+  .replace(/^\/\//, 'https://')
+  .replace(/\/rest\/v1\/?$/, '')
+  .replace(/\/+$/, '');
+
+app.use(['/rest/v1', '/auth/v1', '/functions/v1', '/storage/v1'], async (req: any, res: any) => {
+  try {
+    const targetUrl = `${SUPABASE_BASE_URL}${req.originalUrl || req.url}`;
+    const headers: Record<string, string> = {};
+    for (const [k, v] of Object.entries(req.headers)) {
+      if (v && !['host', 'content-length', 'connection'].includes(k.toLowerCase())) {
+        headers[k] = Array.isArray(v) ? v.join(', ') : String(v);
+      }
+    }
+    const anonKey = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY;
+    if (anonKey) {
+      if (!headers['apikey']) headers['apikey'] = anonKey;
+      if (!headers['authorization']) headers['authorization'] = `Bearer ${anonKey}`;
+    }
+
+    const fetchOpts: RequestInit = {
+      method: req.method,
+      headers,
+    };
+    if (req.method !== 'GET' && req.method !== 'HEAD' && req.body && Object.keys(req.body).length > 0) {
+      fetchOpts.body = JSON.stringify(req.body);
+    }
+
+    const supRes = await fetch(targetUrl, fetchOpts);
+    res.status(supRes.status);
+    supRes.headers.forEach((val, key) => {
+      if (!['transfer-encoding', 'content-encoding'].includes(key.toLowerCase())) {
+        res.setHeader(key, val);
+      }
+    });
+    const data = await supRes.arrayBuffer();
+    res.send(Buffer.from(data));
+  } catch (err: any) {
+    res.status(502).json({ error: 'Supabase gateway error', message: err.message });
+  }
+});
+
 // Normalize incoming API requests (e.g. from Vercel rewrites or direct serverless routing)
+// Only normalize when the request is intended as an API call, not an HTML page load navigation
 app.use((req, res, next) => {
-  if (!req.url.startsWith('/api') && (
+  const isHtmlNavigation = req.method === 'GET' && req.headers.accept?.includes('text/html') && !req.headers['x-requested-with'];
+  if (!isHtmlNavigation && !req.url.startsWith('/api') && (
     req.url.startsWith('/auth') ||
     req.url.startsWith('/products') ||
     req.url.startsWith('/sales') ||
@@ -1634,8 +1692,11 @@ app.use((req, res, next) => {
     req.url.startsWith('/inventory') ||
     req.url.startsWith('/reports') ||
     req.url.startsWith('/users') ||
+    req.url.startsWith('/roles') ||
+    req.url.startsWith('/departments') ||
     req.url.startsWith('/categories') ||
     req.url.startsWith('/suppliers') ||
+    req.url.startsWith('/supplier') ||
     req.url.startsWith('/expenses') ||
     req.url.startsWith('/shifts') ||
     req.url.startsWith('/customers') ||
@@ -1645,7 +1706,8 @@ app.use((req, res, next) => {
     req.url.startsWith('/notifications') ||
     req.url.startsWith('/health') ||
     req.url.startsWith('/pos') ||
-    req.url.startsWith('/chat')
+    req.url.startsWith('/chat') ||
+    req.url.startsWith('/shipments')
   )) {
     req.url = `/api${req.url.startsWith('/') ? req.url : `/${req.url}`}`;
   }
@@ -1743,7 +1805,7 @@ app.post('/api/auth/login', (req, res) => {
   db.prepare('UPDATE users SET last_login_at = CURRENT_TIMESTAMP WHERE id = ?').run(user.id);
   logAuditEvent(user.id, user.name, 'User Logged In', 'auth', `User ${user.email} (${user.role}) logged in successfully`, getClientIp(req));
 
-  const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '1d' });
+  const token = jwt.sign({ id: user.id, email: user.email, role: user.role, name: user.name }, JWT_SECRET, { expiresIn: '30d' });
   res.json({ 
     token, 
     user: { 
@@ -1755,6 +1817,52 @@ app.post('/api/auth/login', (req, res) => {
       force_password_reset: user.force_password_reset || 0
     } 
   });
+});
+
+app.post('/api/auth/refresh', (req: any, res: any) => {
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.split(' ')[1] || (req.body && req.body.token);
+    if (!token) {
+      return res.status(400).json({ error: 'Token required for refresh' });
+    }
+
+    let decoded: any = null;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch {
+      decoded = jwt.decode(token);
+    }
+
+    if (!decoded) {
+      return res.status(401).json({ error: 'Invalid token' });
+    }
+
+    const userId = decoded.id || decoded.sub;
+    const userEmail = (decoded.email || '').toLowerCase();
+    let userRec: any = null;
+
+    if (userId && !isNaN(Number(userId))) {
+      userRec = db.prepare('SELECT id, name, email, role, is_active FROM users WHERE id = ?').get(userId);
+    }
+    if (!userRec && userEmail) {
+      userRec = db.prepare('SELECT id, name, email, role, is_active FROM users WHERE LOWER(email) = ?').get(userEmail);
+    }
+
+    if (!userRec || userRec.is_active === 0) {
+      return res.status(401).json({ error: 'User inactive or not found' });
+    }
+
+    const newToken = jwt.sign(
+      { id: userRec.id, email: userRec.email, role: userRec.role, name: userRec.name },
+      JWT_SECRET,
+      { expiresIn: '30d' }
+    );
+
+    res.json({ token: newToken, user: userRec });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/auth/me', authenticate, (req: any, res) => {
@@ -2312,6 +2420,17 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
   try {
     const purchaseId = setupPurchase(items);
 
+    const storeSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'store_name'").get();
+    const resolvedStoreName = req.body.store_name || storeSetting?.value || "Ummi's Lane Enterprise";
+    const resolvedManagerName = req.user?.name || "Ing. Mensah (Store Owner)";
+    try {
+      db.prepare('UPDATE purchases SET store_name = ?, manager_name = ? WHERE id = ?').run(
+        resolvedStoreName,
+        resolvedManagerName,
+        purchaseId
+      );
+    } catch (e) {}
+
     // Notify relevant managers & admins of new PO creation
     createNotification(
       'New Purchase Order Created',
@@ -2325,7 +2444,7 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
       'New Store Owner PO Received',
       `Store Owner issued Purchase Order #PO-${purchaseId} for "${supplier_name}" (Total: GHS ${total_amount.toFixed(2)}). Awaiting fulfillment.`,
       'info',
-      '/supplier/shipments'
+      `/supplier/shipments?po_id=${purchaseId}`
     );
 
     try {
@@ -2361,7 +2480,11 @@ app.get('/api/purchases', authenticate, (req: any, res) => {
     let sql = `
       SELECT 
         p.*, 
-        u.name as user_name,
+        COALESCE(p.store_name, (SELECT value FROM settings WHERE key = 'store_name'), 'Ummi''s Lane Enterprise') as store_name,
+        COALESCE(p.manager_name, u.name, 'Ing. Mensah (Store Owner)') as manager_name,
+        COALESCE(u.name, p.manager_name, 'Ing. Mensah (Store Owner)') as user_name,
+        COALESCE(u.email, 'Ing.mensah@gmail.com') as user_email,
+        u.role as user_role,
         (SELECT COUNT(*) FROM purchase_items WHERE purchase_id = p.id) as item_count,
         (SELECT SUM(quantity) FROM purchase_items WHERE purchase_id = p.id) as total_units
       FROM purchases p 
@@ -3971,17 +4094,30 @@ app.get('/api/supplier/shipments', authenticate, (req: any, res) => {
       }
     }
 
-    let sql = 'SELECT * FROM supplier_shipments';
+    let sql = `
+      SELECT 
+        s.*,
+        COALESCE(s.store_name, p.store_name, (SELECT value FROM settings WHERE key = 'store_name'), 'Ummi''s Lane Enterprise') as store_name,
+        COALESCE(s.manager_name, p.manager_name, u.name, 'Ing. Mensah (Store Owner)') as manager_name,
+        COALESCE(s.manager_email, u.email, 'Ing.mensah@gmail.com') as manager_email,
+        u.phone as manager_phone,
+        p.expected_date as po_expected_date,
+        p.dock_slot as po_dock_slot,
+        p.fulfillment_mode as po_fulfillment_mode
+      FROM supplier_shipments s
+      LEFT JOIN purchases p ON s.po_id = p.id
+      LEFT JOIN users u ON p.user_id = u.id
+    `;
     const params: any[] = [];
     if (supplierName && req.user?.role === 'supplier') {
-      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      sql += ' WHERE LOWER(s.supplier_name) LIKE ?';
       params.push(`%${supplierName.toLowerCase()}%`);
     } else if (req.query.supplier_name) {
-      sql += ' WHERE LOWER(supplier_name) LIKE ?';
+      sql += ' WHERE LOWER(s.supplier_name) LIKE ?';
       params.push(`%${(req.query.supplier_name as string).toLowerCase()}%`);
     }
 
-    sql += ' ORDER BY id DESC';
+    sql += ' ORDER BY s.id DESC';
     const rows = db.prepare(sql).all(...params);
 
     const parsed = rows.map((r: any) => {
@@ -3991,7 +4127,70 @@ app.get('/api/supplier/shipments', authenticate, (req: any, res) => {
       } catch (e) {
         items = [];
       }
-      return { ...r, items };
+
+      let history: any[] = [];
+      try {
+        history = JSON.parse(r.history || '[]');
+      } catch (e) {
+        history = [];
+      }
+
+      // If history is empty (e.g. legacy/seeded record), synthesize chronological events
+      if (!Array.isArray(history) || history.length === 0) {
+        const createdDate = r.created_at || new Date().toISOString();
+        history = [
+          {
+            stage: 'order_confirmed',
+            status: 'preparing',
+            timestamp: createdDate,
+            notes: 'Shipment order confirmed & registered in warehouse queue',
+            user_name: r.supplier_name || 'Nestlé Ghana Ltd',
+            user_role: 'supplier'
+          }
+        ];
+        if (r.stage === 'packaging' || (r.status === 'preparing' && r.stage !== 'in_transit')) {
+          history.push({
+            stage: 'packaging',
+            status: 'preparing',
+            timestamp: createdDate,
+            notes: 'Goods packaged, boxed, and palletized at supplier dock',
+            user_name: r.supplier_name || 'Nestlé Ghana Ltd',
+            user_role: 'supplier'
+          });
+        }
+        if (r.status === 'in_transit' || r.status === 'delivered' || r.status === 'verified' || r.stage === 'in_transit') {
+          history.push({
+            stage: 'in_transit',
+            status: 'in_transit',
+            timestamp: r.shipped_date ? `${r.shipped_date}T08:30:00Z` : createdDate,
+            notes: `Dispatched with carrier ${r.carrier || 'Freight Line'} (Waybill: ${r.tracking_number || 'N/A'})`,
+            user_name: r.supplier_name || 'Nestlé Ghana Ltd',
+            user_role: 'supplier'
+          });
+        }
+        if (r.status === 'delivered' || r.status === 'verified' || r.stage === 'delivered') {
+          history.push({
+            stage: 'delivered',
+            status: 'delivered',
+            timestamp: r.delivered_date ? `${r.delivered_date}T14:15:00Z` : (r.eta ? `${r.eta}T14:15:00Z` : createdDate),
+            notes: `Consignment arrived and delivered at ${r.destination || 'Main Store Warehouse Dock'}`,
+            user_name: r.carrier || 'Logistics Carrier',
+            user_role: 'carrier'
+          });
+        }
+        if (r.status === 'verified' || r.verified_at) {
+          history.push({
+            stage: 'verified',
+            status: 'verified',
+            timestamp: r.verified_at || new Date().toISOString(),
+            notes: r.verification_notes || 'All line items inspected by store management and added to live inventory.',
+            user_name: r.verified_by || 'Ing. Mensah (Store Owner)',
+            user_role: 'admin'
+          });
+        }
+      }
+
+      return { ...r, items, history };
     });
 
     res.json(parsed);
@@ -4004,7 +4203,7 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
   try {
     const clientIp = getClientIp(req);
     const supplierName = req.body.supplier_name || (req.user?.role === 'supplier' ? req.user.name.replace(/supplier/i, '').trim() : 'Nestlé Ghana Ltd');
-    const { carrier, tracking_number, eta, items, notes, destination, po_id } = req.body;
+    const { carrier, tracking_number, eta, items, notes, destination, po_id, stage } = req.body;
 
     if (!carrier || !tracking_number || !items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Carrier, tracking number, and at least one item are required' });
@@ -4023,11 +4222,45 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
       totalValue += q * c;
     }
 
+    const assignedStage = stage || 'in_transit';
+    const assignedStatus = assignedStage === 'packaging' ? 'preparing' : 'in_transit';
+
+    const initialHistory = [
+      {
+        stage: 'order_confirmed',
+        status: 'preparing',
+        timestamp: new Date().toISOString(),
+        notes: notes ? `Order confirmed: ${notes}` : 'Restock shipment order confirmed.',
+        user_name: req.user.name || supplierName,
+        user_role: req.user.role || 'supplier'
+      }
+    ];
+
+    if (assignedStage === 'packaging') {
+      initialHistory.push({
+        stage: 'packaging',
+        status: 'preparing',
+        timestamp: new Date().toISOString(),
+        notes: 'Goods assigned to packaging, sorting, and pallet preparation',
+        user_name: req.user.name || supplierName,
+        user_role: req.user.role || 'supplier'
+      });
+    } else {
+      initialHistory.push({
+        stage: 'in_transit',
+        status: 'in_transit',
+        timestamp: new Date().toISOString(),
+        notes: `Dispatched via ${carrier.trim()} (Tracking #${tracking_number.trim()}). Total ${totalUnits} units.`,
+        user_name: req.user.name || supplierName,
+        user_role: req.user.role || 'supplier'
+      });
+    }
+
     const result = db.prepare(`
       INSERT INTO supplier_shipments (
         shipment_number, po_id, supplier_name, carrier, tracking_number, eta, shipped_date,
-        status, items, item_count, total_units, total_value, destination, notes, client_ip
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'in_transit', ?, ?, ?, ?, ?, ?, ?)
+        status, stage, items, item_count, total_units, total_value, destination, notes, history, client_ip
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       shipmentNumber,
       po_id ? Number(po_id) : null,
@@ -4036,17 +4269,41 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
       tracking_number.trim(),
       etaDate,
       shippedDate,
+      assignedStatus,
+      assignedStage,
       JSON.stringify(items),
       items.length,
       totalUnits,
       totalValue,
       destination ? destination.trim() : 'Main Store Warehouse',
       notes ? notes.trim() : null,
+      JSON.stringify(initialHistory),
       clientIp
     );
 
     // If shipment is tied to a Store PO, transition the PO to in-transit
+    const storeSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'store_name'").get();
+    let storeName = req.body.store_name;
+    let managerName = req.body.manager_name;
     if (po_id) {
+      const poObj: any = db.prepare('SELECT store_name, manager_name FROM purchases WHERE id = ?').get(po_id);
+      if (poObj) {
+        if (!storeName && poObj.store_name) storeName = poObj.store_name;
+        if (!managerName && poObj.manager_name) managerName = poObj.manager_name;
+      }
+    }
+    if (!storeName) storeName = storeSetting?.value || "Ummi's Lane Enterprise";
+    if (!managerName) managerName = "Ing. Mensah (Store Owner)";
+
+    try {
+      db.prepare('UPDATE supplier_shipments SET store_name = ?, manager_name = ? WHERE id = ?').run(
+        storeName,
+        managerName,
+        result.lastInsertRowid
+      );
+    } catch(e) {}
+
+    if (po_id && assignedStage === 'in_transit') {
       try {
         db.prepare(`
           UPDATE purchases
@@ -4078,7 +4335,10 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
     }
 
     const created: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(result.lastInsertRowid);
-    if (created) created.items = items;
+    if (created) {
+      created.items = items;
+      created.history = initialHistory;
+    }
 
     // Audit Logging with IP
     logAuditEvent(
@@ -4086,7 +4346,7 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
       req.user.name,
       'Created Restock Shipment',
       'shipment',
-      `Restock shipment ${shipmentNumber} dispatched via ${carrier} (Tracking: ${tracking_number}). Total units: ${totalUnits}`,
+      `Restock shipment ${shipmentNumber} stage ${assignedStage} (Tracking: ${tracking_number}). Total units: ${totalUnits}`,
       clientIp
     );
 
@@ -4104,40 +4364,190 @@ app.post('/api/supplier/shipments', authenticate, (req: any, res) => {
   }
 });
 
+// Bulk status update endpoint: allows supplier to update multiple shipments to 'Packaging' or 'In Transit' simultaneously
+app.put('/api/supplier/shipments/bulk-status', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { ids, stage, notes, carrier, tracking_number } = req.body;
+
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: 'Array of shipment IDs is required' });
+    }
+
+    const validStages = ['packaging', 'in_transit', 'delivered'];
+    if (!validStages.includes(stage)) {
+      return res.status(400).json({ error: `Stage must be one of: ${validStages.join(', ')}` });
+    }
+
+    const newStatus = stage === 'packaging' ? 'preparing' : (stage === 'in_transit' ? 'in_transit' : 'delivered');
+    const stageLabel = stage === 'packaging' ? 'Packaging' : (stage === 'in_transit' ? 'In Transit' : 'Delivered');
+
+    const updateStmt = db.prepare(`
+      UPDATE supplier_shipments SET
+        stage = ?,
+        status = ?,
+        carrier = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE carrier END,
+        tracking_number = CASE WHEN ? IS NOT NULL AND ? != '' THEN ? ELSE tracking_number END,
+        delivered_date = CASE WHEN ? = 'delivered' THEN COALESCE(delivered_date, CURRENT_TIMESTAMP) ELSE delivered_date END,
+        history = ?,
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `);
+
+    const updatedShipments: any[] = [];
+
+    const transaction = db.transaction((shipmentIds: number[]) => {
+      for (const id of shipmentIds) {
+        const shipment: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+        if (!shipment) continue;
+
+        let history: any[] = [];
+        try {
+          history = JSON.parse(shipment.history || '[]');
+        } catch (e) {
+          history = [];
+        }
+
+        const historyItem = {
+          stage,
+          status: newStatus,
+          timestamp: new Date().toISOString(),
+          notes: notes || (stage === 'packaging'
+            ? 'Bulk status update: Packaging & goods preparation started'
+            : `Bulk status update: Dispatched in-transit ${carrier ? `via ${carrier}` : ''}`),
+          user_name: req.user.name || 'Supplier Representative',
+          user_role: req.user.role || 'supplier'
+        };
+
+        history.push(historyItem);
+
+        updateStmt.run(
+          stage,
+          newStatus,
+          carrier?.trim() || null,
+          carrier?.trim() || null,
+          carrier?.trim() || null,
+          tracking_number?.trim() || null,
+          tracking_number?.trim() || null,
+          tracking_number?.trim() || null,
+          stage,
+          JSON.stringify(history),
+          id
+        );
+
+        // If moving to in_transit and linked to PO, sync PO status
+        if (stage === 'in_transit' && shipment.po_id) {
+          try {
+            db.prepare(`
+              UPDATE purchases 
+              SET status = 'in-transit', 
+                  carrier = COALESCE(?, carrier), 
+                  tracking_number = COALESCE(?, tracking_number), 
+                  dispatch_date = COALESCE(dispatch_date, CURRENT_TIMESTAMP) 
+              WHERE id = ?
+            `).run(carrier?.trim() || null, tracking_number?.trim() || null, shipment.po_id);
+          } catch (poErr) {
+            // benign
+          }
+        }
+
+        const updated: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
+        if (updated) {
+          try { updated.items = JSON.parse(updated.items); } catch (e) { updated.items = []; }
+          try { updated.history = JSON.parse(updated.history); } catch (e) { updated.history = []; }
+          updatedShipments.push(updated);
+        }
+      }
+    });
+
+    transaction(ids);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Bulk Updated Shipment Status',
+      'shipment',
+      `Bulk updated ${updatedShipments.length} shipments to stage "${stageLabel}".`,
+      clientIp
+    );
+
+    createNotification(
+      `Shipments Updated to ${stageLabel}`,
+      `${updatedShipments.length} shipments have been bulk updated to "${stageLabel}".`,
+      stage === 'in_transit' ? 'info' : 'success',
+      '/supplier/shipments'
+    );
+
+    res.json({
+      success: true,
+      count: updatedShipments.length,
+      stage,
+      status: newStatus,
+      shipments: updatedShipments
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.put('/api/supplier/shipments/:id/status', authenticate, (req: any, res) => {
   try {
     const clientIp = getClientIp(req);
     const { id } = req.params;
-    const { status, notes } = req.body; // 'preparing' | 'in_transit' | 'delivered' | 'verified'
+    const { status, stage, notes } = req.body; // 'preparing' | 'in_transit' | 'delivered' | 'verified'
 
     const shipment: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
     if (!shipment) return res.status(404).json({ error: 'Shipment not found' });
 
     let deliveredDate = shipment.delivered_date;
-    if (status === 'delivered' && !deliveredDate) {
+    if ((status === 'delivered' || stage === 'delivered') && !deliveredDate) {
       deliveredDate = new Date().toISOString().slice(0, 10);
     }
+
+    const effectiveStage = stage || (status === 'preparing' ? 'packaging' : status);
+    const effectiveStatus = status || (stage === 'packaging' ? 'preparing' : stage === 'in_transit' ? 'in_transit' : stage);
+
+    let existingHistory: any[] = [];
+    try {
+      existingHistory = JSON.parse(shipment.history || '[]');
+    } catch (e) {
+      existingHistory = [];
+    }
+
+    const historyItem = {
+      stage: effectiveStage,
+      status: effectiveStatus,
+      timestamp: new Date().toISOString(),
+      notes: notes || (effectiveStage === 'packaging' ? 'Status updated to Packaging & Preparation' : `Status updated to ${effectiveStage}`),
+      user_name: req.user.name || 'Supplier Operations',
+      user_role: req.user.role || 'supplier'
+    };
+
+    existingHistory.push(historyItem);
 
     db.prepare(`
       UPDATE supplier_shipments SET
         status = ?,
+        stage = ?,
         delivered_date = ?,
+        history = ?,
         notes = COALESCE(?, notes),
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(status, deliveredDate, notes, id);
+    `).run(effectiveStatus, effectiveStage, deliveredDate, JSON.stringify(existingHistory), notes, id);
 
     logAuditEvent(
       req.user.id,
       req.user.name,
       'Updated Shipment Status',
       'shipment',
-      `Shipment #${id} (${shipment.shipment_number}) status changed to "${status}".`,
+      `Shipment #${id} (${shipment.shipment_number}) stage updated to "${effectiveStage}".`,
       clientIp
     );
 
     const updated: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
     try { updated.items = JSON.parse(updated.items); } catch (e) { updated.items = []; }
+    try { updated.history = JSON.parse(updated.history); } catch (e) { updated.history = []; }
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -4179,16 +4589,34 @@ app.post('/api/supplier/shipments/:id/verify', authenticate, (req: any, res) => 
       }
     }
 
+    let existingHistory: any[] = [];
+    try {
+      existingHistory = JSON.parse(shipment.history || '[]');
+    } catch (e) {
+      existingHistory = [];
+    }
+
+    existingHistory.push({
+      stage: 'verified',
+      status: 'verified',
+      timestamp: new Date().toISOString(),
+      notes: verification_notes || 'All items inspected and verified by store management. Stock updated in live store inventory.',
+      user_name: req.user.name || 'Store Admin',
+      user_role: req.user.role || 'admin'
+    });
+
     db.prepare(`
       UPDATE supplier_shipments SET
         status = 'verified',
+        stage = 'verified',
         delivered_date = COALESCE(delivered_date, CURRENT_TIMESTAMP),
         verified_at = CURRENT_TIMESTAMP,
         verified_by = ?,
         verification_notes = ?,
+        history = ?,
         updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
-    `).run(req.user.name, verification_notes || 'All items inspected and added to live store inventory.', id);
+    `).run(req.user.name, verification_notes || 'All items inspected and added to live store inventory.', JSON.stringify(existingHistory), id);
 
     logAuditEvent(
       req.user.id,
@@ -4209,6 +4637,7 @@ app.post('/api/supplier/shipments/:id/verify', authenticate, (req: any, res) => 
 
     const updated: any = db.prepare('SELECT * FROM supplier_shipments WHERE id = ?').get(id);
     try { updated.items = JSON.parse(updated.items); } catch (e) { updated.items = []; }
+    try { updated.history = JSON.parse(updated.history); } catch (e) { updated.history = []; }
     res.json(updated);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -6110,11 +6539,18 @@ app.get('/api/categories', authenticate, (req, res) => {
   }
 });
 
-app.post('/api/categories', authenticate, requireAdmin, (req, res) => {
+app.post('/api/categories', authenticate, (req: any, res) => {
+  const userRole = (req.user?.role || '').toLowerCase();
+  if (userRole !== 'admin' && userRole !== 'manager' && userRole !== 'supplier') {
+    return res.status(403).json({ error: 'Permission denied. Administrator, Manager, or Supplier privileges required to create categories.' });
+  }
   try {
     const { name, parent_id } = req.body;
-    const result = db.prepare('INSERT INTO categories (name, parent_id) VALUES (?, ?)').run(name, parent_id || null);
-    res.json({ id: result.lastInsertRowid });
+    if (!name || !name.trim()) {
+      return res.status(400).json({ error: 'Category name is required.' });
+    }
+    const result = db.prepare('INSERT INTO categories (name, parent_id) VALUES (?, ?)').run(name.trim(), parent_id || null);
+    res.json({ id: result.lastInsertRowid, name: name.trim() });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -7376,6 +7812,10 @@ setupChatRoutes(app, db, authenticate);
 // --- Server Startup ---
 async function startServer() {
   initDb();
+  try {
+    db.prepare("DELETE FROM chat_channels WHERE id = 'channel_management' OR name LIKE '%Leadership%'").run();
+    db.prepare("DELETE FROM chat_messages WHERE channel_id = 'channel_management'").run();
+  } catch (e) {}
   setupChatSocket(httpServer, db, JWT_SECRET);
 
   // Run stock check & auto audit log cleanup if enabled
@@ -7397,6 +7837,14 @@ async function startServer() {
       console.error('Background low stock check error:', e);
     }
   }, 15000);
+
+  // Guarantee that unhandled /api/* and Supabase proxy endpoints NEVER fall through to Vite SPA index.html
+  app.all(['/api/*', '/rest/v1/*', '/auth/v1/*', '/functions/v1/*', '/storage/v1/*'], (req, res) => {
+    res.status(404).json({
+      error: `API endpoint not found (404): ${req.method} ${req.originalUrl || req.url}`,
+      status: 404
+    });
+  });
 
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import('vite');

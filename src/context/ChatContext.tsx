@@ -388,6 +388,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       refreshChannels();
     };
 
+    // Handle token refreshed event from server
+    const handleTokenRefreshed = (data: { token: string; user?: any }) => {
+      if (data?.token) {
+        localStorage.setItem('token', data.token);
+      }
+    };
+
     socket.on('connect', handleConnect);
     socket.on('disconnect', handleDisconnect);
     socket.on('presence:update', handlePresenceUpdate);
@@ -398,6 +405,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     socket.on('chat:user_stopped_typing', handleUserStoppedTyping);
     socket.on('chat:reaction_updated', handleReactionUpdated);
     socket.on('chat:dm_alert', handleDmAlert);
+    socket.on('auth:refreshed_token', handleTokenRefreshed);
 
     // Initial fetch
     refreshChannels();
@@ -414,6 +422,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socket.off('chat:user_stopped_typing', handleUserStoppedTyping);
       socket.off('chat:reaction_updated', handleReactionUpdated);
       socket.off('chat:dm_alert', handleDmAlert);
+      socket.off('auth:refreshed_token', handleTokenRefreshed);
     };
   }, [user, addToast, refreshChannels, refreshTeamMembers]);
 

@@ -32,8 +32,38 @@ export function getSocket(token?: string | null): Socket {
       console.log('✅ Real-time Socket.IO connected with key:', WEBSOCKET_KEY);
     });
 
+    socket.on('auth:refreshed_token', (data: { token: string }) => {
+      if (data?.token) {
+        localStorage.setItem('token', data.token);
+        if (socket) {
+          socket.auth = { token: data.token, wsKey: WEBSOCKET_KEY };
+        }
+      }
+    });
+
     socket.on('connect_error', (err) => {
-      // Benign connection fallback notice
+      // If token expired or unauthorized, attempt renewal via refresh endpoint
+      if (err?.message?.includes('Unauthorized') || err?.message?.includes('expired') || err?.message?.includes('jwt')) {
+        const curToken = localStorage.getItem('token');
+        if (curToken) {
+          fetch('/api/auth/refresh', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token: curToken })
+          })
+            .then(res => res.ok ? res.json() : null)
+            .then(data => {
+              if (data?.token) {
+                localStorage.setItem('token', data.token);
+                if (socket) {
+                  socket.auth = { token: data.token, wsKey: WEBSOCKET_KEY };
+                  socket.connect();
+                }
+              }
+            })
+            .catch(() => {});
+        }
+      }
     });
 
     socket.on('error', () => {

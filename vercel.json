@@ -6,7 +6,23 @@
       "destination": "/api"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/rest/v1/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/auth/v1/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/functions/v1/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/storage/v1/(.*)",
+      "destination": "/api"
+    },
+    {
+      "source": "/((?!api/|rest/|auth/|functions/|storage/).*)",
       "destination": "/index.html"
     }
   ]

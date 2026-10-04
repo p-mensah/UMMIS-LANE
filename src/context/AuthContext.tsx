@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
 import { supabase } from '../lib/supabase';
+import { logNetworkError } from '../lib/networkLogger';
 
 export interface User {
   id: number | string;
@@ -69,6 +70,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
           })
           .catch((err: any) => {
+            logNetworkError({
+              url: 'supabase.auth.getSession',
+              status: err?.status || 0,
+              statusText: err?.message || 'Auth getSession error',
+              headers: err?.headers || {},
+              sourceHook: 'useAuth (AuthContext)',
+              isHtml: typeof err?.message === 'string' && err.message.includes('<!DOCTYPE')
+            });
             console.warn('[AuthContext] Supabase session check notice:', err?.message || err);
           })
           .finally(() => {

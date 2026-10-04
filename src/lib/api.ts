@@ -1,3 +1,5 @@
+import { logNetworkError } from './networkLogger';
+
 export class ApiError extends Error {
   status: number;
   data?: any;
@@ -12,7 +14,18 @@ export class ApiError extends Error {
 
 export const API_URL = import.meta.env.VITE_API_URL || '/api';
 
-export const fetchApi = async <T = any>(endpoint: string, options: RequestInit = {}): Promise<T> => {
+function extractHeaders(headers: Headers): Record<string, string> {
+  const result: Record<string, string> = {};
+  headers.forEach((value, key) => {
+    result[key] = value;
+  });
+  return result;
+}
+
+export const fetchApi = async <T = any>(
+  endpoint: string, 
+  options: RequestInit & { _retryCount?: number; sourceHook?: string } = {}
+): Promise<T> => {
   const token = localStorage.getItem('token');
   
   const headers: HeadersInit = {
@@ -31,12 +44,13 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
     (headers as Record<string, string>)['Authorization'] = bearer;
   }
 
-  // Ensure endpoint starts with a slash and prevent accidental double /api/api
+  // Robust URL normalization: Ensure base without trailing slash, clean endpoint without leading /api
+  const base = (API_URL || '/api').replace(/\/+$/, '');
   let cleanEndpoint = endpoint.startsWith('/') ? endpoint : `/${endpoint}`;
-  if (API_URL.endsWith('/api') && cleanEndpoint.startsWith('/api/')) {
+  if (cleanEndpoint.startsWith('/api/')) {
     cleanEndpoint = cleanEndpoint.replace(/^\/api/, '');
   }
-  const url = `${API_URL}${cleanEndpoint}`;
+  const url = `${base}${cleanEndpoint}`;
 
   try {
     const response = await fetch(url, {
@@ -44,13 +58,14 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
       headers,
     });
 
-    // Check if the response is JSON
+    const responseHeaders = extractHeaders(response.headers);
     const contentType = response.headers.get('content-type') || '';
     const isJson = contentType.includes('application/json');
 
     if (!response.ok) {
       let errorMessage = `Server responded with status ${response.status}`;
       let parsedErrorData: any = null;
+      let rawErrorBody = '';
       
       if (isJson) {
         try {
@@ -75,8 +90,12 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
           // ignore parsing error
         }
       } else {
+        try {
+          rawErrorBody = await response.text();
+        } catch {}
+
         if (response.status === 404) {
-          errorMessage = 'API endpoint not found (404). Please ensure the backend server is running.';
+          errorMessage = `API endpoint not found (404) for ${url}. Please ensure the backend server is running.`;
         } else if (response.status === 401) {
           errorMessage = 'Invalid email or password credentials (401).';
         } else if (response.status === 403) {
@@ -85,6 +104,18 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
           errorMessage = 'Internal server error. Please check server logs.';
         }
       }
+
+      // Intercept and log response headers for failure diagnosis
+      logNetworkError({
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+        contentType,
+        bodySnippet: rawErrorBody || JSON.stringify(parsedErrorData),
+        sourceHook: options.sourceHook || 'fetchApi',
+        isHtml: contentType.includes('text/html') || rawErrorBody.startsWith('<')
+      });
 
       throw new ApiError(errorMessage, response.status, parsedErrorData);
     }
@@ -95,8 +126,31 @@ export const fetchApi = async <T = any>(endpoint: string, options: RequestInit =
 
     // Fallback text check
     const text = await response.text();
+    if (!text || text.trim() === '') {
+      return null as unknown as T;
+    }
+
     if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
-      throw new Error('Received unexpected HTML page instead of API response. Check API configuration.');
+      // Intercept and log response headers for HTML diagnosis
+      logNetworkError({
+        url,
+        status: response.status,
+        statusText: response.statusText,
+        headers: responseHeaders,
+        contentType,
+        bodySnippet: text,
+        sourceHook: options.sourceHook || 'fetchApi',
+        isHtml: true
+      });
+
+      // If we received an HTML page (e.g. during server startup/restart or warmup),
+      // retry once after a short delay before erroring out
+      const currentRetry = options._retryCount || 0;
+      if (currentRetry < 2) {
+        await new Promise(res => setTimeout(res, 500));
+        return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
+      }
+      throw new Error(`Received unexpected HTML page instead of API response for ${cleanEndpoint}. Check API configuration.`);
     }
     
     try {

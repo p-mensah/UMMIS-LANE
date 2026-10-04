@@ -85,6 +85,15 @@ export interface ShipmentItem {
   notes?: string;
 }
 
+export interface ShipmentHistoryItem {
+  stage: 'order_confirmed' | 'packaging' | 'in_transit' | 'delivered' | 'verified' | string;
+  status?: string;
+  timestamp: string;
+  notes?: string;
+  user_name?: string;
+  user_role?: string;
+}
+
 export interface Shipment {
   id: number;
   items: Array<any>;
@@ -104,6 +113,12 @@ export interface Shipment {
   total_value?: number;
   destination?: string;
   notes?: string;
+  store_name?: string;
+  manager_name?: string;
+  manager_email?: string;
+  manager_phone?: string;
+  stage?: 'order_confirmed' | 'packaging' | 'in_transit' | 'delivered' | 'verified' | string;
+  history?: ShipmentHistoryItem[];
   invoice_attached?: boolean | number;
   invoice_id?: number;
   invoice_number?: string;

@@ -5,7 +5,8 @@ import {
   Send, Hash, MessageSquare, Users, Shield, Search, Check, CheckCheck, 
   Trash2, CornerUpLeft, X, Smile, ShieldCheck, RefreshCw, Lock, ChevronRight,
   Megaphone, Plus, Camera, Image as ImageIcon, SwitchCamera, Download,
-  Maximize2, Eye, UserCheck, Filter, AlertCircle, Building2
+  Maximize2, Eye, UserCheck, Filter, AlertCircle, Building2,
+  ArrowLeft, Truck, CreditCard, User, Sparkles, Clock
 } from 'lucide-react';
 
 interface PendingAttachment {
@@ -48,6 +49,8 @@ export default function Communication() {
   const [roleFilter, setRoleFilter] = useState<string>('all');
   const [showOnlyOnline, setShowOnlyOnline] = useState(false);
   const [showNewDmModal, setShowNewDmModal] = useState(false);
+  const [newDmSearchQuery, setNewDmSearchQuery] = useState('');
+  const [newDmRoleFilter, setNewDmRoleFilter] = useState('all');
   const [selectedMessageForReads, setSelectedMessageForReads] = useState<ChatMessage | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [activeReactionPickerMsgId, setActiveReactionPickerMsgId] = useState<number | null>(null);
@@ -322,15 +325,55 @@ export default function Communication() {
   const getRoleBadge = (role?: string) => {
     switch ((role || '').toLowerCase()) {
       case 'admin':
-        return <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-700 border border-purple-200">Admin</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
+            <Building2 size={10} /> Tenant / Owner
+          </span>
+        );
       case 'manager':
-        return <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-700 border border-amber-200">Manager</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
+            <ShieldCheck size={10} /> Manager
+          </span>
+        );
+      case 'supplier':
+        return (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
+            <Truck size={10} /> Supplier
+          </span>
+        );
       case 'cashier':
-        return <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-700 border border-blue-200">Cashier</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-sky-100 text-sky-800 border border-sky-200 shrink-0">
+            <CreditCard size={10} /> Cashier
+          </span>
+        );
       default:
-        return <span className="px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">Staff</span>;
+        return (
+          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
+            <User size={10} /> Staff
+          </span>
+        );
     }
   };
+
+  // Directory & Roster Role Filter Definition
+  const isSupplierUser = user?.role === 'supplier';
+
+  const roleFilterOptions = isSupplierUser
+    ? [
+        { id: 'all', label: 'All Leadership', icon: Users },
+        { id: 'admin', label: 'Tenant / Store Owner', icon: Building2 },
+        { id: 'manager', label: 'Store Manager', icon: ShieldCheck }
+      ]
+    : [
+        { id: 'all', label: 'All', icon: Users },
+        { id: 'admin', label: 'Tenant/Owner', icon: Building2 },
+        { id: 'manager', label: 'Managers', icon: ShieldCheck },
+        { id: 'supplier', label: 'Suppliers', icon: Truck },
+        { id: 'staff', label: 'Floor Staff', icon: User },
+        { id: 'cashier', label: 'Cashiers', icon: CreditCard }
+      ];
 
   // Online count calculation
   const onlineMembersCount = teamMembers.filter(m => m.is_online).length;
@@ -342,6 +385,11 @@ export default function Communication() {
   );
 
   const filteredDms = directMessages.filter(d => {
+    // If supplier, only allow DMs with tenant / owner or store manager
+    if (isSupplierUser && d.other_user?.role) {
+      const r = d.other_user.role.toLowerCase();
+      if (r !== 'admin' && r !== 'manager') return false;
+    }
     const matchesSearch = d.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
       (d.other_user?.role && d.other_user.role.toLowerCase().includes(searchFilter.toLowerCase()));
     if (showOnlyOnline) {
@@ -352,6 +400,11 @@ export default function Communication() {
 
   // Filter team members in directory
   const filteredTeam = teamMembers.filter(m => {
+    // If supplier, only allow seeing tenant / store owner or store manager
+    if (isSupplierUser) {
+      const r = m.role.toLowerCase();
+      if (r !== 'admin' && r !== 'manager' && !m.is_current_user) return false;
+    }
     const matchesSearch = m.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
       m.email.toLowerCase().includes(searchFilter.toLowerCase()) ||
       (m.department && m.department.toLowerCase().includes(searchFilter.toLowerCase()));
@@ -364,6 +417,10 @@ export default function Communication() {
 
   // Filter team in right roster sidebar
   const rosterMembers = teamMembers.filter(m => {
+    if (isSupplierUser) {
+      const r = m.role.toLowerCase();
+      if (r !== 'admin' && r !== 'manager' && !m.is_current_user) return false;
+    }
     const matchesSearch = m.name.toLowerCase().includes(rosterSearch.toLowerCase()) ||
       m.email.toLowerCase().includes(rosterSearch.toLowerCase()) ||
       (m.department && m.department.toLowerCase().includes(rosterSearch.toLowerCase()));
@@ -371,14 +428,28 @@ export default function Communication() {
     return matchesSearch && matchesRole;
   });
 
-  const quickResponses = [
-    '👍 Understood',
-    '✅ Task completed',
-    '👀 Reviewing now',
-    '🙏 Thank you',
-    '📦 Stock verified',
-    '💰 Register reconciled'
-  ];
+  // Context-aware quick responses
+  const isSupplierChannelOrUser = activeChannel?.id === 'channel_suppliers' || 
+    activeChannel?.other_user?.role === 'supplier' || 
+    user?.role === 'supplier';
+
+  const quickResponses = isSupplierChannelOrUser
+    ? [
+        '📦 Stock verified & available',
+        '🚚 Shipment dispatched with waybill',
+        '📋 PO accepted & packaging started',
+        '📄 Invoice attached for review',
+        '⏱️ Delivery on schedule',
+        '✅ Received & stocked at dock'
+      ]
+    : [
+        '👍 Understood',
+        '✅ Task completed',
+        '👀 Reviewing now',
+        '📦 Stock verified',
+        '💰 Register reconciled',
+        '🙏 Thank you'
+      ];
 
   const quickReactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🚀', '🔥', '👏', '💯'];
 
@@ -410,32 +481,57 @@ export default function Communication() {
             <MessageSquare size={18} />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="text-sm font-black text-slate-900 tracking-tight">Team Communication Hub</h1>
-              <span className="hidden sm:inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600 border border-slate-200">
-                Staff • Manager • Admin
-              </span>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-sm font-black text-slate-900 tracking-tight">Unified Communication Hub</h1>
+              <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                  <Building2 size={10} /> Tenant / Owner
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                  <ShieldCheck size={10} /> Managers
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
+                  <User size={10} /> Staff
+                </span>
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  <Truck size={10} /> Suppliers
+                </span>
+              </div>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">Real-time internal messaging, live camera capture, and firm roster</p>
+            <p className="text-[11px] text-slate-500 font-medium">Simple, unified real-time messaging connecting store ownership, operations team, and supplier partners</p>
           </div>
         </div>
 
         {/* WebSocket & Firm Members Presence Trigger */}
         <div className="flex items-center gap-2">
+          {/* Quick New Direct Message Button */}
+          <button
+            onClick={() => {
+              setNewDmRoleFilter('all');
+              setNewDmSearchQuery('');
+              setShowNewDmModal(true);
+            }}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs transition cursor-pointer"
+            title="Start new direct message"
+          >
+            <Plus size={14} />
+            <span className="hidden sm:inline">New Message</span>
+          </button>
+
           {/* Firm Roster Quick Presence Toggle Button */}
           <button
             onClick={() => setShowRosterSidebar(prev => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
               showRosterSidebar
-                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-xs'
                 : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
             }`}
-            title="Toggle firm members online roster"
+            title="Toggle directory online roster"
           >
-            <Users size={14} className={showRosterSidebar ? 'text-white' : 'text-blue-600'} />
-            <span className="hidden sm:inline">Firm Members</span>
+            <Users size={14} className={showRosterSidebar ? 'text-blue-700' : 'text-blue-600'} />
+            <span className="hidden md:inline">Directory</span>
             <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-              showRosterSidebar ? 'bg-white/20 text-white' : 'bg-emerald-100 text-emerald-700'
+              showRosterSidebar ? 'bg-blue-200/60 text-blue-900' : 'bg-emerald-100 text-emerald-700'
             }`}>
               {onlineMembersCount} Online
             </span>
@@ -464,7 +560,7 @@ export default function Communication() {
               refreshChannels();
               refreshTeamMembers();
             }}
-            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition"
+            className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition cursor-pointer"
             title="Refresh channels and online roster"
           >
             <RefreshCw size={15} />
@@ -475,12 +571,12 @@ export default function Communication() {
       {/* Main Split Body */}
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar: Channels & Conversations */}
-        <div className="w-80 sm:w-88 bg-white border-r border-slate-200 flex flex-col shrink-0">
+        <div className={`w-full md:w-80 lg:w-88 bg-white border-r border-slate-200 flex flex-col shrink-0 ${activeChannelId ? 'hidden md:flex' : 'flex'}`}>
           {/* Tabs: Chats vs Team Directory */}
           <div className="p-3 border-b border-slate-100 flex items-center gap-1 bg-slate-50/70">
             <button
               onClick={() => setActiveTab('chats')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'chats'
                   ? 'bg-white text-blue-600 shadow-2xs border border-slate-200'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
@@ -491,14 +587,14 @@ export default function Communication() {
             </button>
             <button
               onClick={() => setActiveTab('directory')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
+              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
                 activeTab === 'directory'
                   ? 'bg-white text-blue-600 shadow-2xs border border-slate-200'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               <Users size={14} />
-              <span>Firm Roster</span>
+              <span>People Directory</span>
               <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-200 text-slate-700 font-bold">
                 {teamMembers.length}
               </span>
@@ -562,14 +658,16 @@ export default function Communication() {
                   <div className="mt-1 space-y-0.5">
                     {filteredChannels.map(channel => {
                       const isActive = activeChannelId === channel.id;
+                      const isSuppliers = channel.id === 'channel_suppliers';
                       const isAnnouncements = channel.id === 'channel_announcements';
                       const isManagement = channel.id === 'channel_management';
+                      const isShifts = channel.id === 'channel_shifts';
 
                       return (
                         <button
                           key={channel.id}
                           onClick={() => setActiveChannelId(channel.id)}
-                          className={`w-full text-left p-2.5 rounded-xl transition flex items-start gap-2.5 ${
+                          className={`w-full text-left p-2.5 rounded-xl transition flex items-start gap-2.5 cursor-pointer ${
                             isActive
                               ? 'bg-blue-50 border border-blue-200 shadow-2xs'
                               : 'hover:bg-slate-100/80 border border-transparent'
@@ -578,13 +676,27 @@ export default function Communication() {
                           <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
                             isActive
                               ? 'bg-blue-600 text-white'
+                              : isSuppliers
+                              ? 'bg-emerald-100 text-emerald-700'
                               : isManagement
                               ? 'bg-amber-100 text-amber-700'
                               : isAnnouncements
                               ? 'bg-purple-100 text-purple-700'
+                              : isShifts
+                              ? 'bg-sky-100 text-sky-700'
                               : 'bg-slate-100 text-slate-600'
                           }`}>
-                            {isAnnouncements ? <Megaphone size={15} /> : isManagement ? <Shield size={15} /> : <Hash size={15} />}
+                            {isSuppliers ? (
+                              <Truck size={15} />
+                            ) : isAnnouncements ? (
+                              <Megaphone size={15} />
+                            ) : isManagement ? (
+                              <Shield size={15} />
+                            ) : isShifts ? (
+                              <Clock size={15} />
+                            ) : (
+                              <Hash size={15} />
+                            )}
                           </div>
 
                           <div className="flex-1 min-w-0">
@@ -701,20 +813,26 @@ export default function Communication() {
               /* Firm Roster Tab */
               <div className="p-3">
                 {/* Role Filter Pills */}
-                <div className="flex items-center gap-1 mb-3 overflow-x-auto pb-1">
-                  {['all', 'admin', 'manager', 'supplier', 'staff', 'cashier'].map(r => (
-                    <button
-                      key={r}
-                      onClick={() => setRoleFilter(r)}
-                      className={`px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-wider transition ${
-                        roleFilter === r
-                          ? 'bg-blue-600 text-white'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      {r}
-                    </button>
-                  ))}
+                <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 custom-scrollbar">
+                  {roleFilterOptions.map(opt => {
+                    const Icon = opt.icon;
+                    const isSelected = roleFilter === opt.id;
+                    return (
+                      <button
+                        key={opt.id}
+                        type="button"
+                        onClick={() => setRoleFilter(opt.id)}
+                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                          isSelected
+                            ? 'bg-blue-600 text-white shadow-2xs'
+                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/60'
+                        }`}
+                      >
+                        <Icon size={11} />
+                        <span>{opt.label}</span>
+                      </button>
+                    );
+                  })}
                 </div>
 
                 <div className="space-y-2">
@@ -777,16 +895,33 @@ export default function Communication() {
             <>
               {/* Channel Header Bar */}
               <div className="p-3.5 border-b border-slate-200 bg-white flex items-center justify-between shadow-2xs shrink-0">
-                <div className="flex items-center gap-3 min-w-0">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  {/* Mobile Back Button to Channels List */}
+                  <button
+                    onClick={() => setActiveChannelId('')}
+                    className="md:hidden p-1.5 -ml-1 text-slate-600 hover:text-slate-900 rounded-lg hover:bg-slate-100 transition shrink-0 cursor-pointer"
+                    title="Back to conversation list"
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+
                   <div className={`w-9 h-9 rounded-xl flex items-center justify-center shrink-0 ${
                     activeChannel.type === 'direct'
                       ? 'bg-slate-100 text-slate-700'
+                      : activeChannel.id === 'channel_suppliers'
+                      ? 'bg-emerald-100 text-emerald-700'
+                      : activeChannel.id === 'channel_announcements'
+                      ? 'bg-purple-100 text-purple-700'
                       : activeChannel.id === 'channel_management'
                       ? 'bg-amber-100 text-amber-700'
                       : 'bg-blue-100 text-blue-700'
                   }`}>
                     {activeChannel.type === 'direct' ? (
                       <Users size={18} />
+                    ) : activeChannel.id === 'channel_suppliers' ? (
+                      <Truck size={18} />
+                    ) : activeChannel.id === 'channel_announcements' ? (
+                      <Megaphone size={18} />
                     ) : activeChannel.id === 'channel_management' ? (
                       <Shield size={18} />
                     ) : (
@@ -804,9 +939,11 @@ export default function Communication() {
 
                     <div className="flex items-center gap-2 text-[11px] text-slate-500 truncate mt-0.5">
                       {activeChannel.type === 'direct' ? (
-                        <span className="flex items-center gap-1 font-medium">
-                          <span className={`w-2 h-2 rounded-full ${activeChannel.other_user?.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'}`} />
-                          {activeChannel.other_user?.is_online ? 'Online now' : 'Offline'}
+                        <span className="flex items-center gap-1.5 font-medium">
+                          <span className={`w-2 h-2 rounded-full ${activeChannel.other_user?.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`} />
+                          <span className={activeChannel.other_user?.is_online ? 'text-emerald-700 font-bold' : 'text-slate-500 font-medium'}>
+                            {activeChannel.other_user?.is_online ? 'Online now' : 'Offline • Direct messages will deliver immediately (WhatsApp style)'}
+                          </span>
                           {activeChannel.other_user?.department && ` • ${activeChannel.other_user.department}`}
                         </span>
                       ) : (
@@ -1263,6 +1400,21 @@ export default function Communication() {
                 ))}
               </div>
 
+              {/* WhatsApp-style Offline Delivery Info Banner */}
+              {activeChannel.type === 'direct' && !activeChannel.other_user?.is_online && (
+                <div className="px-3.5 py-1.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-600 font-medium">
+                  <span className="flex items-center gap-1.5 truncate">
+                    <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0" />
+                    <span className="truncate">
+                      <strong>{activeChannel.name}</strong> is currently offline. Your message will deliver immediately to their inbox.
+                    </span>
+                  </span>
+                  <span className="text-[10px] text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md font-bold shrink-0 border border-blue-200">
+                    Offline Delivery Active
+                  </span>
+                </div>
+              )}
+
               {/* Bottom Message Input Bar with Live Camera & Gallery Triggers */}
               <div className="p-3 bg-white border-t border-slate-200 shrink-0 relative">
                 {showEmojiPicker && (
@@ -1385,20 +1537,26 @@ export default function Communication() {
                 />
               </div>
 
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5">
-                {['all', 'admin', 'manager', 'supplier', 'staff', 'cashier'].map(r => (
-                  <button
-                    key={r}
-                    onClick={() => setRosterRoleFilter(r)}
-                    className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition ${
-                      rosterRoleFilter === r
-                        ? 'bg-blue-600 text-white'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                    }`}
-                  >
-                    {r}
-                  </button>
-                ))}
+              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 custom-scrollbar">
+                {roleFilterOptions.map(opt => {
+                  const Icon = opt.icon;
+                  const isSel = rosterRoleFilter === opt.id;
+                  return (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => setRosterRoleFilter(opt.id)}
+                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition flex items-center gap-1 shrink-0 cursor-pointer ${
+                        isSel
+                          ? 'bg-blue-600 text-white shadow-2xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      <Icon size={10} />
+                      <span>{opt.label}</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
@@ -1736,29 +1894,86 @@ export default function Communication() {
           onClick={() => setShowNewDmModal(false)}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-5 space-y-4"
+            className="bg-white rounded-2xl shadow-2xl max-w-lg w-full p-5 space-y-3.5"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <MessageSquare size={18} className="text-blue-600" />
-                <h3 className="text-sm font-bold text-slate-900">Start Direct Message</h3>
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-blue-100 text-blue-600 flex items-center justify-center">
+                  <MessageSquare size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Start Direct Message</h3>
+                  <p className="text-[11px] text-slate-500 font-medium">Connect with Store Owner, Managers, Staff, or Suppliers</p>
+                </div>
               </div>
               <button 
                 onClick={() => setShowNewDmModal(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100"
+                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 <X size={16} />
               </button>
             </div>
 
-            <p className="text-xs text-slate-500">
-              Select a colleague from Staff, Management, or Administration to start a 1-on-1 private conversation.
-            </p>
+            {/* Search Input inside Modal */}
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                value={newDmSearchQuery}
+                onChange={(e) => setNewDmSearchQuery(e.target.value)}
+                placeholder="Search by name, company, role, or email..."
+                className="w-full pl-9 pr-3 py-2 bg-slate-100 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                autoFocus
+              />
+              {newDmSearchQuery && (
+                <button
+                  onClick={() => setNewDmSearchQuery('')}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                >
+                  <X size={12} />
+                </button>
+              )}
+            </div>
 
-            <div className="space-y-2 max-h-72 overflow-y-auto divide-y divide-slate-100">
+            {/* Role Filter Tabs inside Modal */}
+            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
+              {roleFilterOptions.map(opt => {
+                const Icon = opt.icon;
+                const isSel = newDmRoleFilter === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    type="button"
+                    onClick={() => setNewDmRoleFilter(opt.id)}
+                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
+                      isSel
+                        ? 'bg-blue-600 text-white shadow-2xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/60'
+                    }`}
+                  >
+                    <Icon size={11} />
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Filtered Members List */}
+            <div className="space-y-1 max-h-72 overflow-y-auto divide-y divide-slate-100 custom-scrollbar pr-1">
               {teamMembers
                 .filter(m => m.id !== user?.id)
+                .filter(m => {
+                  if (isSupplierUser) {
+                    const r = m.role.toLowerCase();
+                    if (r !== 'admin' && r !== 'manager') return false;
+                  }
+                  const matchSearch = m.name.toLowerCase().includes(newDmSearchQuery.toLowerCase()) ||
+                    m.email.toLowerCase().includes(newDmSearchQuery.toLowerCase()) ||
+                    (m.department && m.department.toLowerCase().includes(newDmSearchQuery.toLowerCase()));
+                  const matchRole = newDmRoleFilter === 'all' || m.role.toLowerCase() === newDmRoleFilter.toLowerCase();
+                  return matchSearch && matchRole;
+                })
                 .map(member => (
                   <button
                     key={member.id}
@@ -1766,12 +1981,12 @@ export default function Communication() {
                       await startDirectMessage(member.id);
                       setShowNewDmModal(false);
                     }}
-                    className="w-full p-2.5 hover:bg-blue-50/80 rounded-xl flex items-center justify-between transition text-left group"
+                    className="w-full p-2.5 hover:bg-blue-50/70 rounded-xl flex items-center justify-between transition text-left group cursor-pointer"
                   >
                     <div className="flex items-center gap-2.5 min-w-0">
                       <div className="relative shrink-0">
                         {member.profile_picture ? (
-                          <img src={member.profile_picture} alt={member.name} className="w-9 h-9 rounded-full object-cover" />
+                          <img src={member.profile_picture} alt={member.name} className="w-9 h-9 rounded-full object-cover border border-slate-200" />
                         ) : (
                           <div className="w-9 h-9 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center uppercase">
                             {member.name.charAt(0)}
@@ -1783,8 +1998,13 @@ export default function Communication() {
                       </div>
 
                       <div className="min-w-0">
-                        <div className="text-xs font-bold text-slate-900 group-hover:text-blue-600 truncate">
-                          {member.name}
+                        <div className="text-xs font-bold text-slate-900 group-hover:text-blue-600 truncate flex items-center gap-1.5">
+                          <span>{member.name}</span>
+                          {member.is_online ? (
+                            <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">Online</span>
+                          ) : (
+                            <span className="text-[9px] font-medium text-slate-500 bg-slate-100 px-1 py-0.2 rounded border border-slate-200">Offline • Available</span>
+                          )}
                         </div>
                         <div className="flex items-center gap-1.5 mt-0.5">
                           {getRoleBadge(member.role)}
@@ -1793,7 +2013,9 @@ export default function Communication() {
                       </div>
                     </div>
 
-                    <ChevronRight size={16} className="text-slate-300 group-hover:text-blue-600 transition shrink-0" />
+                    <span className="text-xs font-bold text-blue-600 group-hover:translate-x-0.5 transition flex items-center gap-1 shrink-0">
+                      Chat <ChevronRight size={14} />
+                    </span>
                   </button>
                 ))}
             </div>
@@ -1801,9 +2023,9 @@ export default function Communication() {
             <div className="pt-2 border-t border-slate-100 flex justify-end">
               <button
                 onClick={() => setShowNewDmModal(false)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition"
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition cursor-pointer"
               >
-                Cancel
+                Close
               </button>
             </div>
           </div>

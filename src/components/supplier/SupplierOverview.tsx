@@ -56,12 +56,14 @@ export default function SupplierOverview({
   const activityItems: { id: string; title: string; time: string; type: 'po' | 'shipment' | 'product' | 'invoice' | 'approval'; desc: string }[] = [];
 
   for (const po of (purchases || []).slice(0, 3)) {
+    const sName = po.store_name || "Ummi's Lane Enterprise";
+    const mName = po.manager_name || po.user_name || "Ing. Mensah (Store Owner)";
     activityItems.push({
       id: `act-po-${po.id}`,
-      title: `Store PO #PO-${po.id}: ${po.status?.toUpperCase().replace('_', ' ') || 'NEW'}`,
+      title: `${sName} • PO #PO-${po.id}: ${po.status?.toUpperCase().replace('_', ' ') || 'NEW'}`,
       time: po.created_at,
       type: 'po',
-      desc: `Store Owner requested ${po.total_units || po.item_count || 1} units (${formatGHS(po.total_amount)}). Delivery requested: ${po.expected_date || 'Standard SLA'}.`
+      desc: `${mName} requested ${po.total_units || po.item_count || 1} units (${formatGHS(po.total_amount)}). Dock SLA: ${po.expected_date || 'Standard SLA'}.`
     });
   }
 
@@ -138,11 +140,11 @@ export default function SupplierOverview({
                   NEW STORE ORDER
                 </span>
                 <h3 className="text-sm font-black tracking-tight truncate">
-                  {pendingStorePOs.length} Purchase Order{pendingStorePOs.length > 1 ? 's' : ''} Issued by Store Owner ({formatGHS(pendingPOValue)})
+                  {pendingStorePOs.length} Purchase Order{pendingStorePOs.length > 1 ? 's' : ''} from {pendingStorePOs[0]?.store_name || "Store Owner"} ({formatGHS(pendingPOValue)})
                 </h3>
               </div>
               <p className="text-xs text-blue-100 font-medium mt-1">
-                The store owner has placed restock orders. Review ordered items, acknowledge terms, and dispatch shipments with carrier & tracking details.
+                {pendingStorePOs[0]?.manager_name || "Store Manager"} has requested restock consignments. Review ordered line items, accept or decline delivery SLAs, and dispatch shipments with live tracking.
               </p>
             </div>
           </div>

@@ -5,6 +5,11 @@ import {defineConfig, loadEnv} from 'vite';
 
 export default defineConfig(({mode}) => {
   const env = loadEnv(mode, '.', '');
+  const rawSupabase = env.VITE_SUPABASE_URL || 'https://puxzctsfjlztnburbplf.supabase.co';
+  const supabaseTarget = (rawSupabase.startsWith('//') ? `https:${rawSupabase}` : rawSupabase)
+    .replace(/\/rest\/v1\/?$/, '')
+    .replace(/\/+$/, '');
+
   return {
     plugins: [react(), tailwindcss()],
     define: {
@@ -16,9 +21,34 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      // HMR is disabled in AI Studio via DISABLE_HMR env var.
-      // Do not modifyâfile watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR === 'true' ? false : { clientPort: 443 },
+      proxy: {
+        // Forward relative Supabase endpoints to the actual Supabase project
+        '/rest/v1': {
+          target: supabaseTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/auth/v1': {
+          target: supabaseTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/functions/v1': {
+          target: supabaseTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/storage/v1': {
+          target: supabaseTarget,
+          changeOrigin: true,
+          secure: false,
+        },
+        '/api': {
+          target: 'http://localhost:3000',
+          changeOrigin: true,
+        },
+      },
     },
   };
 });
