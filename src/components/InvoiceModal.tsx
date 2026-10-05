@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Printer, X, FileText, CheckCircle2, RotateCcw, Building2, User, Phone, Mail, Calendar, CreditCard } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import { useAuth } from '../context/AuthContext';
+import { getDisplayCustomerPhone, getDisplayCustomerEmail } from '../lib/privacy';
 
 interface InvoiceModalProps {
   saleData: {
@@ -38,6 +40,7 @@ interface InvoiceModalProps {
 }
 
 export default function InvoiceModal({ saleData, products = [], initialFormat = 'receipt', onClose, onNewSale }: InvoiceModalProps) {
+  const { user } = useAuth();
   const [invoiceFormat, setInvoiceFormat] = useState<'a4' | 'receipt'>(initialFormat);
 
   const saleId = saleData.saleId || saleData.id || 0;
@@ -49,8 +52,13 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
   });
 
   const customerName = saleData.customerName || saleData.customer_name || 'Walk-in Customer';
-  const customerPhone = saleData.customer_phone || null;
-  const customerEmail = saleData.customer_email || null;
+  const rawPhone = saleData.customer_phone || null;
+  const rawEmail = saleData.customer_email || null;
+
+  // Mask customer sensitive info for store staff
+  const customerPhone = getDisplayCustomerPhone(rawPhone, user?.role);
+  const customerEmail = getDisplayCustomerEmail(rawEmail, user?.role);
+
   const paymentMethod = saleData.paymentMethod || saleData.payment_method || 'Cash';
   const cashierName = saleData.user_name || 'Staff Member';
   const grandTotal = saleData.total !== undefined ? saleData.total : (saleData.total_amount || 0);
@@ -79,6 +87,18 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
     <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[80] overflow-y-auto">
       <style>{`
         @media print {
+          @page {
+            margin: 0;
+            size: ${invoiceFormat === 'receipt' ? '80mm auto' : 'auto'};
+          }
+          html, body {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+            color: black !important;
+            -webkit-print-color-adjust: exact;
+            print-color-adjust: exact;
+          }
           body * {
             visibility: hidden !important;
           }
@@ -89,13 +109,15 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
             position: absolute !important;
             left: 0 !important;
             top: 0 !important;
-            width: 100% !important;
-            margin: 0 !important;
-            padding: 10px !important;
+            margin: 0 auto !important;
             box-shadow: none !important;
             border: none !important;
             background: white !important;
             color: black !important;
+            width: ${invoiceFormat === 'receipt' ? '76mm !important' : '100% !important'};
+            max-width: ${invoiceFormat === 'receipt' ? '76mm !important' : '210mm !important'};
+            padding: ${invoiceFormat === 'receipt' ? '3mm 4mm !important' : '10mm !important'};
+            font-family: ${invoiceFormat === 'receipt' ? "'Courier New', Courier, monospace !important" : 'inherit'};
           }
           .no-print {
             display: none !important;
@@ -123,16 +145,18 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
             {/* Format Switcher */}
             <div className="flex bg-slate-800 p-0.5 rounded border border-slate-700">
               <button
+                type="button"
                 onClick={() => setInvoiceFormat('receipt')}
-                className={`px-3 py-1 text-[11px] font-bold rounded transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1 text-[11px] font-bold rounded transition-all flex items-center gap-1.5 cursor-pointer ${
                   invoiceFormat === 'receipt' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
                 }`}
               >
                 <span>POS Thermal (80mm)</span>
               </button>
               <button
+                type="button"
                 onClick={() => setInvoiceFormat('a4')}
-                className={`px-3 py-1 text-[11px] font-bold rounded transition-all flex items-center gap-1.5 ${
+                className={`px-3 py-1 text-[11px] font-bold rounded transition-all flex items-center gap-1.5 cursor-pointer ${
                   invoiceFormat === 'a4' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
                 }`}
               >
@@ -141,6 +165,7 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
             </div>
 
             <button
+              type="button"
               onClick={handlePrint}
               className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded transition-colors flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer"
             >
@@ -148,8 +173,9 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
             </button>
 
             <button
+              type="button"
               onClick={onClose}
-              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors shrink-0"
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded transition-colors shrink-0 cursor-pointer"
               title="Close"
             >
               <X size={18} />
@@ -173,7 +199,6 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                 {/* Invoice Header / Letterhead with Company Logo */}
                 <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-6 border-b-2 border-slate-900">
                   <div className="flex items-start gap-3">
-                    {/* SVG Company Logo */}
                     <div className="w-14 h-14 bg-gradient-to-br from-slate-900 to-slate-800 rounded-xl p-2.5 flex items-center justify-center text-white shadow-sm border border-slate-700 shrink-0">
                       <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
                         <rect width="40" height="40" rx="8" fill="#0F172A" />
@@ -198,73 +223,85 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                     <div className="inline-block bg-slate-900 text-white px-3 py-1 font-black text-xs uppercase tracking-widest rounded-xs mb-2">
                       {isRefunded ? 'Refunded Invoice' : 'Official Sales Invoice'}
                     </div>
-                    <div className="text-lg font-black text-slate-900 font-mono">#INV-SALE-{saleId}</div>
-                    <p className="text-xs font-bold text-slate-500 mt-0.5">{formattedDate}</p>
-                    <div className="mt-2 inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[11px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                      <CreditCard size={12} className="text-blue-600" /> Payment: {paymentMethod}
+                    <div className="text-sm font-black font-mono text-slate-900">
+                      INV-{String(saleId).padStart(6, '0')}
+                    </div>
+                    <div className="text-xs text-slate-500 mt-1">
+                      <span className="font-semibold">Date:</span> {formattedDate}
+                    </div>
+                    {isRefunded && (
+                      <div className="mt-2 text-xs font-bold text-red-600 bg-red-50 border border-red-200 px-2 py-1 rounded">
+                        REFUNDED TRANSACTION
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Billed To / Cashier Metadata Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-lg border border-slate-200 text-xs">
+                  <div>
+                    <h3 className="font-bold text-slate-700 uppercase text-[10px] tracking-wider mb-2 flex items-center gap-1.5">
+                      <User size={13} className="text-blue-600" /> Billed To Customer
+                    </h3>
+                    <div className="font-black text-sm text-slate-900">{customerName}</div>
+                    {customerPhone && (
+                      <div className="text-slate-600 flex items-center gap-1.5 mt-1 font-medium">
+                        <Phone size={12} className="text-slate-400" /> {customerPhone}
+                      </div>
+                    )}
+                    {customerEmail && (
+                      <div className="text-slate-600 flex items-center gap-1.5 mt-0.5 font-medium">
+                        <Mail size={12} className="text-slate-400" /> {customerEmail}
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="sm:border-l sm:border-slate-200 sm:pl-4 space-y-1">
+                    <h3 className="font-bold text-slate-700 uppercase text-[10px] tracking-wider mb-2 flex items-center gap-1.5">
+                      <CreditCard size={13} className="text-emerald-600" /> Payment & Terminal Audit
+                    </h3>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Payment Mode:</span>
+                      <span className="font-bold text-slate-900">{paymentMethod}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">Serving Cashier:</span>
+                      <span className="font-bold text-slate-900">{cashierName}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-slate-500">POS Terminal Ref:</span>
+                      <span className="font-mono text-slate-700">TERMINAL-LANE-01</span>
                     </div>
                   </div>
                 </div>
 
-                {/* Status Alert if refunded */}
-                {isRefunded && (
-                  <div className="bg-red-50 border border-red-200 rounded p-3 text-red-800 text-xs font-bold flex items-center gap-2">
-                    <RotateCcw size={16} className="text-red-600" />
-                    <span>THIS TRANSACTION HAS BEEN REFUNDED. {saleData.refund_reason && `Reason: "${saleData.refund_reason}"`}</span>
-                  </div>
-                )}
-
-                {/* Metadata Grid (Bill To & Sale Details) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 bg-slate-50 p-4 rounded border border-slate-200">
-                  <div>
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 flex items-center gap-1">
-                      <User size={12} /> Customer / Bill To
-                    </h3>
-                    <p className="text-sm font-bold text-slate-900">{customerName}</p>
-                    {customerPhone && <p className="text-xs text-slate-600 font-medium">Tel: {customerPhone}</p>}
-                    {customerEmail && <p className="text-xs text-slate-600 font-medium">Email: {customerEmail}</p>}
-                  </div>
-
-                  <div>
-                    <h3 className="text-[10px] font-black uppercase tracking-widest text-slate-400 mb-1.5 flex items-center gap-1">
-                      <Building2 size={12} /> Transaction Metadata
-                    </h3>
-                    <div className="text-xs space-y-1">
-                      <p className="text-slate-600"><span className="font-bold text-slate-800">Cashier:</span> {cashierName}</p>
-                      <p className="text-slate-600"><span className="font-bold text-slate-800">Status:</span> {isRefunded ? 'Refunded' : 'Paid in Full (Completed)'}</p>
-                      <p className="text-slate-600"><span className="font-bold text-slate-800">Channel:</span> Point of Sale (POS Terminal #1)</p>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Itemized Table */}
-                <div>
-                  <h3 className="text-[11px] font-black uppercase tracking-widest text-slate-900 mb-2">Itemized Line Items</h3>
-                  <table className="w-full border-collapse">
-                    <thead>
-                      <tr className="bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider">
-                        <th className="p-2.5 text-left rounded-l-xs">#</th>
-                        <th className="p-2.5 text-left">Item Description</th>
-                        <th className="p-2.5 text-left">SKU</th>
-                        <th className="p-2.5 text-center">Qty</th>
-                        <th className="p-2.5 text-right">Unit Price</th>
-                        <th className="p-2.5 text-right rounded-r-xs">Line Total</th>
+                {/* Items Table */}
+                <div className="border border-slate-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-left text-xs">
+                    <thead className="bg-slate-900 text-white uppercase text-[10px] tracking-wider">
+                      <tr>
+                        <th className="py-2.5 px-4 font-bold">#</th>
+                        <th className="py-2.5 px-4 font-bold">Item Description</th>
+                        <th className="py-2.5 px-4 font-bold">SKU</th>
+                        <th className="py-2.5 px-4 font-bold text-center">Qty</th>
+                        <th className="py-2.5 px-4 font-bold text-right">Unit Price</th>
+                        <th className="py-2.5 px-4 font-bold text-right">Total</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-200 text-xs">
+                    <tbody className="divide-y divide-slate-200">
                       {saleData.items.map((item, idx) => {
-                        const subtotal = item.quantity * item.unit_price;
+                        const lineTotal = item.quantity * item.unit_price;
                         return (
                           <tr key={idx} className="hover:bg-slate-50">
-                            <td className="p-2.5 text-slate-400 font-mono font-bold">{idx + 1}</td>
-                            <td className="p-2.5">
-                              <span className="font-bold text-slate-900 block">{getItemName(item)}</span>
-                              {item.notes && <span className="text-[10px] text-blue-600 font-semibold italic block">Note: {item.notes}</span>}
+                            <td className="py-2.5 px-4 text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="py-2.5 px-4 font-bold text-slate-900">
+                              {getItemName(item)}
+                              {item.notes && <div className="text-[10px] text-blue-600 font-normal italic mt-0.5">Note: {item.notes}</div>}
                             </td>
-                            <td className="p-2.5 text-slate-500 font-mono text-[11px]">{getItemSku(item)}</td>
-                            <td className="p-2.5 text-center font-bold text-slate-800">{item.quantity}</td>
-                            <td className="p-2.5 text-right font-medium text-slate-600">{formatGHS(item.unit_price)}</td>
-                            <td className="p-2.5 text-right font-bold text-slate-900">{formatGHS(subtotal)}</td>
+                            <td className="py-2.5 px-4 font-mono text-slate-500 text-[11px]">{getItemSku(item)}</td>
+                            <td className="py-2.5 px-4 text-center font-bold text-slate-800">{item.quantity}</td>
+                            <td className="py-2.5 px-4 text-right text-slate-600 font-mono">{formatGHS(item.unit_price)}</td>
+                            <td className="py-2.5 px-4 text-right font-black text-slate-900 font-mono">{formatGHS(lineTotal)}</td>
                           </tr>
                         );
                       })}
@@ -272,31 +309,29 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                   </table>
                 </div>
 
-                {/* Total Summary Block */}
-                <div className="flex justify-end pt-4 border-t border-slate-200">
-                  <div className="w-full sm:w-72 space-y-2 bg-slate-50 p-4 rounded border border-slate-200">
-                    <div className="flex justify-between text-xs text-slate-600">
+                {/* Financial Summary Breakdown */}
+                <div className="flex justify-end pt-2">
+                  <div className="w-72 space-y-2 text-xs">
+                    <div className="flex justify-between py-1 text-slate-600">
                       <span>Subtotal:</span>
-                      <span className="font-semibold">{formatGHS(grandTotal)}</span>
+                      <span className="font-mono font-bold text-slate-900">{formatGHS(grandTotal)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-slate-600">
-                      <span>VAT / NHIL (0%):</span>
-                      <span className="font-semibold">{formatGHS(0)}</span>
+                    <div className="flex justify-between py-1 text-slate-600">
+                      <span>Tax / VAT (0% Standard Retail):</span>
+                      <span className="font-mono text-slate-900">GH₵ 0.00</span>
                     </div>
-                    <div className="flex justify-between text-base font-black text-slate-900 pt-2 border-t border-slate-300">
-                      <span>TOTAL DUE:</span>
-                      <span className="text-blue-600">{formatGHS(grandTotal)}</span>
+                    <div className="flex justify-between py-2 border-t-2 border-slate-900 font-black text-sm text-slate-900">
+                      <span>Grand Total:</span>
+                      <span className="font-mono text-blue-700">{formatGHS(grandTotal)}</span>
                     </div>
-                    <div className="flex justify-between text-xs text-slate-600 pt-1 border-t border-slate-200">
-                      <span>Amount Paid ({paymentMethod}):</span>
-                      <span className="font-bold text-slate-800">{formatGHS(amountPaid)}</span>
+                    <div className="flex justify-between py-1 text-slate-600 border-t border-slate-200">
+                      <span>Amount Tendered ({paymentMethod}):</span>
+                      <span className="font-mono font-bold text-slate-900">{formatGHS(amountPaid)}</span>
                     </div>
-                    {changeDue > 0 && (
-                      <div className="flex justify-between text-xs text-slate-600">
-                        <span>Change Given:</span>
-                        <span className="font-bold text-emerald-600">{formatGHS(changeDue)}</span>
-                      </div>
-                    )}
+                    <div className="flex justify-between py-1 text-emerald-700 font-bold">
+                      <span>Change Due:</span>
+                      <span className="font-mono">{formatGHS(changeDue)}</span>
+                    </div>
                     <div className="text-[10px] text-right font-bold text-emerald-600 uppercase tracking-wider pt-1 flex items-center justify-end gap-1">
                       <CheckCircle2 size={12} /> Transaction Fully Settled
                     </div>
@@ -320,10 +355,10 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
               </div>
             ) : (
               /* ================= POS THERMAL RECEIPT VIEW (80mm) ================= */
-              <div className="space-y-3 text-center text-slate-900">
+              <div className="space-y-3 text-center text-slate-900 font-mono text-[11px] leading-tight">
                 {/* Company Logo & Branding */}
                 <div className="flex flex-col items-center justify-center pb-2 border-b border-dashed border-slate-400">
-                  <div className="w-10 h-10 bg-slate-900 rounded-lg p-2 flex items-center justify-center text-white mb-1.5">
+                  <div className="w-10 h-10 bg-slate-900 rounded-md p-2 flex items-center justify-center text-white mb-1.5 shadow-2xs">
                     <svg viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" className="w-full h-full">
                       <path d="M11 13H29L27 25H13L11 13Z" stroke="#38BDF8" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                       <circle cx="15" cy="30" r="2.5" fill="#38BDF8" />
@@ -331,21 +366,20 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                       <path d="M17 19L20 22L24 17" stroke="#10B981" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"/>
                     </svg>
                   </div>
-                  <h2 className="font-black text-sm uppercase tracking-wider">UMMIS LANE ENTERPRISE</h2>
-                  <p className="text-[9px] font-bold text-slate-700 tracking-wide uppercase">Retail & Wholesale Provisions</p>
+                  <h2 className="font-black text-xs uppercase tracking-wider">UMMIS LANE ENTERPRISE</h2>
+                  <p className="text-[9px] font-bold text-slate-700 uppercase">Retail & Wholesale Provisions</p>
                   <p className="text-[9px] text-slate-600 mt-0.5">Accra, Ghana • Tel: 0545570191 / 0591369282</p>
-                  <p className="text-[9px] text-slate-600">Email: Issakrabiat92@gmail.com</p>
                   <p className="text-[9px] text-slate-600">TIN: TIN-GH90218821</p>
                 </div>
 
                 {/* Receipt Metadata */}
-                <div className="text-left text-[10px] space-y-0.5 border-b border-dashed border-slate-400 pb-2">
+                <div className="text-left text-[10px] space-y-1 border-b border-dashed border-slate-400 pb-2">
                   <div className="flex justify-between">
                     <span className="text-slate-600">RECEIPT NO:</span>
                     <span className="font-bold font-mono">#REC-{saleId}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="text-slate-600">DATE & TIME:</span>
+                    <span className="text-slate-600">DATE:</span>
                     <span className="font-bold">{formattedDate}</span>
                   </div>
                   <div className="flex justify-between">
@@ -354,7 +388,7 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                   </div>
                   <div className="flex justify-between">
                     <span className="text-slate-600">CUSTOMER:</span>
-                    <span className="font-bold truncate max-w-[170px]">{customerName}</span>
+                    <span className="font-bold truncate max-w-[160px]">{customerName}</span>
                   </div>
                   {customerPhone && (
                     <div className="flex justify-between">
@@ -363,7 +397,7 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                     </div>
                   )}
                   {isRefunded && (
-                    <div className="mt-1 p-1 bg-red-100 text-red-800 font-bold text-center rounded text-[9px] uppercase">
+                    <div className="mt-1 p-1 bg-red-100 text-red-800 font-bold text-center rounded text-[9px] uppercase border border-red-300">
                       *** TRANSACTION REFUNDED ***
                     </div>
                   )}
@@ -376,17 +410,18 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                 </div>
 
                 {/* Line Items List */}
-                <div className="border-b border-dashed border-slate-400 pb-3 text-left space-y-2">
+                <div className="border-b border-dashed border-slate-400 pb-2 text-left space-y-1.5">
                   {saleData.items.map((item, idx) => {
                     const lineTotal = item.quantity * item.unit_price;
                     return (
-                      <div key={idx} className="text-[10px]">
-                        <div className="flex justify-between font-bold">
-                          <span className="truncate max-w-[210px] text-slate-900">{getItemName(item)}</span>
-                          <span className="font-mono">{formatGHS(lineTotal)}</span>
+                      <div key={idx} className="text-[10px] space-y-0.5">
+                        <div className="flex justify-between font-bold text-slate-900">
+                          <span className="truncate max-w-[190px]">{getItemName(item)}</span>
+                          <span className="font-mono shrink-0">{formatGHS(lineTotal)}</span>
                         </div>
-                        <div className="flex justify-between text-[9px] text-slate-600">
-                          <span>{item.quantity} x {formatGHS(item.unit_price)} [{getItemSku(item)}]</span>
+                        <div className="flex justify-between text-[9px] text-slate-600 font-mono">
+                          <span>{item.quantity} x {formatGHS(item.unit_price)}</span>
+                          <span className="text-slate-400 text-[8px]">[{getItemSku(item)}]</span>
                         </div>
                         {item.notes && <div className="text-[8px] italic text-blue-600">Note: {item.notes}</div>}
                       </div>
@@ -395,7 +430,7 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                 </div>
 
                 {/* Totals Section */}
-                <div className="border-b border-dashed border-slate-400 pb-2.5 space-y-1 text-right text-[10px]">
+                <div className="border-b border-dashed border-slate-400 pb-2 space-y-1 text-right text-[10px]">
                   <div className="flex justify-between text-slate-600">
                     <span>SUBTOTAL:</span>
                     <span className="font-mono">{formatGHS(grandTotal)}</span>
@@ -404,16 +439,16 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                     <span>TAX / VAT (0%):</span>
                     <span className="font-mono">GH₵ 0.00</span>
                   </div>
-                  <div className="flex justify-between font-black text-sm text-slate-900 pt-1 border-t border-slate-300">
+                  <div className="flex justify-between font-black text-xs text-slate-900 pt-1 border-t border-slate-300">
                     <span>TOTAL:</span>
                     <span className="font-mono">{formatGHS(grandTotal)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600 pt-1">
-                    <span>PAYMENT METHOD:</span>
+                    <span>PAY METHOD:</span>
                     <span className="font-bold">{paymentMethod}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
-                    <span>AMOUNT TENDERED:</span>
+                    <span>TENDERED:</span>
                     <span className="font-bold font-mono">{formatGHS(amountPaid)}</span>
                   </div>
                   {changeDue > 0 && (
@@ -424,24 +459,24 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
                   )}
                 </div>
 
-                {/* Barcode / QR Simulation & Return Policy */}
-                <div className="pt-1 space-y-2">
+                {/* Thermal Barcode & Store Policies */}
+                <div className="pt-1 space-y-1.5">
                   <div className="flex flex-col items-center">
-                    {/* Simulated barcode representation */}
-                    <div className="h-8 flex items-center justify-center gap-0.5 py-1 px-4 bg-slate-50 border border-slate-200 rounded">
-                      {[4, 2, 6, 1, 3, 5, 2, 7, 3, 1, 4, 6, 2, 3, 5, 1, 4, 2].map((w, i) => (
-                        <div key={i} className="h-6 bg-slate-900" style={{ width: `${w * 1.5}px` }} />
+                    {/* SVG barcode for thermal precision print */}
+                    <div className="h-7 w-48 flex items-center justify-center gap-0.5 py-1 px-2 bg-slate-50 border border-slate-200 rounded">
+                      {[3, 1, 4, 1, 2, 4, 1, 5, 2, 1, 3, 4, 1, 2, 4, 1, 3, 2, 4, 1].map((w, i) => (
+                        <div key={i} className="h-5 bg-black" style={{ width: `${w * 1.6}px` }} />
                       ))}
                     </div>
-                    <span className="font-mono text-[8px] text-slate-500 tracking-widest mt-0.5">
+                    <span className="font-mono text-[8px] text-slate-600 tracking-widest mt-0.5 font-bold">
                       *REC-{saleId}-UML-POS*
                     </span>
                   </div>
 
-                  <div className="text-[8px] text-slate-500 leading-tight space-y-0.5">
-                    <p className="font-bold text-slate-700">THANK YOU FOR YOUR PATRONAGE!</p>
+                  <div className="text-[8px] text-slate-600 leading-tight space-y-0.5">
+                    <p className="font-bold text-slate-800">THANK YOU FOR YOUR PATRONAGE!</p>
                     <p>Goods sold in good condition are non-refundable after 7 days.</p>
-                    <p>Must present this original receipt for any exchange or inquiry.</p>
+                    <p>Original receipt required for all exchanges or queries.</p>
                   </div>
                 </div>
               </div>
@@ -457,25 +492,16 @@ export default function InvoiceModal({ saleData, products = [], initialFormat = 
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={handlePrint}
-              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded transition flex items-center gap-1.5 shadow-xs cursor-pointer"
+              className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded transition flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
-              <Printer size={14} /> Print Receipt
+              <Printer size={15} /> Print {invoiceFormat === 'receipt' ? 'Thermal Receipt' : 'Invoice'}
             </button>
-            {onNewSale && (
-              <button
-                onClick={() => {
-                  onClose();
-                  onNewSale();
-                }}
-                className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded transition-colors"
-              >
-                Start New Sale
-              </button>
-            )}
             <button
+              type="button"
               onClick={onClose}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded transition-colors"
+              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded transition cursor-pointer"
             >
               Close
             </button>

@@ -7,8 +7,11 @@ import {
   PackageCheck, RefreshCw, AlertTriangle
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
 
 interface PurchaseOrderItem {
   product_id: number;
@@ -34,10 +37,13 @@ interface PurchaseOrder {
 }
 
 export default function Purchases() {
+  const { user } = useAuth();
   const [purchases, setPurchases] = useState<PurchaseOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 10;
   
   const [searchParams, setSearchParams] = useSearchParams();
   const [isAutoDraft, setIsAutoDraft] = useState(false);
@@ -324,6 +330,13 @@ export default function Purchases() {
     return matchesStatus && matchesSearch;
   });
 
+  const totalPages = Math.ceil(filteredPurchases.length / pageSize) || 1;
+  const paginatedPurchases = filteredPurchases.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [statusFilter, searchQuery]);
+
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'received':
@@ -387,16 +400,18 @@ export default function Purchases() {
         </div>
 
         <div className="flex items-center gap-2">
-          <button 
-            onClick={() => setShowModal(true)} 
-            className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow-2xs transition flex items-center gap-1.5"
-          >
-            <Plus size={15} /> Create Purchase Order
-          </button>
+          {user?.role === 'admin' && (
+            <button 
+              onClick={() => setShowModal(true)} 
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
+            >
+              <Plus size={15} /> Create Purchase Order
+            </button>
+          )}
           <button 
             onClick={handleExportCSV} 
             disabled={purchases.length === 0} 
-            className="px-4 py-2 bg-slate-800 text-white rounded font-bold text-xs hover:bg-slate-900 transition disabled:opacity-50 flex items-center gap-1.5"
+            className="px-4 py-2 bg-slate-800 text-white rounded font-bold text-xs hover:bg-slate-900 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
           >
             <Download size={14} /> Export CSV
           </button>
@@ -484,8 +499,8 @@ export default function Purchases() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
-              {filteredPurchases.length > 0 ? (
-                filteredPurchases.map(p => (
+              {paginatedPurchases.length > 0 ? (
+                paginatedPurchases.map(p => (
                   <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-5 py-3.5 whitespace-nowrap text-xs font-black text-slate-900">
                       #PO-{p.id}
@@ -504,42 +519,40 @@ export default function Purchases() {
                       {formatGHS(p.total_amount)}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-right text-xs">
-                      <div className="flex items-center justify-end gap-2">
-                        {p.status !== 'received' && p.status !== 'cancelled' ? (
-                          <button
-                            onClick={() => handleConfirmReceipt(p.id)}
-                            disabled={updatingId === p.id}
-                            className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded text-[11px] font-bold transition flex items-center gap-1.5 shadow-2xs shrink-0 cursor-pointer disabled:opacity-50"
-                            title="Confirm Receipt & Restock Inventory"
-                          >
-                            {updatingId === p.id ? <RefreshCw size={12} className="animate-spin" /> : <CheckCircle2 size={12} />}
-                            <span>Confirm Receipt</span>
-                          </button>
-                        ) : p.status === 'received' ? (
-                          <span className="px-2 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[11px] font-bold rounded inline-flex items-center gap-1">
-                            <CheckCircle2 size={11} className="text-emerald-600" /> Fulfilled
-                          </span>
-                        ) : null}
-
-                        <select
-                          value={p.status}
-                          disabled={updatingId === p.id}
-                          onChange={e => handleStatusChange(p.id, e.target.value)}
-                          className="border border-slate-300 rounded px-2 py-1 text-[11px] font-bold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
-                        >
-                          <option value="draft">Draft</option>
-                          <option value="ordered">Pending (Ordered)</option>
-                          <option value="received">Received (Fulfill)</option>
-                          <option value="cancelled">Cancelled</option>
-                        </select>
-
-                        <button
-                          onClick={() => handleViewDetail(p.id)}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition-colors"
-                          title="View Details"
-                        >
-                          <Eye size={14} />
-                        </button>
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for PO #${p.id}`}
+                          actions={[
+                            {
+                              label: 'View Order Details',
+                              sublabel: 'Consignment items & breakdown',
+                              icon: <Eye size={14} />,
+                              onClick: () => handleViewDetail(p.id),
+                            },
+                            p.status !== 'received' && p.status !== 'cancelled' ? {
+                              label: 'Confirm Receipt & Restock',
+                              sublabel: 'Verify delivery into inventory',
+                              icon: <CheckCircle2 size={14} className="text-emerald-600" />,
+                              onClick: () => handleConfirmReceipt(p.id),
+                            } : null,
+                            p.status !== 'ordered' && p.status !== 'received' ? {
+                              label: 'Mark as Pending (Ordered)',
+                              icon: <Clock size={14} className="text-amber-500" />,
+                              onClick: () => handleStatusChange(p.id, 'ordered'),
+                            } : null,
+                            p.status !== 'draft' && p.status !== 'received' ? {
+                              label: 'Mark as Draft',
+                              icon: <FileText size={14} className="text-slate-500" />,
+                              onClick: () => handleStatusChange(p.id, 'draft'),
+                            } : null,
+                            p.status !== 'cancelled' && p.status !== 'received' ? {
+                              label: 'Cancel Purchase Order',
+                              destructive: true,
+                              icon: <X size={14} />,
+                              onClick: () => handleStatusChange(p.id, 'cancelled'),
+                            } : null,
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -554,6 +567,14 @@ export default function Purchases() {
             </tbody>
           </table>
         )}
+
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          onPageChange={setCurrentPage}
+          totalItems={filteredPurchases.length}
+          pageSize={pageSize}
+        />
       </div>
 
       {/* New Purchase Order Modal */}

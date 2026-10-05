@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { 
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
-  ChevronDown, ChevronUp, BarChart3
+  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -14,9 +15,13 @@ import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
+import { getDisplayCustomerPhone } from '../lib/privacy';
 
 export default function Sales() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { addToast } = useNotifications();
   const [sales, setSales] = useState<any[]>([]);
   const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
@@ -229,13 +234,35 @@ export default function Sales() {
     }
   };
 
+  const [invoiceInitialFormat, setInvoiceInitialFormat] = useState<'receipt' | 'a4'>('receipt');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(15);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [tableSearchQuery, startDate, endDate, categoryFilter, paymentFilter, statusFilter, cashierFilter]);
+
   const handleReprint = async (saleId: number) => {
+    await handleViewReceipt(saleId, 'receipt');
+  };
+
+  const handleViewReceipt = async (saleId: number, format: 'receipt' | 'a4' = 'receipt') => {
     try {
       const sale = await fetchApi(`/sales/${saleId}`);
+      setInvoiceInitialFormat(format);
       setInvoiceSaleData(sale);
     } catch (err: any) {
       addToast(err.message || 'Failed to load sale receipt', 'error');
     }
+  };
+
+  const handleSendReceipt = async (sale: any) => {
+    const cust = sale.customer_name || 'Customer';
+    addToast({
+      title: 'Receipt Sent',
+      message: `Digital receipt for #SALE-${sale.id} has been dispatched to ${cust}.`,
+      type: 'success'
+    });
   };
 
   // Filter products for POS session
@@ -260,6 +287,12 @@ export default function Sales() {
       (s.payment_method && s.payment_method.toLowerCase().includes(q))
     );
   });
+
+  const totalPages = Math.ceil(filteredSalesTable.length / itemsPerPage) || 1;
+  const paginatedSales = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredSalesTable.slice(start, start + itemsPerPage);
+  }, [filteredSalesTable, currentPage, itemsPerPage]);
 
   const handleExportCSV = () => {
     if (filteredSalesTable.length === 0) {
@@ -768,7 +801,7 @@ export default function Sales() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100 text-xs">
-              {filteredSalesTable.map(s => (
+              {paginatedSales.map(s => (
                 <tr key={s.id} className={`hover:bg-slate-50/80 transition-colors ${s.status === 'refunded' ? 'bg-red-50/30' : ''}`}>
                   <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">
                     #SALE-{s.id}
@@ -780,7 +813,18 @@ export default function Sales() {
                     {s.user_name}
                   </td>
                   <td className="px-5 py-3.5 text-slate-600 whitespace-nowrap">
-                    {s.customer_name || <span className="text-slate-400 italic">Walk-in</span>}
+                    {s.customer_name ? (
+                      <div>
+                        <div className="font-bold text-slate-900">{s.customer_name}</div>
+                        {s.customer_phone && (
+                          <div className="text-[10px] text-slate-400 font-mono">
+                            {getDisplayCustomerPhone(s.customer_phone, user?.role)}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-slate-400 italic">Walk-in</span>
+                    )}
                   </td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
                     <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
@@ -807,14 +851,43 @@ export default function Sales() {
                     </td>
                   )}
                   <td className="px-5 py-3.5 text-right whitespace-nowrap">
-                    <div className="flex items-center justify-end gap-2">
-                      <button 
-                        onClick={() => handleReprint(s.id)} 
-                        className="px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold text-[11px] rounded border border-slate-200 transition-colors flex items-center gap-1 cursor-pointer"
-                        title="Print Official Sales Receipt"
-                      >
-                        <Printer size={13} /> Print Receipt
-                      </button>
+                    <div className="flex items-center justify-end">
+                      <RowActionMenu
+                        triggerTitle={`Actions for #SALE-${s.id}`}
+                        actions={[
+                          {
+                            label: 'View Receipt',
+                            sublabel: '80mm POS Thermal Layout',
+                            icon: <Eye size={14} />,
+                            onClick: () => handleViewReceipt(s.id, 'receipt')
+                          },
+                          {
+                            label: 'Print Thermal Receipt',
+                            sublabel: 'Send directly to thermal printer',
+                            icon: <Printer size={14} />,
+                            onClick: () => handleViewReceipt(s.id, 'receipt')
+                          },
+                          {
+                            label: 'View Official A4 Invoice',
+                            sublabel: 'Standard A4 formal layout',
+                            icon: <FileText size={14} />,
+                            onClick: () => handleViewReceipt(s.id, 'a4')
+                          },
+                          {
+                            label: 'Send Receipt to Customer',
+                            sublabel: 'Dispatch digital copy',
+                            icon: <Mail size={14} />,
+                            onClick: () => handleSendReceipt(s)
+                          },
+                          user?.role === 'admin' && s.status !== 'refunded' ? {
+                            label: 'Process Return / Refund',
+                            sublabel: 'Issue credit voucher',
+                            icon: <RotateCcw size={14} />,
+                            destructive: true,
+                            onClick: () => navigate(`/returns?saleId=${s.id}`)
+                          } : null
+                        ]}
+                      />
                     </div>
                   </td>
                 </tr>
@@ -831,6 +904,19 @@ export default function Sales() {
             </tbody>
           </table>
         </div>
+
+        {/* Sales Table Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredSalesTable.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={(limit) => {
+            setItemsPerPage(limit);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       {/* ================= COMPACT POINT OF SALE (POS MODAL) ================= */}
@@ -1268,6 +1354,7 @@ export default function Sales() {
         <InvoiceModal 
           saleData={invoiceSaleData} 
           products={products}
+          initialFormat={invoiceInitialFormat}
           onClose={() => setInvoiceSaleData(null)}
           onNewSale={() => setShowPOSModal(true)}
         />

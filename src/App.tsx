@@ -49,6 +49,9 @@ function PurchasesRoute() {
   if (user?.role === 'supplier') {
     return <SupplierDashboard initialTab="shipments" />;
   }
+  if (user?.role === 'staff') {
+    return <Navigate to="/" replace />;
+  }
   return <Purchases />;
 }
 

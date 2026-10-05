@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useEffect, useState, useMemo } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
@@ -8,18 +8,23 @@ import { formatGHS } from '../lib/formatters';
 import { 
   FolderTree, Plus, Search, Edit, Trash2, X, RefreshCw, 
   Package, Layers, LayoutGrid, List, ArrowRight,
-  ChevronRight, Tag, ShieldAlert, CheckCircle2, Box, Lock
+  ChevronRight, Tag, ShieldAlert, CheckCircle2, Box, Lock, MoreVertical
 } from 'lucide-react';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
 
 export default function Categories() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [categories, setCategories] = useState<any[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
   
   // UI & View State
-  const [viewMode, setViewMode] = useState<'grid' | 'table'>('grid');
+  const [viewMode, setViewMode] = useState<'grid' | 'table'>('table');
   const [searchTerm, setSearchTerm] = useState<string>('');
   const [filterType, setFilterType] = useState<'all' | 'with_products' | 'empty'>('all');
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(15);
 
   const { addToast, confirmModal } = useNotifications();
   const canAddCategory = user?.role === 'admin' || user?.role === 'supplier';
@@ -152,6 +157,13 @@ export default function Categories() {
 
     return matchesSearch;
   });
+
+  const totalPages = Math.ceil(filteredCategories.length / itemsPerPage) || 1;
+  const paginatedCategories = filteredCategories.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType]);
 
   return (
     <div className="space-y-6">
@@ -313,85 +325,102 @@ export default function Categories() {
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID CARDS VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredCategories.map((cat) => (
-            <div
-              key={cat.id}
-              className="bg-white border border-slate-200 hover:border-indigo-300 rounded p-5 shadow-2xs hover:shadow-xs transition-all space-y-4 flex flex-col justify-between"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2 mb-2">
-                  <div className="flex items-center gap-2">
-                    <span className="p-2 bg-indigo-50 text-indigo-700 rounded font-black text-xs">
-                      #{cat.id}
-                    </span>
-                    <div>
-                      <h3 className="font-black text-slate-900 text-sm uppercase tracking-tight">
-                        {cat.name}
-                      </h3>
-                      {cat.parent_name && (
-                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
-                          Parent: <span className="text-indigo-600">{cat.parent_name}</span>
-                        </span>
-                      )}
-                    </div>
-                  </div>
-
-                  {user?.role === 'admin' && (
-                    <div className="flex items-center gap-1">
-                      <button
-                        onClick={() => handleEdit(cat)}
-                        className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-50 rounded transition"
-                        title="Edit Category"
-                      >
-                        <Edit size={15} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(cat.id, cat.name)}
-                        className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                        title="Delete Category"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    </div>
-                  )}
-                </div>
-
-                {/* Metrics Breakdown */}
-                <div className={`grid ${user?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center my-3`}>
-                  <div>
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Products</div>
-                    <div className="text-sm font-black text-slate-900">{cat.product_count || 0}</div>
-                  </div>
-                  <div>
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Stock Units</div>
-                    <div className="text-sm font-black text-emerald-700">{cat.total_stock || 0}</div>
-                  </div>
-                  {user?.role === 'admin' && (
-                    <div>
-                      <div className="text-[10px] font-black text-slate-400 uppercase">Valuation</div>
-                      <div className="text-xs font-black text-slate-800 truncate" title={formatGHS(cat.total_value || 0)}>
-                        {formatGHS(cat.total_value || 0)}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedCategories.map((cat) => (
+              <div
+                key={cat.id}
+                className="bg-white border border-slate-200 hover:border-indigo-300 rounded p-5 shadow-2xs hover:shadow-xs transition-all space-y-4 flex flex-col justify-between"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <span className="p-2 bg-indigo-50 text-indigo-700 rounded font-black text-xs">
+                        #{cat.id}
+                      </span>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm uppercase tracking-tight">
+                          {cat.name}
+                        </h3>
+                        {cat.parent_name && (
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider flex items-center gap-1">
+                            Parent: <span className="text-indigo-600">{cat.parent_name}</span>
+                          </span>
+                        )}
                       </div>
                     </div>
-                  )}
+
+                    <div className="flex items-center">
+                      <RowActionMenu
+                        triggerTitle={`Actions for ${cat.name}`}
+                        actions={[
+                          {
+                            label: 'View Products',
+                            sublabel: `${cat.product_count || 0} active catalog items`,
+                            icon: <Package size={14} />,
+                            onClick: () => navigate(`/products?category=${encodeURIComponent(cat.name)}`),
+                          },
+                          user?.role === 'admin' ? {
+                            label: 'Edit Category',
+                            icon: <Edit size={14} />,
+                            onClick: () => handleEdit(cat),
+                          } : null,
+                          user?.role === 'admin' ? {
+                            label: 'Delete Category',
+                            destructive: true,
+                            icon: <Trash2 size={14} />,
+                            onClick: () => handleDelete(cat.id, cat.name),
+                          } : null,
+                        ]}
+                      />
+                    </div>
+                  </div>
+
+                  {/* Metrics Breakdown */}
+                  <div className={`grid ${user?.role === 'admin' ? 'grid-cols-3' : 'grid-cols-2'} gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center my-3`}>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Products</div>
+                      <div className="text-sm font-black text-slate-900">{cat.product_count || 0}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Stock Units</div>
+                      <div className="text-sm font-black text-emerald-700">{cat.total_stock || 0}</div>
+                    </div>
+                    {user?.role === 'admin' && (
+                      <div>
+                        <div className="text-[10px] font-black text-slate-400 uppercase">Valuation</div>
+                        <div className="text-xs font-black text-slate-800 truncate" title={formatGHS(cat.total_value || 0)}>
+                          {formatGHS(cat.total_value || 0)}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    {cat.product_count > 0 ? `${cat.product_count} active catalog item(s)` : 'No assigned products'}
+                  </span>
+
+                  <Link
+                    to={`/products?category=${encodeURIComponent(cat.name)}`}
+                    className="text-blue-600 hover:text-blue-800 font-bold text-xs inline-flex items-center gap-1"
+                  >
+                    <span>{cat.product_count || 0} Products</span>
+                    <ChevronRight size={13} />
+                  </Link>
                 </div>
               </div>
+            ))}
+          </div>
 
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-xs">
-                <span className="text-[11px] font-medium text-slate-500">
-                  {cat.product_count > 0 ? `${cat.product_count} active catalog item(s)` : 'No assigned products'}
-                </span>
-
-                <Link
-                  to={`/products?category=${encodeURIComponent(cat.name)}`}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition flex items-center gap-1"
-                >
-                  Products <ChevronRight size={13} />
-                </Link>
-              </div>
-            </div>
-          ))}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredCategories.length}
+            pageSize={itemsPerPage}
+          />
         </div>
       ) : (
         /* TABLE VIEW */
@@ -412,7 +441,7 @@ export default function Categories() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredCategories.map((cat) => (
+                {paginatedCategories.map((cat) => (
                   <tr key={cat.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3 font-mono font-bold text-slate-400">
                       #{cat.id}
@@ -447,30 +476,29 @@ export default function Categories() {
                       </td>
                     )}
                     <td className="px-4 py-3 text-right">
-                      <div className="space-x-1.5 inline-flex items-center">
-                        <Link
-                          to={`/products?category=${encodeURIComponent(cat.name)}`}
-                          className="px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition inline-flex items-center gap-1"
-                          title={`View ${cat.name} products`}
-                        >
-                          Products <ChevronRight size={11} />
-                        </Link>
-                        {user?.role === 'admin' && (
-                          <>
-                            <button
-                              onClick={() => handleEdit(cat)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-indigo-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
-                            >
-                              Edit
-                            </button>
-                            <button
-                              onClick={() => handleDelete(cat.id, cat.name)}
-                              className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
-                            >
-                              Delete
-                            </button>
-                          </>
-                        )}
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for ${cat.name}`}
+                          actions={[
+                            {
+                              label: 'View Products',
+                              sublabel: `${cat.product_count || 0} active catalog items`,
+                              icon: <Package size={14} />,
+                              onClick: () => navigate(`/products?category=${encodeURIComponent(cat.name)}`),
+                            },
+                            user?.role === 'admin' ? {
+                              label: 'Edit Category',
+                              icon: <Edit size={14} />,
+                              onClick: () => handleEdit(cat),
+                            } : null,
+                            user?.role === 'admin' ? {
+                              label: 'Delete Category',
+                              destructive: true,
+                              icon: <Trash2 size={14} />,
+                              onClick: () => handleDelete(cat.id, cat.name),
+                            } : null,
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -478,6 +506,14 @@ export default function Categories() {
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredCategories.length}
+            pageSize={itemsPerPage}
+          />
         </div>
       )}
 

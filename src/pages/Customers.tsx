@@ -1,9 +1,14 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
-import { Users, Search, Plus, CreditCard, Mail, Phone, Award, X, CheckCircle2, UserPlus } from 'lucide-react';
+import { useAuth } from '../context/AuthContext';
+import { Users, Search, Plus, CreditCard, Mail, Phone, Award, X, CheckCircle2, UserPlus, ShoppingBag, Trash2 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useFormValidation, validators } from '../lib/validation';
 import { FormField, ValidatedInput } from '../components/common/FormField';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
+import { getDisplayCustomerPhone, getDisplayCustomerEmail } from '../lib/privacy';
 
 interface CustomerFormData {
   name: string;
@@ -183,10 +188,14 @@ function AddCustomerModal({ isOpen, onClose, onSuccess }: AddCustomerModalProps)
 }
 
 export default function Customers() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(15);
 
   useEffect(() => { loadData(); }, []);
 
@@ -194,11 +203,33 @@ export default function Customers() {
     fetchApi('/customers').then(setCustomers).finally(() => setLoading(false));
   };
 
-  const filteredCustomers = customers.filter(c => 
-    c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    (c.phone && c.phone.includes(searchQuery)) ||
-    (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase()))
-  );
+  const filteredCustomers = useMemo(() => {
+    return customers.filter(c => 
+      c.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (c.phone && c.phone.includes(searchQuery)) ||
+      (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+  }, [customers, searchQuery]);
+
+  const totalPages = Math.ceil(filteredCustomers.length / itemsPerPage) || 1;
+  const paginatedCustomers = useMemo(() => {
+    const start = (currentPage - 1) * itemsPerPage;
+    return filteredCustomers.slice(start, start + itemsPerPage);
+  }, [filteredCustomers, currentPage, itemsPerPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery]);
+
+  const handleDeleteCustomer = async (c: any) => {
+    if (!confirm(`Are you sure you want to delete customer profile "${c.name}"?`)) return;
+    try {
+      await fetchApi(`/customers/${c.id}`, { method: 'DELETE' });
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete customer');
+    }
+  };
 
   return (
     <div className="space-y-6">
@@ -235,10 +266,11 @@ export default function Customers() {
               <th className="px-6 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-widest">Contact Details</th>
               <th className="px-6 py-3 text-center text-[11px] font-bold text-slate-400 uppercase tracking-widest">Points</th>
               <th className="px-6 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-widest text-emerald-600">Total Spent</th>
+              <th className="px-6 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-widest">Actions</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
-            {filteredCustomers.map(c => (
+            {paginatedCustomers.map(c => (
               <tr key={c.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="text-[13px] font-black text-slate-900 uppercase">{c.name}</div>
@@ -247,13 +279,13 @@ export default function Customers() {
                 <td className="px-6 py-4 whitespace-nowrap">
                    <div className="flex flex-col gap-1">
                       {c.phone && (
-                        <span className="text-[12px] font-bold text-slate-600 flex items-center gap-1.5">
-                          <Phone size={12} className="text-slate-400" /> {c.phone}
+                        <span className="text-[12px] font-bold text-slate-600 flex items-center gap-1.5 font-mono">
+                          <Phone size={12} className="text-slate-400" /> {getDisplayCustomerPhone(c.phone, user?.role)}
                         </span>
                       )}
                       {c.email && (
                         <span className="text-[12px] text-slate-500 flex items-center gap-1.5">
-                          <Mail size={12} className="text-slate-400" /> {c.email}
+                          <Mail size={12} className="text-slate-400" /> {getDisplayCustomerEmail(c.email, user?.role)}
                         </span>
                       )}
                       {!c.phone && !c.email && (
@@ -269,13 +301,46 @@ export default function Customers() {
                 <td className="px-6 py-4 whitespace-nowrap text-right text-[13px] font-bold text-slate-900">
                   {formatGHS(c.total_spent || 0)}
                 </td>
+                <td className="px-6 py-4 whitespace-nowrap text-right">
+                  <div className="flex items-center justify-end">
+                    <RowActionMenu
+                      triggerTitle={`Actions for ${c.name}`}
+                      actions={[
+                        {
+                          label: 'View Sales History',
+                          icon: <ShoppingBag size={14} />,
+                          onClick: () => navigate(`/sales?search=${encodeURIComponent(c.name)}`)
+                        },
+                        user?.role === 'admin' ? {
+                          label: 'Delete Customer',
+                          icon: <Trash2 size={14} />,
+                          destructive: true,
+                          onClick: () => handleDeleteCustomer(c)
+                        } : null
+                      ]}
+                    />
+                  </div>
+                </td>
               </tr>
             ))}
             {filteredCustomers.length === 0 && !loading && (
-              <tr><td colSpan={4} className="px-6 py-12 text-center text-slate-400 text-[13px] font-medium italic">No matching customers found.</td></tr>
+              <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-400 text-[13px] font-medium italic">No matching customers found.</td></tr>
             )}
           </tbody>
         </table>
+
+        {/* Pagination */}
+        <Pagination
+          currentPage={currentPage}
+          totalPages={totalPages}
+          totalItems={filteredCustomers.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={(limit) => {
+            setItemsPerPage(limit);
+            setCurrentPage(1);
+          }}
+        />
       </div>
 
       <AddCustomerModal

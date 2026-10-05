@@ -1,15 +1,23 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import ReturnModal from '../components/ReturnModal';
 import ReturnInvoiceModal from '../components/ReturnInvoiceModal';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
+import { getDisplayCustomerPhone } from '../lib/privacy';
 import { 
   RotateCcw, Search, Calendar, Download, RefreshCw, FileText, 
-  DollarSign, Package, AlertCircle, ShieldAlert, CheckCircle2, Filter
+  DollarSign, Package, AlertCircle, ShieldAlert, CheckCircle2, Filter,
+  Printer, ShoppingCart, Eye
 } from 'lucide-react';
 
 export default function Returns() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [returns, setReturns] = useState<any[]>([]);
   const [returnsSummary, setReturnsSummary] = useState<any>(null);
   const [loading, setLoading] = useState<boolean>(true);
@@ -20,6 +28,10 @@ export default function Returns() {
   const [endDate, setEndDate] = useState<string>('');
   const [timeframe, setTimeframe] = useState<'all' | 'today' | '7days' | '30days'>('all');
 
+  // Pagination States
+  const [currentPage, setCurrentPage] = useState<number>(1);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+
   // Modal States
   const [showReturnModal, setShowReturnModal] = useState<boolean>(false);
   const [selectedReturnSaleId, setSelectedReturnSaleId] = useState<number | null>(null);
@@ -27,6 +39,10 @@ export default function Returns() {
   const [loadingCreditNoteId, setLoadingCreditNoteId] = useState<number | null>(null);
 
   const { addToast } = useNotifications();
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, startDate, endDate, timeframe]);
 
   useEffect(() => {
     loadReturnsData();

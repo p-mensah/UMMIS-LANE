@@ -8,8 +8,10 @@ import {
   Truck, Plus, Search, Edit, Trash2, X, RefreshCw, 
   Phone, Mail, MapPin, User, FileText, DollarSign, 
   ShoppingBag, Calendar, LayoutGrid, List, ChevronRight, ExternalLink,
-  Building2, CheckCircle2, Clock
+  Building2, CheckCircle2, Clock, History
 } from 'lucide-react';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
 
 export default function Suppliers() {
   const [suppliers, setSuppliers] = useState<any[]>([]);
@@ -190,6 +192,16 @@ export default function Suppliers() {
     return matchesSearch;
   });
 
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 12;
+
+  const totalPages = Math.ceil(filteredSuppliers.length / pageSize) || 1;
+  const paginatedSuppliers = filteredSuppliers.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, filterType]);
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -341,119 +353,135 @@ export default function Suppliers() {
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID CARDS VIEW */
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {filteredSuppliers.map((sup) => (
-            <div
-              key={sup.id}
-              className="bg-white border border-slate-200 hover:border-blue-300 rounded p-5 shadow-2xs hover:shadow-xs transition-all space-y-4 flex flex-col justify-between"
-            >
-              <div>
-                {/* Header */}
-                <div className="flex items-start justify-between gap-2 mb-3">
-                  <div className="flex items-center gap-2.5">
-                    <div className="w-10 h-10 rounded bg-blue-50 border border-blue-200 text-blue-700 font-black text-sm flex items-center justify-center uppercase">
-                      {sup.name.charAt(0)}
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {paginatedSuppliers.map((sup) => (
+              <div
+                key={sup.id}
+                className="bg-white border border-slate-200 hover:border-blue-300 rounded p-5 shadow-2xs hover:shadow-xs transition-all space-y-4 flex flex-col justify-between"
+              >
+                <div>
+                  {/* Header */}
+                  <div className="flex items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="w-10 h-10 rounded bg-blue-50 border border-blue-200 text-blue-700 font-black text-sm flex items-center justify-center uppercase">
+                        {sup.name.charAt(0)}
+                      </div>
+                      <div>
+                        <h3 className="font-black text-slate-900 text-sm tracking-tight leading-snug">
+                          {sup.name}
+                        </h3>
+                        {sup.contact_person && (
+                          <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
+                            <User size={12} className="text-slate-400" />
+                            {sup.contact_person}
+                          </div>
+                        )}
+                      </div>
                     </div>
-                    <div>
-                      <h3 className="font-black text-slate-900 text-sm tracking-tight leading-snug">
-                        {sup.name}
-                      </h3>
-                      {sup.contact_person && (
-                        <div className="text-[11px] font-bold text-slate-500 flex items-center gap-1 mt-0.5">
-                          <User size={12} className="text-slate-400" />
-                          {sup.contact_person}
-                        </div>
-                      )}
+
+                    <div className="flex items-center">
+                      <RowActionMenu
+                        triggerTitle={`Actions for ${sup.name}`}
+                        actions={[
+                          {
+                            label: 'Procurement History',
+                            sublabel: 'View purchase order records',
+                            icon: <History size={14} />,
+                            onClick: () => handleViewHistory(sup.id),
+                          },
+                          {
+                            label: 'Edit Supplier',
+                            icon: <Edit size={14} />,
+                            onClick: () => handleOpenEdit(sup),
+                          },
+                          {
+                            label: 'Delete Supplier',
+                            destructive: true,
+                            icon: <Trash2 size={14} />,
+                            onClick: () => handleDelete(sup.id, sup.name),
+                          },
+                        ]}
+                      />
                     </div>
                   </div>
 
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => handleOpenEdit(sup)}
-                      className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-50 rounded transition"
-                      title="Edit Supplier"
-                    >
-                      <Edit size={15} />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(sup.id, sup.name)}
-                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition"
-                      title="Delete Supplier"
-                    >
-                      <Trash2 size={15} />
-                    </button>
+                  {/* Contact Info */}
+                  <div className="space-y-1.5 text-xs text-slate-600 my-3 bg-slate-50/70 p-3 rounded border border-slate-100">
+                    {sup.phone ? (
+                      <a
+                        href={`tel:${sup.phone}`}
+                        className="flex items-center gap-2 hover:text-blue-600 font-mono text-[11px]"
+                      >
+                        <Phone size={13} className="text-slate-400" />
+                        {sup.phone}
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-400 italic text-[11px]">
+                        <Phone size={13} /> No phone recorded
+                      </div>
+                    )}
+
+                    {sup.email ? (
+                      <a
+                        href={`mailto:${sup.email}`}
+                        className="flex items-center gap-2 hover:text-blue-600 text-[11px] truncate"
+                      >
+                        <Mail size={13} className="text-slate-400" />
+                        {sup.email}
+                      </a>
+                    ) : (
+                      <div className="flex items-center gap-2 text-slate-400 italic text-[11px]">
+                        <Mail size={13} /> No email recorded
+                      </div>
+                    )}
+
+                    {sup.address && (
+                      <div className="flex items-center gap-2 text-[11px] text-slate-600 truncate">
+                        <MapPin size={13} className="text-slate-400 shrink-0" />
+                        {sup.address}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Spend & PO Breakdown */}
+                  <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                    <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Purchase Orders</div>
+                      <div className="font-black text-slate-900 mt-0.5">{sup.total_purchases || 0} order(s)</div>
+                    </div>
+                    <div className="p-2 bg-slate-50 rounded border border-slate-100">
+                      <div className="text-[10px] font-black text-slate-400 uppercase">Total Spend</div>
+                      <div className="font-black text-emerald-700 mt-0.5">{formatGHS(sup.total_spent || 0)}</div>
+                    </div>
                   </div>
                 </div>
 
-                {/* Contact Info */}
-                <div className="space-y-1.5 text-xs text-slate-600 my-3 bg-slate-50/70 p-3 rounded border border-slate-100">
-                  {sup.phone ? (
-                    <a
-                      href={`tel:${sup.phone}`}
-                      className="flex items-center gap-2 hover:text-blue-600 font-mono text-[11px]"
-                    >
-                      <Phone size={13} className="text-slate-400" />
-                      {sup.phone}
-                    </a>
-                  ) : (
-                    <div className="flex items-center gap-2 text-slate-400 italic text-[11px]">
-                      <Phone size={13} /> No phone recorded
-                    </div>
-                  )}
+                {/* Action Toolbar */}
+                <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
+                  <span className="text-[11px] font-medium text-slate-500">
+                    Active Vendor
+                  </span>
 
-                  {sup.email ? (
-                    <a
-                      href={`mailto:${sup.email}`}
-                      className="flex items-center gap-2 hover:text-blue-600 text-[11px] truncate"
-                    >
-                      <Mail size={13} className="text-slate-400" />
-                      {sup.email}
-                    </a>
-                  ) : (
-                    <div className="flex items-center gap-2 text-slate-400 italic text-[11px]">
-                      <Mail size={13} /> No email recorded
-                    </div>
-                  )}
-
-                  {sup.address && (
-                    <div className="flex items-center gap-2 text-[11px] text-slate-600 truncate">
-                      <MapPin size={13} className="text-slate-400 shrink-0" />
-                      {sup.address}
-                    </div>
-                  )}
-                </div>
-
-                {/* Spend & PO Breakdown */}
-                <div className="grid grid-cols-2 gap-2 text-center text-xs">
-                  <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Purchase Orders</div>
-                    <div className="font-black text-slate-900 mt-0.5">{sup.total_purchases || 0} order(s)</div>
-                  </div>
-                  <div className="p-2 bg-slate-50 rounded border border-slate-100">
-                    <div className="text-[10px] font-black text-slate-400 uppercase">Total Spend</div>
-                    <div className="font-black text-emerald-700 mt-0.5">{formatGHS(sup.total_spent || 0)}</div>
-                  </div>
+                  <Link
+                    to="/purchases"
+                    className="text-blue-600 hover:text-blue-800 font-bold text-xs inline-flex items-center gap-1"
+                  >
+                    <span>Purchase Orders</span>
+                    <ChevronRight size={13} />
+                  </Link>
                 </div>
               </div>
+            ))}
+          </div>
 
-              {/* Action Toolbar */}
-              <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
-                <button
-                  onClick={() => handleViewHistory(sup.id)}
-                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded text-[11px] transition flex items-center gap-1"
-                >
-                  <FileText size={13} /> History
-                </button>
-
-                <Link
-                  to="/purchases"
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-black uppercase text-[10px] tracking-wider rounded transition shadow-2xs flex items-center gap-1"
-                >
-                  <Plus size={13} /> New Purchase Order
-                </Link>
-              </div>
-            </div>
-          ))}
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredSuppliers.length}
+            pageSize={pageSize}
+          />
         </div>
       ) : (
         /* TABLE VIEW */
@@ -472,7 +500,7 @@ export default function Suppliers() {
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
-                {filteredSuppliers.map((sup) => (
+                {paginatedSuppliers.map((sup) => (
                   <tr key={sup.id} className="hover:bg-slate-50/80 transition-colors">
                     <td className="px-4 py-3 font-black text-slate-900 tracking-tight">
                       {sup.name}
@@ -497,31 +525,45 @@ export default function Suppliers() {
                         ? new Date(sup.last_purchase_date).toLocaleDateString()
                         : 'No Orders Yet'}
                     </td>
-                    <td className="px-4 py-3 text-right space-x-2">
-                      <button
-                        onClick={() => handleViewHistory(sup.id)}
-                        className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded text-[11px] transition"
-                      >
-                        History
-                      </button>
-                      <button
-                        onClick={() => handleOpenEdit(sup)}
-                        className="px-2 py-1 bg-slate-100 hover:bg-blue-600 hover:text-white text-slate-700 font-bold rounded text-[11px] transition"
-                      >
-                        Edit
-                      </button>
-                      <button
-                        onClick={() => handleDelete(sup.id, sup.name)}
-                        className="px-2 py-1 bg-rose-50 hover:bg-rose-600 hover:text-white text-rose-700 font-bold rounded text-[11px] transition"
-                      >
-                        Delete
-                      </button>
+                    <td className="px-4 py-3 text-right">
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for ${sup.name}`}
+                          actions={[
+                            {
+                              label: 'Procurement History',
+                              sublabel: 'View purchase order records',
+                              icon: <History size={14} />,
+                              onClick: () => handleViewHistory(sup.id),
+                            },
+                            {
+                              label: 'Edit Supplier',
+                              icon: <Edit size={14} />,
+                              onClick: () => handleOpenEdit(sup),
+                            },
+                            {
+                              label: 'Delete Supplier',
+                              destructive: true,
+                              icon: <Trash2 size={14} />,
+                              onClick: () => handleDelete(sup.id, sup.name),
+                            },
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+
+          <Pagination
+            currentPage={currentPage}
+            totalPages={totalPages}
+            onPageChange={setCurrentPage}
+            totalItems={filteredSuppliers.length}
+            pageSize={pageSize}
+          />
         </div>
       )}
 

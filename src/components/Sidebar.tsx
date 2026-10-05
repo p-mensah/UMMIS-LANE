@@ -78,7 +78,7 @@ export default function Sidebar({
   // Store Operations Nav Items for Staff & Store Admin
   const standardNavItems: NavItemConfig[] = [
     { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
-    { to: '/communication', icon: <MessageSquare size={18} />, label: 'Team Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
+    { to: '/communication', icon: <MessageSquare size={18} />, label: 'Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
     { to: '/sales', icon: <ShoppingCart size={18} />, label: 'Sales Terminal', badge: 'POS' },
     { to: '/returns', icon: <RotateCcw size={18} />, label: 'Returns & Credits' },
     { to: '/shifts', icon: <Clock size={18} />, label: 'Shift Register' },
@@ -86,7 +86,6 @@ export default function Sidebar({
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
     { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
-    { to: '/supplier-dashboard', icon: <Truck size={18} />, label: 'Supplier Portal', adminOnly: true },
     { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
     { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
     { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },

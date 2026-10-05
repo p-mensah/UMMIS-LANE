@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
-import { Link, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch, Eye } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
 import BulkCsvProductModal from '../components/BulkCsvProductModal';
 import ProductFormModal from '../components/ProductFormModal';
+import RowActionMenu from '../components/common/RowActionMenu';
+import Pagination from '../components/common/Pagination';
 
 interface Product {
   id: number;
@@ -26,6 +28,7 @@ interface Product {
 
 export default function Products() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { addToast } = useNotifications();
   const [searchParams, setSearchParams] = useSearchParams();
   const categoryParam = searchParams.get('category') || '';
@@ -35,6 +38,8 @@ export default function Products() {
   const [searchScope, setSearchScope] = useState<'all' | 'name' | 'sku'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam);
   const [loading, setLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 15;
   const [categories, setCategories] = useState<any[]>([]);
   const [showModal, setShowModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
@@ -437,6 +442,13 @@ export default function Products() {
     });
   }, [products, searchQuery, searchScope, selectedCategory]);
 
+  const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
+  const paginatedProducts = filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, searchScope, selectedCategory]);
+
   const exportTableToCSV = () => {
     if (filteredProducts.length === 0) {
       addToast('No product records match the current table filters to export.', 'warning');
@@ -708,10 +720,14 @@ export default function Products() {
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product Name</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Brand</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">SKU</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
+              {user?.role !== 'staff' && (
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
+              )}
+              {user?.role !== 'staff' && (
+                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
+              )}
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price (Sell)</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock</th>
               <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
@@ -719,7 +735,7 @@ export default function Products() {
           <tbody className="bg-white divide-y divide-slate-100">
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-16 text-center">
+                <td colSpan={user?.role === 'staff' ? 8 : 10} className="py-16 text-center">
                   <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-500 space-y-3">
                     <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
                       <PackageSearch size={24} />
@@ -750,7 +766,7 @@ export default function Products() {
                 </td>
               </tr>
             ) : (
-              filteredProducts.map(p => (
+              paginatedProducts.map(p => (
               <tr key={p.id} className="hover:bg-slate-50 transition-colors">
                 <td className="px-5 py-3 whitespace-nowrap text-[13px]">
                    {p.image_url ? (
@@ -766,8 +782,12 @@ export default function Products() {
                 </td>
                 <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.brand || '-'}</td>
                 <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.sku}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.unit_of_measure || '-'}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
+                {user?.role !== 'staff' && (
+                  <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.unit_of_measure || '-'}</td>
+                )}
+                {user?.role !== 'staff' && (
+                  <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
+                )}
                 <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
                   {p.category}
                 </td>
@@ -778,96 +798,35 @@ export default function Products() {
                   </span>
                 </td>
                 <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
-                  {user?.role === 'admin' ? (
-                    <div className="relative inline-block text-left">
-                      <button 
-                        id={`product-action-btn-${p.id}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          if (activeActionMenuId === p.id) {
-                            setActiveActionMenuId(null);
-                            setActionMenuCoords(null);
-                            return;
-                          }
-                          const rect = (e.currentTarget as HTMLElement).getBoundingClientRect();
-                          const menuWidth = 144;
-                          const menuHeight = 135;
-                          const spaceBelow = window.innerHeight - rect.bottom;
-                          const openUpward = spaceBelow < menuHeight + 20;
-
-                          const top = openUpward
-                            ? Math.max(10, rect.top - menuHeight - 4)
-                            : Math.min(window.innerHeight - menuHeight - 10, rect.bottom + 4);
-                          const left = Math.max(10, Math.min(window.innerWidth - menuWidth - 10, rect.right - menuWidth));
-
-                          setActionMenuCoords({ top, left, openUpward });
-                          setActiveActionMenuId(p.id);
-                        }} 
-                        className="p-1.5 text-slate-400 hover:text-slate-700 hover:bg-slate-100 rounded transition-colors focus:outline-none cursor-pointer"
-                        title="Actions"
-                      >
-                        <MoreVertical size={16} />
-                      </button>
-
-                      {activeActionMenuId === p.id && actionMenuCoords && (
-                        <div 
-                          style={{ top: `${actionMenuCoords.top}px`, left: `${actionMenuCoords.left}px` }}
-                          className={`fixed w-36 bg-white rounded-lg border border-slate-200 shadow-2xl py-1 z-[9999] animate-in fade-in zoom-in-95 duration-100 text-left divide-y divide-slate-100 ${
-                            actionMenuCoords.openUpward ? 'origin-bottom-right' : 'origin-top-right'
-                          }`}
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <div className="py-0.5">
-                            <button 
-                              id={`action-adjust-${p.id}`}
-                              onClick={() => {
-                                setActiveActionMenuId(null);
-                                setActionMenuCoords(null);
-                                openAdjust(p);
-                              }} 
-                              className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-amber-50 hover:text-amber-700 flex items-center gap-2 transition-colors cursor-pointer"
-                            >
-                              <SlidersHorizontal size={14} className="text-amber-500" />
-                              <span>Adjust</span>
-                            </button>
-                            <button 
-                              id={`action-edit-${p.id}`}
-                              onClick={() => {
-                                setActiveActionMenuId(null);
-                                setActionMenuCoords(null);
-                                handleEdit(p);
-                              }} 
-                              className="w-full px-3 py-2 text-xs font-bold text-slate-700 hover:bg-blue-50 hover:text-blue-700 flex items-center gap-2 transition-colors cursor-pointer"
-                            >
-                              <Edit size={14} className="text-blue-500" />
-                              <span>Edit</span>
-                            </button>
-                          </div>
-                          <div className="py-0.5">
-                            <button 
-                              id={`action-delete-${p.id}`}
-                              onClick={() => {
-                                setActiveActionMenuId(null);
-                                setActionMenuCoords(null);
-                                setDeletingProductId(p.id);
-                              }} 
-                              className="w-full px-3 py-2 text-xs font-bold text-rose-600 hover:bg-rose-50 flex items-center gap-2 transition-colors cursor-pointer"
-                            >
-                              <Trash2 size={14} className="text-rose-500" />
-                              <span>Delete</span>
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <Link
-                      to={`/products/${p.id}`}
-                      className="text-blue-600 hover:text-blue-800 text-xs font-bold hover:underline"
-                    >
-                      View
-                    </Link>
-                  )}
+                  <div className="flex items-center justify-end">
+                    <RowActionMenu
+                      triggerTitle={`Actions for ${p.name}`}
+                      actions={[
+                        {
+                          label: 'View Details',
+                          sublabel: 'Audit log & pricing history',
+                          icon: <Eye size={14} />,
+                          onClick: () => navigate(`/products/${p.id}`),
+                        },
+                        user?.role === 'admin' ? {
+                          label: 'Adjust Stock',
+                          icon: <SlidersHorizontal size={14} className="text-amber-500" />,
+                          onClick: () => openAdjust(p),
+                        } : null,
+                        user?.role === 'admin' ? {
+                          label: 'Edit Product',
+                          icon: <Edit size={14} className="text-blue-500" />,
+                          onClick: () => handleEdit(p),
+                        } : null,
+                        user?.role === 'admin' ? {
+                          label: 'Delete Product',
+                          destructive: true,
+                          icon: <Trash2 size={14} className="text-rose-500" />,
+                          onClick: () => setDeletingProductId(p.id),
+                        } : null,
+                      ]}
+                    />
+                  </div>
                 </td>
               </tr>
             ))
@@ -875,6 +834,14 @@ export default function Products() {
           </tbody>
         </table>
       </div>
+
+      <Pagination
+        currentPage={currentPage}
+        totalPages={totalPages}
+        onPageChange={setCurrentPage}
+        totalItems={filteredProducts.length}
+        pageSize={pageSize}
+      />
 
       {showModal && (
         <ProductFormModal
