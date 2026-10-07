@@ -5,7 +5,7 @@ import {
   Send, Hash, MessageSquare, Users, Shield, Search, Check, CheckCheck, 
   Trash2, CornerUpLeft, X, Smile, ShieldCheck, RefreshCw, Lock, ChevronRight,
   Megaphone, Plus, Camera, Image as ImageIcon, SwitchCamera, Download,
-  Maximize2, Eye, UserCheck, Filter, AlertCircle, Building2,
+  Maximize2, Eye, UserCheck, AlertCircle, Building2,
   ArrowLeft, Truck, CreditCard, User, Sparkles, Clock
 } from 'lucide-react';
 
@@ -45,12 +45,8 @@ export default function Communication() {
   const [inputText, setInputText] = useState('');
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
   const [searchFilter, setSearchFilter] = useState('');
-  const [activeTab, setActiveTab] = useState<'chats' | 'directory'>('chats');
-  const [roleFilter, setRoleFilter] = useState<string>('all');
-  const [showOnlyOnline, setShowOnlyOnline] = useState(false);
   const [showNewDmModal, setShowNewDmModal] = useState(false);
   const [newDmSearchQuery, setNewDmSearchQuery] = useState('');
-  const [newDmRoleFilter, setNewDmRoleFilter] = useState('all');
   const [selectedMessageForReads, setSelectedMessageForReads] = useState<ChatMessage | null>(null);
   const [showEmojiPicker, setShowEmojiPicker] = useState(false);
   const [activeReactionPickerMsgId, setActiveReactionPickerMsgId] = useState<number | null>(null);
@@ -65,11 +61,6 @@ export default function Communication() {
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isCapturing, setIsCapturing] = useState(false);
   const [activeLightboxImage, setActiveLightboxImage] = useState<string | null>(null);
-
-  // Firm Roster Right Sidebar state
-  const [showRosterSidebar, setShowRosterSidebar] = useState(false);
-  const [rosterSearch, setRosterSearch] = useState('');
-  const [rosterRoleFilter, setRosterRoleFilter] = useState('all');
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -322,63 +313,17 @@ export default function Communication() {
     }
   };
 
-  const getRoleBadge = (role?: string) => {
-    switch ((role || '').toLowerCase()) {
-      case 'admin':
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-purple-100 text-purple-800 border border-purple-200 shrink-0">
-            <Building2 size={10} /> Tenant / Owner
-          </span>
-        );
-      case 'manager':
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-amber-100 text-amber-800 border border-amber-200 shrink-0">
-            <ShieldCheck size={10} /> Manager
-          </span>
-        );
-      case 'supplier':
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-200 shrink-0">
-            <Truck size={10} /> Supplier
-          </span>
-        );
-      case 'cashier':
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-sky-100 text-sky-800 border border-sky-200 shrink-0">
-            <CreditCard size={10} /> Cashier
-          </span>
-        );
-      default:
-        return (
-          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] font-black uppercase tracking-wider bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
-            <User size={10} /> Staff
-          </span>
-        );
-    }
+  const getRoleBadge = (_role?: string) => {
+    // Role tags (Tenant / Owner, Manager, Staff, Supplier) removed from communication
+    return null;
   };
 
-  // Directory & Roster Role Filter Definition
   const isSupplierUser = user?.role === 'supplier';
-
-  const roleFilterOptions = isSupplierUser
-    ? [
-        { id: 'all', label: 'All Leadership', icon: Users },
-        { id: 'admin', label: 'Tenant / Store Owner', icon: Building2 },
-        { id: 'manager', label: 'Store Manager', icon: ShieldCheck }
-      ]
-    : [
-        { id: 'all', label: 'All', icon: Users },
-        { id: 'admin', label: 'Tenant/Owner', icon: Building2 },
-        { id: 'manager', label: 'Managers', icon: ShieldCheck },
-        { id: 'supplier', label: 'Suppliers', icon: Truck },
-        { id: 'staff', label: 'Floor Staff', icon: User },
-        { id: 'cashier', label: 'Cashiers', icon: CreditCard }
-      ];
 
   // Online count calculation
   const onlineMembersCount = teamMembers.filter(m => m.is_online).length;
 
-  // Filter channels and DMs
+  // Filter channels and DMs by searchFilter query
   const filteredChannels = channels.filter(c => 
     c.name.toLowerCase().includes(searchFilter.toLowerCase()) || 
     (c.description && c.description.toLowerCase().includes(searchFilter.toLowerCase()))
@@ -392,66 +337,8 @@ export default function Communication() {
     }
     const matchesSearch = d.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
       (d.other_user?.role && d.other_user.role.toLowerCase().includes(searchFilter.toLowerCase()));
-    if (showOnlyOnline) {
-      return matchesSearch && d.other_user?.is_online;
-    }
     return matchesSearch;
   });
-
-  // Filter team members in directory
-  const filteredTeam = teamMembers.filter(m => {
-    // If supplier, only allow seeing tenant / store owner or store manager
-    if (isSupplierUser) {
-      const r = m.role.toLowerCase();
-      if (r !== 'admin' && r !== 'manager' && !m.is_current_user) return false;
-    }
-    const matchesSearch = m.name.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      m.email.toLowerCase().includes(searchFilter.toLowerCase()) ||
-      (m.department && m.department.toLowerCase().includes(searchFilter.toLowerCase()));
-    
-    const matchesRole = roleFilter === 'all' || m.role.toLowerCase() === roleFilter.toLowerCase();
-    const matchesOnline = !showOnlyOnline || m.is_online;
-
-    return matchesSearch && matchesRole && matchesOnline;
-  });
-
-  // Filter team in right roster sidebar
-  const rosterMembers = teamMembers.filter(m => {
-    if (isSupplierUser) {
-      const r = m.role.toLowerCase();
-      if (r !== 'admin' && r !== 'manager' && !m.is_current_user) return false;
-    }
-    const matchesSearch = m.name.toLowerCase().includes(rosterSearch.toLowerCase()) ||
-      m.email.toLowerCase().includes(rosterSearch.toLowerCase()) ||
-      (m.department && m.department.toLowerCase().includes(rosterSearch.toLowerCase()));
-    const matchesRole = rosterRoleFilter === 'all' || m.role.toLowerCase() === rosterRoleFilter.toLowerCase();
-    return matchesSearch && matchesRole;
-  });
-
-  // Context-aware quick responses
-  const isSupplierChannelOrUser = activeChannel?.id === 'channel_suppliers' || 
-    activeChannel?.other_user?.role === 'supplier' || 
-    user?.role === 'supplier';
-
-  const quickResponses = isSupplierChannelOrUser
-    ? [
-        '📦 Stock verified & available',
-        '🚚 Shipment dispatched with waybill',
-        '📋 PO accepted & packaging started',
-        '📄 Invoice attached for review',
-        '⏱️ Delivery on schedule',
-        '✅ Received & stocked at dock'
-      ]
-    : [
-        '👍 Understood',
-        '✅ Task completed',
-        '👀 Reviewing now',
-        '📦 Stock verified',
-        '💰 Register reconciled',
-        '🙏 Thank you'
-      ];
-
-  const quickReactionEmojis = ['👍', '❤️', '😂', '😮', '😢', '🎉', '🚀', '🔥', '👏', '💯'];
 
   // In-conversation message search filter by content, sender name, or role
   const filteredMessages = messages.filter(msg => {
@@ -483,22 +370,8 @@ export default function Communication() {
           <div>
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-sm font-black text-slate-900 tracking-tight">Unified Communication Hub</h1>
-              <div className="hidden sm:flex items-center gap-1.5 flex-wrap">
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-                  <Building2 size={10} /> Tenant / Owner
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                  <ShieldCheck size={10} /> Managers
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-                  <User size={10} /> Staff
-                </span>
-                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  <Truck size={10} /> Suppliers
-                </span>
-              </div>
             </div>
-            <p className="text-[11px] text-slate-500 font-medium">Simple, unified real-time messaging connecting store ownership, operations team, and supplier partners</p>
+            <p className="text-[11px] text-slate-500 font-medium">Real-time messaging connecting store ownership, operations team, and managers</p>
           </div>
         </div>
 
@@ -507,7 +380,6 @@ export default function Communication() {
           {/* Quick New Direct Message Button */}
           <button
             onClick={() => {
-              setNewDmRoleFilter('all');
               setNewDmSearchQuery('');
               setShowNewDmModal(true);
             }}
@@ -516,25 +388,6 @@ export default function Communication() {
           >
             <Plus size={14} />
             <span className="hidden sm:inline">New Message</span>
-          </button>
-
-          {/* Firm Roster Quick Presence Toggle Button */}
-          <button
-            onClick={() => setShowRosterSidebar(prev => !prev)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition border cursor-pointer ${
-              showRosterSidebar
-                ? 'bg-blue-50 text-blue-700 border-blue-300 shadow-xs'
-                : 'bg-white hover:bg-slate-100 text-slate-700 border-slate-200 shadow-2xs'
-            }`}
-            title="Toggle directory online roster"
-          >
-            <Users size={14} className={showRosterSidebar ? 'text-blue-700' : 'text-blue-600'} />
-            <span className="hidden md:inline">Directory</span>
-            <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-black ${
-              showRosterSidebar ? 'bg-blue-200/60 text-blue-900' : 'bg-emerald-100 text-emerald-700'
-            }`}>
-              {onlineMembersCount} Online
-            </span>
           </button>
 
           {/* WebSocket Status Indicator */}
@@ -561,7 +414,7 @@ export default function Communication() {
               refreshTeamMembers();
             }}
             className="p-1.5 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-            title="Refresh channels and online roster"
+            title="Refresh channels and conversations"
           >
             <RefreshCw size={15} />
           </button>
@@ -572,82 +425,42 @@ export default function Communication() {
       <div className="flex-1 flex overflow-hidden">
         {/* Left Sidebar: Channels & Conversations */}
         <div className={`w-full md:w-80 lg:w-88 bg-white border-r border-slate-200 flex flex-col shrink-0 ${activeChannelId ? 'hidden md:flex' : 'flex'}`}>
-          {/* Tabs: Chats vs Team Directory */}
-          <div className="p-3 border-b border-slate-100 flex items-center gap-1 bg-slate-50/70">
-            <button
-              onClick={() => setActiveTab('chats')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'chats'
-                  ? 'bg-white text-blue-600 shadow-2xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <MessageSquare size={14} />
-              <span>Channels & Chats</span>
-            </button>
-            <button
-              onClick={() => setActiveTab('directory')}
-              className={`flex-1 py-1.5 px-3 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                activeTab === 'directory'
-                  ? 'bg-white text-blue-600 shadow-2xs border border-slate-200'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-              }`}
-            >
-              <Users size={14} />
-              <span>People Directory</span>
-              <span className="px-1.5 py-0.2 rounded-full text-[9px] bg-slate-200 text-slate-700 font-bold">
-                {teamMembers.length}
+          {/* Header & Search Bar (Filter removed, search maintained) */}
+          <div className="p-3 border-b border-slate-100 bg-slate-50/70 space-y-2">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                <MessageSquare size={14} className="text-blue-600" />
+                <span>Conversations</span>
               </span>
-            </button>
-          </div>
+              <span className="text-[10px] bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full font-bold">
+                {filteredChannels.length + filteredDms.length} Active
+              </span>
+            </div>
 
-          {/* Search Box & Online Only Filter */}
-          <div className="p-3 border-b border-slate-100 space-y-2">
             <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
                 type="text"
                 value={searchFilter}
                 onChange={(e) => setSearchFilter(e.target.value)}
-                placeholder={activeTab === 'chats' ? 'Search channels & direct messages...' : 'Search firm members by name/dept...'}
-                className="w-full pl-9 pr-3 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition"
+                placeholder="Search channels & direct messages..."
+                className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition shadow-2xs"
               />
               {searchFilter && (
                 <button 
                   onClick={() => setSearchFilter('')}
-                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                 >
                   <X size={13} />
                 </button>
               )}
             </div>
-
-            {/* Quick Online Presence Filter */}
-            <div className="flex items-center justify-between">
-              <button
-                onClick={() => setShowOnlyOnline(prev => !prev)}
-                className={`flex items-center gap-1.5 px-2 py-0.8 rounded-md text-[11px] font-bold transition ${
-                  showOnlyOnline
-                    ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                    : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200'
-                }`}
-              >
-                <span className={`w-1.5 h-1.5 rounded-full ${showOnlyOnline ? 'bg-emerald-600 animate-pulse' : 'bg-slate-400'}`} />
-                <span>Show Online Only ({onlineMembersCount})</span>
-              </button>
-
-              <span className="text-[10px] text-slate-400 font-medium">
-                {teamMembers.length} total staff
-              </span>
-            </div>
           </div>
 
-          {/* Scrollable List based on Active Tab */}
+          {/* Scrollable List of Channels & Direct Messages */}
           <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-            {activeTab === 'chats' ? (
-              <>
-                {/* Organizational Channels Section */}
-                <div className="p-2">
+            {/* Organizational Channels Section */}
+            <div className="p-2">
                   <div className="px-2 py-1 text-[10px] font-black uppercase tracking-wider text-slate-400 flex items-center justify-between">
                     <span>Firm Channels</span>
                     <span className="text-[9px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-bold">
@@ -744,7 +557,7 @@ export default function Communication() {
                   {filteredDms.length === 0 ? (
                     <div className="p-4 text-center">
                       <p className="text-xs text-slate-400">
-                        {showOnlyOnline ? 'No direct conversations with online members.' : 'No active direct messages yet.'}
+                        {searchFilter ? 'No direct conversations match your search.' : 'No active direct messages yet.'}
                       </p>
                       <button
                         onClick={() => setShowNewDmModal(true)}
@@ -808,84 +621,6 @@ export default function Communication() {
                     </div>
                   )}
                 </div>
-              </>
-            ) : (
-              /* Firm Roster Tab */
-              <div className="p-3">
-                {/* Role Filter Pills */}
-                <div className="flex items-center gap-1.5 mb-3 overflow-x-auto pb-1 custom-scrollbar">
-                  {roleFilterOptions.map(opt => {
-                    const Icon = opt.icon;
-                    const isSelected = roleFilter === opt.id;
-                    return (
-                      <button
-                        key={opt.id}
-                        type="button"
-                        onClick={() => setRoleFilter(opt.id)}
-                        className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
-                          isSelected
-                            ? 'bg-blue-600 text-white shadow-2xs'
-                            : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/60'
-                        }`}
-                      >
-                        <Icon size={11} />
-                        <span>{opt.label}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-
-                <div className="space-y-2">
-                  {filteredTeam.map(member => (
-                    <div
-                      key={member.id}
-                      className="p-2.5 bg-slate-50 hover:bg-slate-100/80 rounded-xl border border-slate-200 flex items-center justify-between gap-2 transition"
-                    >
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <div className="relative shrink-0">
-                          {member.profile_picture ? (
-                            <img src={member.profile_picture} alt={member.name} className="w-8 h-8 rounded-full object-cover border border-slate-200" />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-700 font-bold text-xs flex items-center justify-center uppercase">
-                              {member.name.charAt(0)}
-                            </div>
-                          )}
-                          <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white ${
-                            member.is_online ? 'bg-emerald-500 animate-pulse' : 'bg-slate-300'
-                          }`} />
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-xs font-bold text-slate-900 truncate">{member.name}</span>
-                            {member.is_current_user && (
-                              <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 rounded">You</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {getRoleBadge(member.role)}
-                            <span className="text-[10px] text-slate-400 truncate">{member.department || member.email}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {!member.is_current_user && (
-                        <button
-                          onClick={async () => {
-                            await startDirectMessage(member.id);
-                            setActiveTab('chats');
-                          }}
-                          className="px-2.5 py-1 bg-white hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200 hover:border-blue-600 rounded-lg text-xs font-bold transition shrink-0 flex items-center gap-1 shadow-2xs"
-                        >
-                          <MessageSquare size={12} />
-                          <span>Chat</span>
-                        </button>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -974,19 +709,6 @@ export default function Communication() {
                     title="Search conversation messages by content or sender"
                   >
                     <Search size={16} />
-                  </button>
-
-                  {/* Firm Presence Quick Sidebar Toggle */}
-                  <button
-                    onClick={() => setShowRosterSidebar(prev => !prev)}
-                    className={`p-2 rounded-lg border transition cursor-pointer ${
-                      showRosterSidebar
-                        ? 'bg-blue-50 text-blue-600 border-blue-200 shadow-2xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border-slate-200'
-                    }`}
-                    title="View firm members and online presence"
-                  >
-                    <Users size={16} />
                   </button>
                 </div>
               </div>
@@ -1165,55 +887,9 @@ export default function Communication() {
                               msg.content && <div className="whitespace-pre-wrap break-words">{msg.content}</div>
                             )}
 
-                            {/* Floating Quick Emoji Reaction Bar when open */}
-                            {!msg.is_deleted && activeReactionPickerMsgId === msg.id && (
-                              <div 
-                                className={`absolute -top-10 ${isMe ? 'right-0' : 'left-0'} flex items-center gap-1 bg-white border border-slate-200 shadow-xl rounded-full px-2 py-1 z-30 animate-in zoom-in-95 duration-100 text-slate-800`}
-                                onClick={e => e.stopPropagation()}
-                              >
-                                {quickReactionEmojis.map(emoji => (
-                                  <button
-                                    key={emoji}
-                                    type="button"
-                                    onClick={() => {
-                                      toggleReaction(msg.id, emoji);
-                                      setActiveReactionPickerMsgId(null);
-                                    }}
-                                    className="text-base hover:scale-130 transition-transform p-1 rounded-full hover:bg-slate-100 active:scale-95 cursor-pointer leading-none"
-                                    title={`React with ${emoji}`}
-                                  >
-                                    {emoji}
-                                  </button>
-                                ))}
-                                <button
-                                  type="button"
-                                  onClick={() => setActiveReactionPickerMsgId(null)}
-                                  className="p-1 text-slate-400 hover:text-slate-600 rounded-full hover:bg-slate-100 cursor-pointer"
-                                  title="Close picker"
-                                >
-                                  <X size={12} />
-                                </button>
-                              </div>
-                            )}
-
-                            {/* Hover Actions: Reaction, Reply & Delete */}
+                            {/* Hover Actions: Reply & Delete */}
                             {!msg.is_deleted && (
-                              <div className={`absolute top-1 ${isMe ? '-left-24' : '-right-24'} hidden group-hover/bubble:flex items-center gap-1 bg-white border border-slate-200 shadow-md rounded-lg p-1 z-10`}>
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setActiveReactionPickerMsgId(activeReactionPickerMsgId === msg.id ? null : msg.id);
-                                  }}
-                                  className={`p-1 rounded transition cursor-pointer ${
-                                    activeReactionPickerMsgId === msg.id
-                                      ? 'bg-amber-100 text-amber-700'
-                                      : 'text-slate-500 hover:text-amber-600 hover:bg-slate-100'
-                                  }`}
-                                  title="Add emoji reaction"
-                                >
-                                  <Smile size={13} />
-                                </button>
+                              <div className={`absolute top-1 ${isMe ? '-left-16' : '-right-16'} hidden group-hover/bubble:flex items-center gap-1 bg-white border border-slate-200 shadow-md rounded-lg p-1 z-10`}>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -1383,23 +1059,6 @@ export default function Communication() {
                 </div>
               )}
 
-              {/* Quick Preset Responses */}
-              <div className="px-3 py-1.5 bg-white border-t border-slate-100 flex items-center gap-1.5 overflow-x-auto custom-scrollbar">
-                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider shrink-0">Quick:</span>
-                {quickResponses.map(phrase => (
-                  <button
-                    key={phrase}
-                    onClick={() => {
-                      setInputText(phrase);
-                      textareaRef.current?.focus();
-                    }}
-                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-full text-[11px] font-medium transition shrink-0"
-                  >
-                    {phrase}
-                  </button>
-                ))}
-              </div>
-
               {/* WhatsApp-style Offline Delivery Info Banner */}
               {activeChannel.type === 'direct' && !activeChannel.other_user?.is_online && (
                 <div className="px-3.5 py-1.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-600 font-medium">
@@ -1498,179 +1157,6 @@ export default function Communication() {
           )}
         </div>
 
-        {/* Right Collapsible Panel: Firm Members & Online Presence Roster */}
-        {showRosterSidebar && (
-          <div className="w-72 sm:w-80 bg-white border-l border-slate-200 flex flex-col shrink-0 animate-in slide-in-from-right duration-150">
-            {/* Header */}
-            <div className="p-3.5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Users size={16} className="text-blue-600" />
-                <h3 className="text-xs font-black uppercase tracking-wider text-slate-900">Firm Members Roster</h3>
-              </div>
-              <button
-                onClick={() => setShowRosterSidebar(false)}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg hover:bg-slate-200/60"
-              >
-                <X size={15} />
-              </button>
-            </div>
-
-            {/* Presence Summary Bar */}
-            <div className="p-3 bg-blue-50/50 border-b border-slate-100 flex items-center justify-between">
-              <div className="flex items-center gap-2 text-xs">
-                <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse" />
-                <span className="font-bold text-slate-800">{onlineMembersCount} Currently Online</span>
-              </div>
-              <span className="text-[11px] text-slate-500 font-medium">{teamMembers.length} Total Staff</span>
-            </div>
-
-            {/* Roster Search & Role Filter */}
-            <div className="p-3 border-b border-slate-100 space-y-2">
-              <div className="relative">
-                <Search size={13} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400" />
-                <input
-                  type="text"
-                  value={rosterSearch}
-                  onChange={(e) => setRosterSearch(e.target.value)}
-                  placeholder="Filter roster members..."
-                  className="w-full pl-8 pr-2.5 py-1.5 bg-slate-100 border border-slate-200 rounded-lg text-xs text-slate-900 placeholder:text-slate-400 focus:bg-white focus:outline-none"
-                />
-              </div>
-
-              <div className="flex items-center gap-1 overflow-x-auto pb-0.5 custom-scrollbar">
-                {roleFilterOptions.map(opt => {
-                  const Icon = opt.icon;
-                  const isSel = rosterRoleFilter === opt.id;
-                  return (
-                    <button
-                      key={opt.id}
-                      type="button"
-                      onClick={() => setRosterRoleFilter(opt.id)}
-                      className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase transition flex items-center gap-1 shrink-0 cursor-pointer ${
-                        isSel
-                          ? 'bg-blue-600 text-white shadow-2xs'
-                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
-                      }`}
-                    >
-                      <Icon size={10} />
-                      <span>{opt.label}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Roster Members List */}
-            <div className="flex-1 overflow-y-auto p-3 space-y-2 divide-y divide-slate-100">
-              {/* Online Section */}
-              <div className="space-y-1.5">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
-                  Active Now ({rosterMembers.filter(m => m.is_online).length})
-                </div>
-
-                {rosterMembers.filter(m => m.is_online).length === 0 ? (
-                  <p className="text-xs text-slate-400 italic px-2 py-1">No other members currently online</p>
-                ) : (
-                  rosterMembers.filter(m => m.is_online).map(member => (
-                    <div 
-                      key={`online-${member.id}`}
-                      className="p-2 rounded-xl bg-emerald-50/40 border border-emerald-200/60 flex items-center justify-between gap-2"
-                    >
-                      <div className="flex items-center gap-2 min-w-0">
-                        <div className="relative shrink-0">
-                          {member.profile_picture ? (
-                            <img src={member.profile_picture} alt={member.name} className="w-8 h-8 rounded-full object-cover" />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-emerald-200 text-emerald-800 font-bold text-xs flex items-center justify-center uppercase">
-                              {member.name.charAt(0)}
-                            </div>
-                          )}
-                          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white bg-emerald-500 animate-pulse" />
-                        </div>
-
-                        <div className="min-w-0">
-                          <div className="flex items-center gap-1">
-                            <span className="text-xs font-bold text-slate-900 truncate">{member.name}</span>
-                            {member.is_current_user && (
-                              <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 rounded">You</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1 mt-0.5">
-                            {getRoleBadge(member.role)}
-                            <span className="text-[10px] text-slate-400 truncate">{member.department || member.email}</span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {!member.is_current_user && (
-                        <button
-                          onClick={async () => {
-                            await startDirectMessage(member.id);
-                          }}
-                          className="px-2 py-1 bg-white hover:bg-blue-600 hover:text-white text-blue-600 border border-blue-200 rounded-lg text-xs font-bold transition shrink-0 shadow-2xs"
-                          title="Message this online colleague"
-                        >
-                          Chat
-                        </button>
-                      )}
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Offline / Other Members Section */}
-              <div className="pt-2 space-y-1.5">
-                <div className="text-[10px] font-black uppercase tracking-wider text-slate-400 px-1">
-                  Offline Members ({rosterMembers.filter(m => !m.is_online).length})
-                </div>
-
-                {rosterMembers.filter(m => !m.is_online).map(member => (
-                  <div 
-                    key={`offline-${member.id}`}
-                    className="p-2 rounded-xl bg-slate-50 border border-slate-200/60 flex items-center justify-between gap-2"
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      <div className="relative shrink-0">
-                        {member.profile_picture ? (
-                          <img src={member.profile_picture} alt={member.name} className="w-8 h-8 rounded-full object-cover opacity-75" />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-slate-200 text-slate-600 font-bold text-xs flex items-center justify-center uppercase">
-                            {member.name.charAt(0)}
-                          </div>
-                        )}
-                        <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-white bg-slate-300" />
-                      </div>
-
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1">
-                          <span className="text-xs font-bold text-slate-700 truncate">{member.name}</span>
-                          {member.is_current_user && (
-                            <span className="text-[9px] font-bold text-blue-600 bg-blue-50 px-1 rounded">You</span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-1 mt-0.5">
-                          {getRoleBadge(member.role)}
-                          <span className="text-[10px] text-slate-400 truncate">{member.department || member.email}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {!member.is_current_user && (
-                      <button
-                        onClick={async () => {
-                          await startDirectMessage(member.id);
-                        }}
-                        className="px-2 py-1 bg-white hover:bg-slate-200 text-slate-600 border border-slate-200 rounded-lg text-xs font-bold transition shrink-0 shadow-2xs"
-                      >
-                        Chat
-                      </button>
-                    )}
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
       </div>
 
       {/* Modal: Interactive Live Device Camera Capture */}
@@ -1936,43 +1422,28 @@ export default function Communication() {
               )}
             </div>
 
-            {/* Role Filter Tabs inside Modal */}
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 custom-scrollbar">
-              {roleFilterOptions.map(opt => {
-                const Icon = opt.icon;
-                const isSel = newDmRoleFilter === opt.id;
-                return (
-                  <button
-                    key={opt.id}
-                    type="button"
-                    onClick={() => setNewDmRoleFilter(opt.id)}
-                    className={`px-2.5 py-1 rounded-lg text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 transition shrink-0 cursor-pointer ${
-                      isSel
-                        ? 'bg-blue-600 text-white shadow-2xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200 border border-slate-200/60'
-                    }`}
-                  >
-                    <Icon size={11} />
-                    <span>{opt.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-
             {/* Filtered Members List */}
             <div className="space-y-1 max-h-72 overflow-y-auto divide-y divide-slate-100 custom-scrollbar pr-1">
               {teamMembers
                 .filter(m => m.id !== user?.id)
                 .filter(m => {
+                  const myRole = (user?.role || '').toLowerCase();
+                  if (myRole === 'staff' || myRole === 'cashier') {
+                    const r = (m.role || '').toLowerCase();
+                    if (!['staff', 'cashier', 'manager', 'admin'].includes(r)) return false;
+                  }
                   if (isSupplierUser) {
                     const r = m.role.toLowerCase();
                     if (r !== 'admin' && r !== 'manager') return false;
                   }
-                  const matchSearch = m.name.toLowerCase().includes(newDmSearchQuery.toLowerCase()) ||
-                    m.email.toLowerCase().includes(newDmSearchQuery.toLowerCase()) ||
-                    (m.department && m.department.toLowerCase().includes(newDmSearchQuery.toLowerCase()));
-                  const matchRole = newDmRoleFilter === 'all' || m.role.toLowerCase() === newDmRoleFilter.toLowerCase();
-                  return matchSearch && matchRole;
+                  if (!newDmSearchQuery.trim()) return true;
+                  const q = newDmSearchQuery.toLowerCase();
+                  return (
+                    (m.name || '').toLowerCase().includes(q) ||
+                    (m.email || '').toLowerCase().includes(q) ||
+                    (m.role || '').toLowerCase().includes(q) ||
+                    (m.department || '').toLowerCase().includes(q)
+                  );
                 })
                 .map(member => (
                   <button

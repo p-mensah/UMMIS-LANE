@@ -1,11 +1,11 @@
 import React, { useEffect, useState, useRef, useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { 
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
-  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical
+  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -18,11 +18,14 @@ import InvoiceModal from '../components/InvoiceModal';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
 import { getDisplayCustomerPhone } from '../lib/privacy';
+import TabletPOSLayout from '../components/tablet/TabletPOSLayout';
 
 export default function Sales() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [isTabletMode, setIsTabletMode] = useState<boolean>(searchParams.get('mode') === 'tablet');
   const [sales, setSales] = useState<any[]>([]);
   const [weeklyTrends, setWeeklyTrends] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -413,37 +416,77 @@ export default function Sales() {
     };
   }, [weeklyChartData]);
 
+  if (isTabletMode) {
+    return (
+      <TabletPOSLayout
+        products={products}
+        categories={categories}
+        customers={customers}
+        user={user}
+        onCheckout={async (items, customerId, paymentMethod) => {
+          const res = await fetchApi('/sales', {
+            method: 'POST',
+            body: JSON.stringify({ 
+              items, 
+              customer_id: customerId ? parseInt(customerId, 10) : null,
+              payment_method: paymentMethod
+            })
+          });
+          addToast('Sale recorded successfully!', 'success');
+          loadData();
+          return res;
+        }}
+        onExitTabletMode={() => setIsTabletMode(false)}
+        onRefresh={loadData}
+        isLoading={loading}
+      />
+    );
+  }
+
   return (
     <div className="space-y-6">
-      {/* Top Banner & Quick Controls */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white p-5 rounded border border-slate-200 shadow-2xs">
+      {/* Sleek Breadcrumb & Action Controls Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs">
         <div>
-          <h1 className="text-xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            <Store size={22} className="text-blue-600" />
-            Sales Transactions & Point of Sale (POS)
+          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
+            <span>Sales Operations</span>
+            <span>/</span>
+            <span className="text-slate-900 font-black">POS Terminal & Ledger</span>
+          </div>
+          <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight flex items-center gap-2 mt-0.5">
+            <Store size={20} className="text-blue-600" />
+            Point of Sale (POS) & Transactions
           </h1>
-          <p className="text-xs text-slate-500 font-medium mt-0.5">
-            Process new sales transactions, manage checkout ledgers, and issue print-friendly invoices.
-          </p>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
+        <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+          {/* Toggle into Touch Tablet POS Mode (Min 48px Target) */}
+          <button 
+            type="button"
+            onClick={() => setIsTabletMode(true)} 
+            className="min-h-[48px] px-4 py-2.5 bg-slate-900 hover:bg-slate-800 active:bg-slate-950 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2 cursor-pointer border border-slate-700 active:scale-95"
+            title="Switch to touch-friendly Tablet POS mode"
+          >
+            <Tablet size={16} className="text-blue-400" />
+            <span>Tablet POS Mode</span>
+          </button>
+
           <button 
             type="button"
             id="export-sales-header-csv-btn"
             onClick={handleExportCSV} 
             disabled={filteredSalesTable.length === 0} 
-            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            className="min-h-[48px] px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
             title="Export current table data to CSV"
           >
             <Download size={15} /> Export CSV ({filteredSalesTable.length})
           </button>
 
           <button 
-            onClick={() => setShowPOSModal(true)} 
-            className="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2"
+            onClick={() => setIsTabletMode(true)} 
+            className="min-h-[48px] px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
           >
-            <ShoppingCart size={16} /> New Sales Session
+            <ShoppingCart size={17} /> New Sales Session
           </button>
         </div>
       </div>

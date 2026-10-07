@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { Bell, RefreshCw, CheckCheck, X } from 'lucide-react';
 import { useNotifications } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
 
 export default function NotificationBell() {
+  const { user } = useAuth();
   const [isOpen, setIsOpen] = useState(false);
   const [filter, setFilter] = useState<'all' | 'unread' | 'warnings'>('all');
   const dropdownRef = useRef<HTMLDivElement>(null);
@@ -72,7 +74,7 @@ export default function NotificationBell() {
       if (text.includes('stock') || text.includes('inventory') || text.includes('catalog') || text.includes('product')) {
         target = '/products';
       } else if (text.includes('purchase') || text.includes('restock') || text.includes('supplier') || text.includes('reorder')) {
-        target = '/purchases';
+        target = user?.role === 'admin' ? '/purchases' : '/products';
       } else if (text.includes('sale') || text.includes('pos') || text.includes('terminal') || text.includes('receipt')) {
         target = '/sales';
       } else if (text.includes('shift') || text.includes('register') || text.includes('cash drawer')) {

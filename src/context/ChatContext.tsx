@@ -129,8 +129,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         const dmUnread = (data.directMessages || []).reduce((acc, d) => acc + (d.unread_count || 0), 0);
         setTotalUnread(chanUnread + dmUnread);
       }
-    } catch (err) {
-      console.warn('Error refreshing channels:', err);
+    } catch (err: any) {
+      // Retry once after 1s during startup/reconnect before warning
+      setTimeout(async () => {
+        try {
+          const data = await fetchApi<{ channels: ChatChannel[]; directMessages: ChatChannel[]; websocketKey: string }>('/api/chat/channels');
+          if (data) {
+            setChannels(data.channels || []);
+            setDirectMessages(data.directMessages || []);
+          }
+        } catch {
+          // Silent fallback on background sync
+        }
+      }, 1000);
     }
   }, [user]);
 
@@ -142,8 +153,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       if (data?.team) {
         setTeamMembers(data.team);
       }
-    } catch (err) {
-      console.warn('Error fetching team members:', err);
+    } catch (err: any) {
+      // Retry once after 1s during startup/reconnect before warning
+      setTimeout(async () => {
+        try {
+          const data = await fetchApi<{ team: TeamMember[] }>('/api/chat/team');
+          if (data?.team) {
+            setTeamMembers(data.team);
+          }
+        } catch {
+          // Silent fallback on background sync
+        }
+      }, 1000);
     }
   }, [user]);
 

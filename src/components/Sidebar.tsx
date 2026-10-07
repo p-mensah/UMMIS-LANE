@@ -22,6 +22,7 @@ import {
   User,
   Lock,
   LogOut,
+  Tablet,
   X
 } from 'lucide-react';
 

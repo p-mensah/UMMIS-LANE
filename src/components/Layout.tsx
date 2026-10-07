@@ -48,7 +48,7 @@ function LiveRealtimeClock() {
   });
 
   return (
-    <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 shadow-2xs">
+    <div className="hidden xl:flex items-center gap-2 px-3 py-1.5 bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold border border-slate-200 shadow-2xs">
       <div className="flex items-center gap-1.5 font-mono text-slate-900 font-bold">
         <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
         <span>{timeString}</span>
@@ -74,6 +74,18 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [isSearching, setIsSearching] = useState(false);
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
   const searchRef = useRef<HTMLDivElement>(null);
+
+  // Auto-collapse sidebar on tablet viewports (768px – 1024px) to maximize screen real estate
+  useEffect(() => {
+    const handleViewportChange = () => {
+      if (window.innerWidth >= 768 && window.innerWidth <= 1024) {
+        setIsNavCollapsed(true);
+      }
+    };
+    handleViewportChange();
+    window.addEventListener('resize', handleViewportChange);
+    return () => window.removeEventListener('resize', handleViewportChange);
+  }, []);
 
   // Listen to navigation slider events from action menu or page triggers
   useEffect(() => {
@@ -198,30 +210,40 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       {/* Main Content Area (Fluid flex viewport with auto-fit container) */}
       <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden bg-slate-100 relative print:overflow-visible print:h-auto">
         {/* Top Header Bar - Always pinned and accessible */}
-        <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-xs border-b border-slate-200 flex items-center justify-between px-4 sm:px-6 lg:px-8 shrink-0 shadow-2xs print:hidden">
-          <div className="flex items-center gap-3 min-w-0">
+        <header className="sticky top-0 z-30 h-14 sm:h-16 bg-white/95 backdrop-blur-xs border-b border-slate-200 flex items-center justify-between px-3 sm:px-5 lg:px-6 shrink-0 shadow-2xs print:hidden">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 sm:flex-initial mr-2">
             {/* Mobile Hamburger Menu Button */}
             <button
               id="mobile-menu-toggle-btn"
               onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
-              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg md:hidden shrink-0 transition-colors"
+              className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg md:hidden shrink-0 transition-colors cursor-pointer"
               title="Toggle Menu"
             >
               <Menu size={20} />
             </button>
 
-            <div className="min-w-0">
-              <span className="hidden sm:inline text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                UMMIS LANE ENT /
-              </span>
-              <h2 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight leading-none truncate mt-0.5">
+            {/* Desktop / Tablet Navigation Rail Toggle Button */}
+            <button
+              type="button"
+              onClick={() => setIsNavCollapsed(!isNavCollapsed)}
+              className="hidden md:flex p-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-lg shrink-0 transition-colors cursor-pointer"
+              title={isNavCollapsed ? "Expand Navigation Sidebar" : "Collapse to Navigation Rail"}
+            >
+              <SlidersHorizontal size={17} />
+            </button>
+
+            {/* Single Clear Breadcrumb / Header Hierarchy (No Redundancy) */}
+            <div className="min-w-0 flex items-center gap-1.5 text-xs sm:text-sm">
+              <span className="hidden sm:inline font-bold text-slate-400 shrink-0">Retail OS</span>
+              <span className="hidden sm:inline text-slate-300">/</span>
+              <h2 className="font-black text-slate-900 tracking-tight truncate leading-tight">
                 {getPageTitle()}
               </h2>
             </div>
           </div>
 
           {/* Global Search Bar */}
-          <div className="relative flex-1 max-w-xs mx-4 hidden md:block" ref={searchRef}>
+          <div className="relative flex-1 max-w-xs mx-3 hidden lg:block" ref={searchRef}>
             <div className="relative">
               <Search size={15} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
               <input

@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch, Eye } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch, Eye, Tablet } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
 import BulkCsvProductModal from '../components/BulkCsvProductModal';
@@ -541,29 +541,29 @@ export default function Products() {
           {user?.role === 'admin' && (
             <div className="flex items-center flex-wrap gap-2">
               <button 
-                type="button"
-                onClick={openNew} 
-                className="flex items-center justify-center px-3.5 py-2 bg-white text-blue-900 hover:bg-blue-50 rounded font-black text-xs uppercase tracking-wider transition shadow-sm cursor-pointer active:scale-95"
-              >
-                <Plus size={15} className="mr-1 text-blue-700" /> Add Product
-              </button>
-              <button 
-                type="button"
-                onClick={() => setShowImportModal(true)}
-                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
-              >
-                <Table size={14} className="mr-1.5 text-blue-200" /> Import
-              </button>
-              <button 
-                type="button"
-                id="export-products-header-csv-btn"
-                onClick={exportTableToCSV}
-                disabled={filteredProducts.length === 0}
-                className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer disabled:opacity-50"
-                title="Export current table data to CSV"
-              >
-                <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV ({filteredProducts.length})
-              </button>
+                  type="button"
+                  onClick={openNew} 
+                  className="flex items-center justify-center px-3.5 py-2 bg-white text-blue-900 hover:bg-blue-50 rounded font-black text-xs uppercase tracking-wider transition shadow-sm cursor-pointer active:scale-95"
+                >
+                  <Plus size={15} className="mr-1 text-blue-700" /> Add Product
+                </button>
+                <button 
+                  type="button"
+                  onClick={() => setShowImportModal(true)}
+                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                >
+                  <Table size={14} className="mr-1.5 text-blue-200" /> Import
+                </button>
+                <button 
+                  type="button"
+                  id="export-products-header-csv-btn"
+                  onClick={exportTableToCSV}
+                  disabled={filteredProducts.length === 0}
+                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer disabled:opacity-50"
+                  title="Export current table data to CSV"
+                >
+                  <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV ({filteredProducts.length})
+                </button>
             </div>
           )}
         </div>
@@ -583,23 +583,19 @@ export default function Products() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full border-2 border-slate-200 focus:border-blue-600 rounded-lg pl-11 pr-24 py-2.5 text-sm font-medium text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500/20 bg-slate-50/50 transition-all"
             />
-            {/* Quick clear & live match counter pill */}
-            <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-2">
-              {searchQuery && (
+            {/* Quick clear button */}
+            {searchQuery && (
+              <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center">
                 <button 
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="px-1.5 py-0.5 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition text-xs font-bold flex items-center gap-1 cursor-pointer"
+                  className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-200 rounded transition cursor-pointer"
                   title="Clear search"
                 >
-                  <X size={14} />
-                  <span className="text-[11px]">Clear</span>
+                  <X size={15} />
                 </button>
-              )}
-              <span className="text-[11px] font-mono font-black px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
-                {filteredProducts.length} {filteredProducts.length === 1 ? 'match' : 'matches'}
-              </span>
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Search scope toggles: All vs Product Name vs SKU */}
@@ -675,26 +671,14 @@ export default function Products() {
         {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (
           <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className="font-semibold text-slate-700">Active Filter:</span>
-              {searchQuery && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
-                  <span>{searchScope === 'name' ? 'Name:' : searchScope === 'sku' ? 'SKU:' : 'Keyword:'}</span>
-                  <span className="text-slate-900 font-mono font-black">"{searchQuery}"</span>
-                  <button type="button" onClick={() => setSearchQuery('')} className="hover:text-red-600 ml-0.5 cursor-pointer">
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-              {selectedCategory && selectedCategory !== 'ALL' && (
-                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 text-[11px] font-bold">
-                  <span>Category: {selectedCategory}</span>
-                  <button type="button" onClick={() => handleCategoryChange('ALL')} className="hover:text-red-600 ml-0.5 cursor-pointer">
-                    <X size={12} />
-                  </button>
-                </span>
-              )}
-              <span className="text-slate-500 font-medium">
-                — Showing {filteredProducts.length} of {products.length} items
+              <span className="font-semibold text-slate-700">Filter applied:</span>
+              <span className="text-slate-600">
+                {searchQuery && `Search: "${searchQuery}"`}
+                {searchQuery && selectedCategory && selectedCategory !== 'ALL' && ' • '}
+                {selectedCategory && selectedCategory !== 'ALL' && `Category: ${selectedCategory}`}
+              </span>
+              <span className="text-slate-400 font-medium">
+                ({filteredProducts.length} items found)
               </span>
             </div>
 
@@ -704,9 +688,9 @@ export default function Products() {
                 setSearchQuery('');
                 handleCategoryChange('ALL');
               }}
-              className="text-[11px] font-bold text-slate-500 hover:text-red-600 underline cursor-pointer"
+              className="text-[11px] font-bold text-blue-600 hover:text-red-600 transition cursor-pointer"
             >
-              Reset all filters
+              Clear filters
             </button>
           </div>
         )}

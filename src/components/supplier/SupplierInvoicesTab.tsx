@@ -18,7 +18,11 @@ import {
   Calendar,
   AlertCircle,
   X,
-  Check
+  Check,
+  Eye,
+  Printer,
+  Trash2,
+  Download
 } from 'lucide-react';
 
 interface SupplierInvoicesTabProps {
@@ -83,6 +87,11 @@ export default function SupplierInvoicesTab({
   const [uploadedDocUrl, setUploadedDocUrl] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+
+  // Modal & Action states
+  const [viewingInvoice, setViewingInvoice] = useState<SupplierInvoice | null>(null);
+  const [attachingDocInvoice, setAttachingDocInvoice] = useState<SupplierInvoice | null>(null);
+  const [deletingInvoice, setDeletingInvoice] = useState<SupplierInvoice | null>(null);
 
   // Settlement Status Modal for Admin
   const [settlingInvoice, setSettlingInvoice] = useState<SupplierInvoice | null>(null);
@@ -184,6 +193,32 @@ export default function SupplierInvoicesTab({
       onRefresh();
     } catch (err: any) {
       addToast(err.message || 'Failed to update status', 'error');
+    }
+  };
+
+  const handleDeleteInvoice = async (invoiceId: number) => {
+    try {
+      await fetchApi(`/supplier/invoices-ledger/${invoiceId}`, { method: 'DELETE' });
+      addToast('Invoice deleted successfully', 'success');
+      setDeletingInvoice(null);
+      if (viewingInvoice?.id === invoiceId) setViewingInvoice(null);
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete invoice', 'error');
+    }
+  };
+
+  const handleUpdateInvoiceDoc = async (invoiceId: number, docUrl: string, fileName: string) => {
+    try {
+      await fetchApi(`/supplier/invoices-ledger/${invoiceId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ document_url: docUrl, file_name: fileName })
+      });
+      addToast('Invoice document attached successfully', 'success');
+      setAttachingDocInvoice(null);
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to attach document', 'error');
     }
   };
 
@@ -354,18 +389,70 @@ export default function SupplierInvoicesTab({
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      {isAdmin && (
+                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
+                        {/* View Details Action */}
+                        <button
+                          type="button"
+                          onClick={() => setViewingInvoice(inv)}
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                          title="View complete invoice details"
+                        >
+                          <Eye size={13} />
+                        </button>
+
+                        {/* Print Invoice Action */}
                         <button
                           type="button"
                           onClick={() => {
-                            setSettlingInvoice(inv);
-                            setTargetStatus(inv.status === 'unpaid' ? 'scheduled' : 'paid');
+                            setViewingInvoice(inv);
+                            setTimeout(() => window.print(), 300);
                           }}
-                          className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded text-[11px] transition-colors cursor-pointer"
+                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-bold rounded-lg text-xs transition-colors cursor-pointer"
+                          title="Print or export invoice"
                         >
-                          Update Settlement
+                          <Printer size={13} />
                         </button>
-                      )}
+
+                        {/* Attach Document if missing */}
+                        {!inv.document_url && (
+                          <button
+                            type="button"
+                            onClick={() => setAttachingDocInvoice(inv)}
+                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                            title="Attach PDF or image to this invoice"
+                          >
+                            <Upload size={11} />
+                            <span>Attach</span>
+                          </button>
+                        )}
+
+                        {/* Admin Settlement Action */}
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSettlingInvoice(inv);
+                              setTargetStatus(inv.status === 'unpaid' ? 'scheduled' : 'paid');
+                            }}
+                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] transition-colors cursor-pointer flex items-center gap-1"
+                          >
+                            <ShieldCheck size={12} />
+                            <span>Settle</span>
+                          </button>
+                        )}
+
+                        {/* Delete / Cancel Action (Unpaid only) */}
+                        {inv.status !== 'paid' && (
+                          <button
+                            type="button"
+                            onClick={() => setDeletingInvoice(inv)}
+                            className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
+                            title="Delete this invoice"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -607,6 +694,233 @@ export default function SupplierInvoicesTab({
                 className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition cursor-pointer"
               >
                 Save Status
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: View Full Invoice Details & Print Preview */}
+      {viewingInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-lg w-full p-6 space-y-5 my-8">
+            <div className="flex items-center justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 flex items-center justify-center">
+                  <FileText size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                    <span>{viewingInvoice.invoice_number}</span>
+                    {getStatusBadge(viewingInvoice.status)}
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium">Commercial Supplier Invoice Statement</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setViewingInvoice(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Invoice Breakdown Details */}
+            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-3 text-xs">
+              <div className="grid grid-cols-2 gap-3 pb-3 border-b border-slate-200/60">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Supplier</span>
+                  <span className="font-bold text-slate-900 text-sm">{viewingInvoice.supplier_name || activeSupplier}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Amount Due</span>
+                  <span className="font-black text-blue-700 text-base">{formatGHS(viewingInvoice.amount)}</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Invoice Date</span>
+                  <span className="font-semibold text-slate-800">{new Date(viewingInvoice.invoice_date).toLocaleDateString()}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Due Date</span>
+                  <span className="font-semibold text-slate-800">{new Date(viewingInvoice.due_date).toLocaleDateString()}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Payment Terms</span>
+                  <span className="font-semibold text-slate-800">{viewingInvoice.payment_terms || 'Net 30'}</span>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">Shipment / PO Ref</span>
+                  <span className="font-mono font-bold text-slate-800">{viewingInvoice.shipment_number || 'General Fulfillment'}</span>
+                </div>
+              </div>
+
+              {viewingInvoice.notes && (
+                <div className="pt-2 border-t border-slate-200/60">
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-0.5">Notes & Instructions</span>
+                  <p className="text-slate-600 italic bg-white p-2 rounded-lg border border-slate-200">{viewingInvoice.notes}</p>
+                </div>
+              )}
+
+              {viewingInvoice.status === 'paid' && (
+                <div className="p-2.5 bg-emerald-50 border border-emerald-200 rounded-lg text-emerald-900 flex items-center justify-between">
+                  <span className="font-bold">Settled: {viewingInvoice.paid_by ? `Paid by ${viewingInvoice.paid_by}` : 'Paid in full'}</span>
+                  <span className="text-[10px] font-mono">{viewingInvoice.paid_at ? new Date(viewingInvoice.paid_at).toLocaleDateString() : ''}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Document link if available */}
+            {viewingInvoice.document_url ? (
+              <div className="flex items-center justify-between p-3 bg-blue-50/70 border border-blue-200 rounded-xl text-xs">
+                <div className="flex items-center gap-2 text-blue-950 font-bold">
+                  <FileText size={16} className="text-blue-600" />
+                  <span>{viewingInvoice.file_name || 'Attached Invoice Document'}</span>
+                </div>
+                <a
+                  href={viewingInvoice.document_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs flex items-center gap-1 shadow-2xs"
+                >
+                  <ExternalLink size={12} />
+                  <span>Open Vault File</span>
+                </a>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
+                <span>No document file currently uploaded.</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const inv = viewingInvoice;
+                    setViewingInvoice(null);
+                    setAttachingDocInvoice(inv);
+                  }}
+                  className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs"
+                >
+                  Attach File Now
+                </button>
+              </div>
+            )}
+
+            {/* Actions footer */}
+            <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs">
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold rounded-lg flex items-center gap-1.5 transition cursor-pointer"
+              >
+                <Printer size={14} />
+                <span>Print Invoice</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setViewingInvoice(null)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Attach Document to Existing Invoice */}
+      {attachingDocInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Attach Document</h3>
+                <p className="text-[11px] text-slate-500">Invoice #{attachingDocInvoice.invoice_number}</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setAttachingDocInvoice(null)}
+                className="p-1 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-3 text-xs">
+              <div className="border-2 border-dashed border-slate-300 rounded-xl p-5 text-center bg-slate-50">
+                <Upload size={24} className="mx-auto text-slate-400 mb-2" />
+                <p className="font-bold text-slate-700">Select Invoice File</p>
+                <p className="text-[10px] text-slate-400 mb-3">PDF, PNG, or JPEG up to 1MB</p>
+                <input
+                  type="file"
+                  accept=".pdf,image/*"
+                  onChange={async (e) => {
+                    const file = e.target.files?.[0];
+                    if (!file) return;
+                    if (file.size > 1024 * 1024) {
+                      addToast('File exceeds 1MB limit.', 'error');
+                      return;
+                    }
+                    try {
+                      addToast('Uploading document to vault...', 'info');
+                      const res = await uploadToCloudinary(file, { folder: 'supplier_invoices' });
+                      await handleUpdateInvoiceDoc(attachingDocInvoice.id, res.url, file.name);
+                    } catch (err: any) {
+                      addToast(err.message || 'Upload failed', 'error');
+                    }
+                  }}
+                  className="block w-full text-xs text-slate-500 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
+                />
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setAttachingDocInvoice(null)}
+                className="px-3.5 py-1.5 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-50 transition cursor-pointer text-xs"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Confirm Delete Invoice */}
+      {deletingInvoice && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-xl">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Delete Invoice?</h3>
+                <p className="text-[11px] text-slate-500">Invoice #{deletingInvoice.invoice_number}</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600">
+              Are you sure you want to remove this invoice for <strong>{formatGHS(deletingInvoice.amount)}</strong>? This action will remove the record from the settlement ledger.
+            </p>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100 text-xs">
+              <button
+                type="button"
+                onClick={() => setDeletingInvoice(null)}
+                className="px-3.5 py-1.5 border border-slate-200 text-slate-600 font-bold rounded-lg hover:bg-slate-50 transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteInvoice(deletingInvoice.id)}
+                className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-lg transition cursor-pointer"
+              >
+                Delete Invoice
               </button>
             </div>
           </div>

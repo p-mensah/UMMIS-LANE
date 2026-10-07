@@ -29,6 +29,7 @@ import ProductDetail from './pages/ProductDetail';
 import Returns from './pages/Returns';
 import SupplierDashboard from './pages/SupplierDashboard';
 import Communication from './pages/Communication';
+import TabletInventory from './pages/TabletInventory';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -49,7 +50,7 @@ function PurchasesRoute() {
   if (user?.role === 'supplier') {
     return <SupplierDashboard initialTab="shipments" />;
   }
-  if (user?.role === 'staff') {
+  if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
   return <Purchases />;
@@ -103,6 +104,9 @@ export default function App() {
               <Route path="/suppliers" element={<PrivateRoute><Suppliers /></PrivateRoute>} />
               <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
               <Route path="/audit-logs" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
+              <Route path="/tablet-pos" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
+              <Route path="/tablet-inventory" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
+              <Route path="/tablet-mode" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
             </Routes>
           </ChatProvider>
         </NotificationProvider>

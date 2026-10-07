@@ -2380,6 +2380,9 @@ app.get('/api/sales/:id', authenticate, (req: any, res) => {
 
 // Purchases & Purchase Orders
 app.post('/api/purchases', authenticate, (req: any, res) => {
+  if (req.user?.role === 'staff' || req.user?.role === 'cashier') {
+    return res.status(403).json({ error: 'Permission denied: Store staff cannot create purchase orders.' });
+  }
   const { 
     supplier_name, supplier_contact, items, status, notes, expected_date,
     fulfillment_mode, driver_name, driver_phone, vehicle_number, dock_slot, 
@@ -2476,6 +2479,9 @@ app.post('/api/purchases', authenticate, (req: any, res) => {
 });
 
 app.get('/api/purchases', authenticate, (req: any, res) => {
+  if (req.user?.role === 'staff' || req.user?.role === 'cashier') {
+    return res.status(403).json({ error: 'Access denied: Store staff cannot view purchase orders.' });
+  }
   try {
     let sql = `
       SELECT 
@@ -4820,6 +4826,58 @@ app.put('/api/supplier/invoices-ledger/:id/status', authenticate, (req: any, res
   }
 });
 
+app.delete('/api/supplier/invoices-ledger/:id', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const invoice: any = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    if (invoice.status === 'paid' && req.user.role !== 'admin') {
+      return res.status(400).json({ error: 'Cannot delete a settled/paid invoice.' });
+    }
+
+    db.prepare('DELETE FROM supplier_invoices_ledger WHERE id = ?').run(id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Deleted Supplier Invoice',
+      'invoice',
+      `Deleted invoice #${invoice.invoice_number} (Amount: GHS ${invoice.amount}).`,
+      clientIp
+    );
+
+    res.json({ success: true, message: 'Invoice removed successfully' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/supplier/invoices-ledger/:id', authenticate, (req: any, res) => {
+  try {
+    const { id } = req.params;
+    const { document_url, file_name, notes, payment_terms } = req.body;
+    const invoice: any = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(id);
+    if (!invoice) return res.status(404).json({ error: 'Invoice not found' });
+
+    db.prepare(`
+      UPDATE supplier_invoices_ledger SET
+        document_url = COALESCE(?, document_url),
+        file_name = COALESCE(?, file_name),
+        notes = COALESCE(?, notes),
+        payment_terms = COALESCE(?, payment_terms),
+        updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?
+    `).run(document_url || null, file_name || null, notes || null, payment_terms || null, id);
+
+    const updated = db.prepare('SELECT * FROM supplier_invoices_ledger WHERE id = ?').get(id);
+    res.json(updated);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 
 // Inventory & Replenishment Triggers
 app.get('/api/supplier/replenishment-triggers', authenticate, (req: any, res) => {
@@ -5234,49 +5292,58 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
     checkStockAlerts();
 
     const items = db.prepare(`
+      WITH p_scoped AS (
+        SELECT 
+          p.id, 
+          p.name, 
+          p.sku, 
+          p.category, 
+          p.stock_quantity, 
+          p.cost_price, 
+          p.selling_price, 
+          p.unit_of_measure, 
+          p.brand, 
+          p.image_url, 
+          p.min_stock_level,
+          COALESCE(p.min_stock_level, ?) as threshold
+        FROM products p
+      )
       SELECT 
-        p.id, 
-        p.name, 
-        p.sku, 
-        p.category, 
-        p.stock_quantity, 
-        p.cost_price, 
-        p.selling_price, 
-        p.unit_of_measure, 
-        p.brand, 
-        p.image_url, 
-        p.min_stock_level,
-        COALESCE(p.min_stock_level, ?) as threshold,
+        id, 
+        name, 
+        sku, 
+        category, 
+        stock_quantity, 
+        cost_price, 
+        selling_price, 
+        unit_of_measure, 
+        brand, 
+        image_url, 
+        min_stock_level,
+        threshold,
         CASE 
-          WHEN p.stock_quantity <= 0 THEN 'out_of_stock'
-          WHEN p.stock_quantity <= COALESCE(p.min_stock_level, ?) THEN 'breached'
-          WHEN p.stock_quantity <= CASE 
-            WHEN COALESCE(p.min_stock_level, ?) <= 10 THEN COALESCE(p.min_stock_level, ?) + 5 
-            ELSE CAST(COALESCE(p.min_stock_level, ?) * 1.5 AS INT) 
+          WHEN stock_quantity <= 0 THEN 'out_of_stock'
+          WHEN stock_quantity <= threshold THEN 'breached'
+          WHEN stock_quantity <= CASE 
+            WHEN threshold <= 10 THEN threshold + 5 
+            ELSE CAST(threshold * 1.5 AS INT) 
           END THEN 'nearing'
           ELSE 'healthy'
         END as proximity_status,
-        (p.stock_quantity - COALESCE(p.min_stock_level, ?)) as buffer_to_threshold
-      FROM products p
+        (stock_quantity - threshold) as buffer_to_threshold
+      FROM p_scoped
       ORDER BY 
         CASE 
-          WHEN p.stock_quantity <= 0 THEN 1
-          WHEN p.stock_quantity <= COALESCE(p.min_stock_level, ?) THEN 2
-          WHEN p.stock_quantity <= CASE 
-            WHEN COALESCE(p.min_stock_level, ?) <= 10 THEN COALESCE(p.min_stock_level, ?) + 5 
-            ELSE CAST(COALESCE(p.min_stock_level, ?) * 1.5 AS INT) 
+          WHEN stock_quantity <= 0 THEN 1
+          WHEN stock_quantity <= threshold THEN 2
+          WHEN stock_quantity <= CASE 
+            WHEN threshold <= 10 THEN threshold + 5 
+            ELSE CAST(threshold * 1.5 AS INT) 
           END THEN 3
           ELSE 4
         END ASC,
-        p.stock_quantity ASC
-    `).all(
-      globalThreshold, 
-      globalThreshold, 
-      globalThreshold, globalThreshold, 
-      globalThreshold,
-      globalThreshold,
-      globalThreshold, globalThreshold
-    );
+        stock_quantity ASC
+    `).all(globalThreshold);
 
     const productsWithReorder = items.map((p: any) => {
       const targetStock = p.threshold * 2;
@@ -5360,6 +5427,34 @@ app.get('/api/reports/sales-trends', authenticate, (req, res) => {
         SELECT date(created_at) as dateStr, SUM(total_amount) as total, COUNT(*) as sales_count
         FROM sales
         WHERE status = 'completed' AND created_at >= date('now', '-7 days')
+        GROUP BY dateStr
+      `).all() as any[];
+
+      const map = new Map(rows.map(r => [r.dateStr, r]));
+      const result = days.map(day => {
+        const found = map.get(day.date);
+        return {
+          ...day,
+          total: found ? found.total : 0,
+          sales_count: found ? found.sales_count : 0
+        };
+      });
+      return res.json(result);
+    } else if (timeframe === '14days') {
+      const days: any[] = [];
+      const now = new Date();
+      for (let i = 13; i >= 0; i--) {
+        const d = new Date(now);
+        d.setDate(now.getDate() - i);
+        const dateStr = d.toISOString().split('T')[0];
+        const displayLabel = d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        days.push({ date: dateStr, label: displayLabel, day: displayLabel, total: 0, sales_count: 0 });
+      }
+
+      const rows = db.prepare(`
+        SELECT date(created_at) as dateStr, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed' AND created_at >= date('now', '-14 days')
         GROUP BY dateStr
       `).all() as any[];
 
@@ -7839,11 +7934,23 @@ async function startServer() {
   }, 15000);
 
   // Guarantee that unhandled /api/* and Supabase proxy endpoints NEVER fall through to Vite SPA index.html
-  app.all(['/api/*', '/rest/v1/*', '/auth/v1/*', '/functions/v1/*', '/storage/v1/*'], (req, res) => {
+  app.all(['/api', '/api/*', '/rest/v1', '/rest/v1/*', '/auth/v1', '/auth/v1/*', '/functions/v1/*', '/storage/v1/*'], (req, res) => {
     res.status(404).json({
       error: `API endpoint not found (404): ${req.method} ${req.originalUrl || req.url}`,
       status: 404
     });
+  });
+
+  // Global error handler for API and proxy endpoints to guarantee JSON response and prevent HTML fallthrough
+  app.use((err: any, req: any, res: any, next: any) => {
+    if (req.url && (req.url.startsWith('/api') || req.url.startsWith('/rest') || req.url.startsWith('/auth'))) {
+      const statusCode = err.status || err.statusCode || 500;
+      return res.status(statusCode).json({
+        error: err.message || 'Internal server error',
+        status: statusCode
+      });
+    }
+    next(err);
   });
 
   if (process.env.NODE_ENV !== "production") {

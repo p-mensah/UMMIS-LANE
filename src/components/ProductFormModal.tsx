@@ -1,9 +1,18 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { X, Package, Tag, Barcode, CheckCircle2, AlertTriangle, Layers, Percent } from 'lucide-react';
+import { X, Package, Tag, Barcode, CheckCircle2, AlertTriangle, Layers, Percent, Sparkles, RefreshCw } from 'lucide-react';
 import { useFormValidation, validators } from '../lib/validation';
 import { FormField, ValidatedInput, ValidatedSelect } from './common/FormField';
 import { formatGHS } from '../lib/formatters';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+
+export function generateAutoSku(category?: string): string {
+  const prefix = category && category.trim().length >= 3 
+    ? category.trim().slice(0, 3).toUpperCase().replace(/[^A-Z0-9]/g, 'PRD')
+    : 'SKU';
+  const rand = Math.random().toString(36).substring(2, 6).toUpperCase();
+  const time = Date.now().toString(36).substring(4).toUpperCase();
+  return `${prefix}-${rand}${time}`.slice(0, 14);
+}
 
 interface ProductFormData {
   name: string;
@@ -55,7 +64,7 @@ export default function ProductFormModal({
     }
     return {
       name: '',
-      sku: '',
+      sku: generateAutoSku(),
       category: '',
       cost_price: 0,
       selling_price: 0,
@@ -137,10 +146,15 @@ export default function ProductFormModal({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const finalData = { ...values };
+    if (!finalData.sku || !finalData.sku.trim()) {
+      finalData.sku = generateAutoSku(finalData.category);
+      handleChange('sku', finalData.sku);
+    }
     if (!validateAll()) return;
     setIsSubmitting(true);
     try {
-      await onSubmit(values);
+      await onSubmit(finalData);
       onClose();
     } finally {
       setIsSubmitting(false);
@@ -205,24 +219,53 @@ export default function ProductFormModal({
             </FormField>
 
             <FormField
-              label="SKU Identifier"
+              label={
+                <div className="flex items-center justify-between w-full">
+                  <span className="flex items-center gap-1.5">
+                    <span>SKU Identifier</span>
+                    <span className="px-1.5 py-0.2 rounded bg-emerald-100 text-emerald-800 text-[9px] font-black uppercase inline-flex items-center gap-0.5 border border-emerald-200">
+                      <Sparkles size={9} /> Auto-Generated
+                    </span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleChange('sku', generateAutoSku(values.category))}
+                    className="text-[11px] font-bold text-blue-600 hover:text-blue-800 inline-flex items-center gap-1 cursor-pointer transition"
+                    title="Generate a fresh unique SKU"
+                  >
+                    <RefreshCw size={11} />
+                    <span>Regenerate</span>
+                  </button>
+                </div>
+              }
               required
               error={errors.sku}
               isTouched={touched.sku}
               isValid={!errors.sku && !!values.sku}
-              helperText="Unique product stock keeping unit"
+              helperText="Unique product stock keeping unit (auto-assigned by system)"
             >
-              <ValidatedInput
-                name="sku"
-                value={values.sku}
-                onChange={(e) => handleChange('sku', e.target.value)}
-                onBlur={() => handleBlur('sku')}
-                placeholder="e.g., BP-FRT-001"
-                className="font-mono uppercase"
-                error={errors.sku}
-                isTouched={touched.sku}
-                isValid={!errors.sku && !!values.sku}
-              />
+              <div className="relative">
+                <ValidatedInput
+                  name="sku"
+                  value={values.sku}
+                  onChange={(e) => handleChange('sku', e.target.value)}
+                  onBlur={() => handleBlur('sku')}
+                  placeholder="e.g., SKU-A8F9K2"
+                  className="font-mono uppercase pr-20"
+                  error={errors.sku}
+                  isTouched={touched.sku}
+                  isValid={!errors.sku && !!values.sku}
+                />
+                {!values.sku && (
+                  <button
+                    type="button"
+                    onClick={() => handleChange('sku', generateAutoSku(values.category))}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 px-2 py-1 bg-blue-50 text-blue-700 hover:bg-blue-100 rounded text-[10px] font-bold"
+                  >
+                    Auto Generate
+                  </button>
+                )}
+              </div>
             </FormField>
           </div>
 

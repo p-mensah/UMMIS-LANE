@@ -891,6 +891,11 @@ export function setupChatRoutes(app: Application, db: any, authenticate: any) {
             const role = dm.other_user?.role?.toLowerCase();
             return role === 'admin' || role === 'manager';
           }
+          // Store Staff can only see communications with other staff, managers, and admins
+          if (['staff', 'cashier'].includes(userRole)) {
+            const role = dm.other_user?.role?.toLowerCase();
+            return ['staff', 'cashier', 'manager', 'admin'].includes(role);
+          }
           return true;
         });
 
@@ -1218,6 +1223,15 @@ export function setupChatRoutes(app: Application, db: any, authenticate: any) {
         }
       }
 
+      // Role check: Store Staff communication is limited to staff, other staff, managers, and admins only
+      const senderRole = (req.user?.role || '').toLowerCase();
+      if (['staff', 'cashier'].includes(senderRole)) {
+        const targetRole = (targetUser.role || '').toLowerCase();
+        if (!['staff', 'cashier', 'manager', 'admin'].includes(targetRole)) {
+          return res.status(403).json({ error: 'Store Staff communication is strictly limited to staff, other staff, managers, and admins only.' });
+        }
+      }
+
       const minId = Math.min(currentUserId, targetUserId);
       const maxId = Math.max(currentUserId, targetUserId);
       const dmChannelId = `dm_${minId}_${maxId}`;
@@ -1253,7 +1267,9 @@ export function setupChatRoutes(app: Application, db: any, authenticate: any) {
   app.get('/api/chat/team', authenticate, (req: any, res: Response) => {
     try {
       const currentUserId = req.user.id;
-      const isSupplier = (req.user.role || '').toLowerCase() === 'supplier';
+      const currentUserRole = (req.user.role || '').toLowerCase();
+      const isSupplier = currentUserRole === 'supplier';
+      const isStaff = ['staff', 'cashier'].includes(currentUserRole);
 
       let sql = `
         SELECT id, name, email, role, department, profile_picture, last_login_at
@@ -1265,6 +1281,9 @@ export function setupChatRoutes(app: Application, db: any, authenticate: any) {
         // Supplier can only see his tenant or store owner or store manager only
         sql += ` AND (LOWER(role) IN ('admin', 'manager') OR id = ?) `;
         params.push(currentUserId);
+      } else if (isStaff) {
+        // Limit staff communications to staffs, other staffs and managers only and admins
+        sql += ` AND LOWER(role) IN ('staff', 'cashier', 'manager', 'admin') `;
       }
 
       sql += `

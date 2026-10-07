@@ -19,6 +19,7 @@ import { useModalDismiss } from '../hooks/useModalDismiss';
 import InvoiceModal from '../components/InvoiceModal';
 import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
+import DailySalesTrendChart from '../components/DailySalesTrendChart';
 import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
@@ -39,7 +40,8 @@ export default function Dashboard() {
   const [stockProximityData, setStockProximityData] = useState<any | null>(null);
   const [allProducts, setAllProducts] = useState<any[]>([]);
   const [salesTrends, setSalesTrends] = useState<any[]>([]);
-  const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '30days' | 'monthly' | 'yearly'>('30days');
+  const [trendTimeframe, setTrendTimeframe] = useState<'7days' | '14days' | '30days' | 'monthly'>('7days');
+  const [trendsLoading, setTrendsLoading] = useState(false);
   const [trendChartType, setTrendChartType] = useState<'line' | 'area' | 'bar'>('line');
   const [bestSellers, setBestSellers] = useState<any[]>([]);
   const [recentSalesList, setRecentSalesList] = useState<any[]>([]);
@@ -135,9 +137,11 @@ export default function Dashboard() {
   }, [user]);
 
   useEffect(() => {
+    setTrendsLoading(true);
     fetchApi(`/reports/sales-trends?timeframe=${trendTimeframe}`)
-      .then(data => setSalesTrends(data))
-      .catch(console.error);
+      .then(data => setSalesTrends(Array.isArray(data) ? data : []))
+      .catch(console.error)
+      .finally(() => setTrendsLoading(false));
   }, [trendTimeframe]);
 
   useEffect(() => {
@@ -152,6 +156,7 @@ export default function Dashboard() {
 
   const loadDashboardData = () => {
     setLoading(true);
+    const isAdmin = user?.role === 'admin';
     Promise.all([
       fetchApi('/reports/summary'),
       fetchApi('/reports/low-stock'),
@@ -160,8 +165,8 @@ export default function Dashboard() {
       fetchApi('/sales').catch(() => []),
       fetchApi('/settings').catch(() => ({})),
       fetchApi('/products').catch(() => []),
-      fetchApi('/audit-logs?limit=5').catch(() => []),
-      fetchApi('/inventory/adjustments').catch(() => [])
+      isAdmin ? fetchApi('/audit-logs?limit=5').catch(() => []) : Promise.resolve([]),
+      isAdmin ? fetchApi('/inventory/adjustments').catch(() => []) : Promise.resolve([])
     ])
       .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs]) => {
          setSummary(summaryData);
@@ -541,7 +546,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* AUTOMATED LOW-STOCK WARNING NOTIFICATION & REORDER POINT WARNING LIST */}
+      {/* 'LOW STOCK' NOTIFICATION SYSTEM THAT MONITORS PRODUCT QUANTITIES AND FLAGS ITEMS NEARING REORDER POINTS */}
       <AutomatedLowStockNotification
         products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
         globalThreshold={globalThreshold}
@@ -552,6 +557,12 @@ export default function Dashboard() {
           setRestockQty(Math.max(10, ((prod.min_stock_level || globalThreshold) * 2) - prod.stock_quantity));
           setShowRestockModal(true);
         } : undefined}
+        onCreatePO={(prod) => {
+          setPoPreselectedProduct(prod);
+          setShowCreatePoModal(true);
+        }}
+        onOpenThresholdModal={() => setShowThresholdModal(true)}
+        onExportCSV={handleExportLowStockCSV}
         onRefresh={loadDashboardData}
         isLoading={loading}
       />
@@ -559,104 +570,6 @@ export default function Dashboard() {
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
         <>
-          {/* REORDER POINT & LOW STOCK REPLENISHMENT WIDGET (ADMIN ONLY) */}
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs p-5 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-              <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <AlertTriangle size={16} className="text-amber-600" /> Inventory Reorder Points & Low Stock Replenishment
-                </h2>
-                <p className="text-xs text-slate-500">Products currently at, below, or approaching minimum threshold limits requiring supplier attention.</p>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap">
-                {stockProximityData?.counts?.nearing > 0 && (
-                  <div className="text-xs font-bold text-amber-800 bg-amber-50 px-3 py-1.5 rounded-xl border border-amber-200 flex items-center gap-1.5 shadow-2xs">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />
-                    <span>{stockProximityData.counts.nearing} Nearing Threshold</span>
-                  </div>
-                )}
-                <div className="text-xs font-bold text-rose-700 bg-rose-50 px-3 py-1.5 rounded-xl border border-rose-200 shadow-2xs">
-                  {lowStockProducts.length} Below Reorder Point
-                </div>
-              </div>
-            </div>
-
-            {lowStockProducts.length === 0 ? (
-              <div className="py-8 text-center text-slate-400 text-xs">
-                <CheckCircle2 size={24} className="mx-auto text-emerald-500 mb-1" />
-                All inventory levels are currently above reorder point thresholds.
-              </div>
-            ) : (
-              <div className="overflow-x-auto max-h-[300px]">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-50 text-slate-600 font-black uppercase text-[10px] tracking-wider sticky top-0">
-                    <tr>
-                      <th className="p-2.5">Product Name</th>
-                      <th className="p-2.5">SKU / Barcode</th>
-                      <th className="p-2.5 text-right">In Stock</th>
-                      <th className="p-2.5 text-right">Reorder Level</th>
-                      <th className="p-2.5 text-center">Status</th>
-                      <th className="p-2.5 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {lowStockProducts.map((p) => {
-                      const isOut = p.stock_quantity === 0;
-                      return (
-                        <tr key={p.id} className="hover:bg-slate-50/80 transition-colors">
-                          <td className="p-2.5 font-bold text-slate-900">{p.name}</td>
-                          <td className="p-2.5 text-slate-500 font-mono text-[11px]">{p.sku || p.barcode || 'N/A'}</td>
-                          <td className="p-2.5 text-right font-black text-slate-900">
-                            <span className={`px-2 py-0.5 rounded ${isOut ? 'bg-rose-100 text-rose-800' : 'bg-amber-100 text-amber-800'}`}>
-                              {p.stock_quantity}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right text-slate-600">{p.min_stock_level || globalThreshold}</td>
-                          <td className="p-2.5 text-center">
-                            <span className={`text-[10px] font-black uppercase px-2 py-0.5 rounded ${isOut ? 'bg-rose-600 text-white' : 'bg-amber-500 text-white'}`}>
-                              {isOut ? 'Out of Stock' : 'Low Stock'}
-                            </span>
-                          </td>
-                          <td className="p-2.5 text-right">
-                            <button
-                              onClick={() => {
-                                setSelectedProductForRestock(p);
-                                setRestockQty(Math.max(10, (p.min_stock_level || 10) * 2 - p.stock_quantity));
-                                setShowRestockModal(true);
-                              }}
-                              className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[11px] uppercase tracking-wider transition"
-                            >
-                              Restock
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-
-          {/* REAL-TIME AUTOMATED LOW-STOCK ALERT INDICATOR & GOVERNANCE WIDGET */}
-          <LowStockAlertIndicator
-            products={allProducts.length > 0 ? allProducts : lowStockProducts}
-            globalThreshold={globalThreshold}
-            userRole="admin"
-            allowStaffAdjustments={allowStaffAdjustments}
-            showStaffAlerts={showStaffAlerts}
-            onToggleStaffAdjustments={handleToggleStaffAdjustments}
-            onToggleStaffAlerts={handleToggleStaffAlerts}
-            onOpenThresholdModal={() => setShowThresholdModal(true)}
-            onQuickRestock={(prod) => {
-              setSelectedProductForRestock(prod);
-              setRestockQty(10);
-              setShowRestockModal(true);
-            }}
-            onRefresh={loadDashboardData}
-            isLoading={loading}
-          />
-
           {/* PRIMARY BUSINESS KPI CARDS (Mobile snap-slider, desktop auto-fit grid) */}
           <div className="space-y-1">
             <div className="flex items-center justify-between sm:hidden px-1 text-[11px] font-bold text-slate-500">
@@ -726,7 +639,7 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center justify-between text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
                   <span>{lowStockProducts.filter(p => p.stock_quantity === 0).length} completely out of stock</span>
-                  <a href="#low-stock-section" className="font-bold underline hover:text-amber-900">
+                  <a href="#low-stock-notification-system" className="font-bold underline hover:text-amber-900">
                     Restock
                   </a>
                 </div>
@@ -736,127 +649,14 @@ export default function Dashboard() {
 
           {/* REVENUE & SALES VELOCITY ANALYTICS */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* Sales Velocity Chart */}
-            <div className="lg:col-span-2 bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                <div>
-                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <TrendingUp size={16} className="text-blue-600" />
-                    Sales & Revenue Velocity
-                  </h2>
-                  <p className="text-[11px] text-slate-500 font-medium">Historical transaction volume and revenue trends.</p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200">
-                    {[
-                      { id: '7days', label: '7 Days' },
-                      { id: '30days', label: '30 Days' },
-                      { id: 'monthly', label: 'Monthly' },
-                      { id: 'yearly', label: 'Yearly' }
-                    ].map(t => (
-                      <button
-                        key={t.id}
-                        onClick={() => setTrendTimeframe(t.id as any)}
-                        className={`px-2.5 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded transition-all ${
-                          trendTimeframe === t.id ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
-                        }`}
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
-
-                  <div className="flex items-center bg-slate-100 p-0.5 rounded border border-slate-200">
-                    {[
-                      { id: 'line', label: 'Line' },
-                      { id: 'area', label: 'Area' },
-                      { id: 'bar', label: 'Bar' }
-                    ].map(type => (
-                      <button
-                        key={type.id}
-                        onClick={() => setTrendChartType(type.id as any)}
-                        className={`px-2 py-1 text-[10px] font-extrabold uppercase tracking-wider rounded transition-all ${
-                          trendChartType === type.id ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-500 hover:text-slate-900'
-                        }`}
-                        title={`${type.label} Chart`}
-                      >
-                        {type.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Chart Stats Bar */}
-              <div className="grid grid-cols-3 gap-2 bg-slate-50 p-3 rounded border border-slate-100 text-center text-xs">
-                <div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase">Period Revenue</div>
-                  <div className="font-black text-slate-900">{formatGHS(totalTrendRevenue)}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase">Daily Average</div>
-                  <div className="font-black text-slate-900">{formatGHS(avgTrendRevenue)}</div>
-                </div>
-                <div>
-                  <div className="text-[10px] font-black text-slate-400 uppercase">Peak Sales Day</div>
-                  <div className="font-black text-blue-600">{peakTrendDay ? formatGHS(peakTrendDay.total) : 'N/A'}</div>
-                </div>
-              </div>
-
-              {/* Recharts Container */}
-              <div className="h-[280px] w-full min-w-0 pt-2 relative">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={250} initialDimension={{ width: 500, height: 260 }}>
-                  {trendChartType === 'line' ? (
-                    <LineChart data={salesTrends} margin={{ top: 10, right: 15, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', fontSize: '12px' }}
-                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']}
-                        labelFormatter={(label: any) => `Timeline: ${label}`}
-                      />
-                      <Line 
-                        type="monotone" 
-                        dataKey="total" 
-                        stroke="#2563eb" 
-                        strokeWidth={2.5} 
-                        dot={{ r: 3, fill: '#2563eb', strokeWidth: 1.5, stroke: '#ffffff' }}
-                        activeDot={{ r: 6, fill: '#1d4ed8', stroke: '#bfdbfe', strokeWidth: 2 }} 
-                      />
-                    </LineChart>
-                  ) : trendChartType === 'area' ? (
-                    <AreaChart data={salesTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <defs>
-                        <linearGradient id="colorRev" x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.3}/>
-                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0}/>
-                        </linearGradient>
-                      </defs>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} 
-                      />
-                      <Area type="monotone" dataKey="total" stroke="#2563eb" strokeWidth={2.5} fillOpacity={1} fill="url(#colorRev)" />
-                    </AreaChart>
-                  ) : (
-                    <BarChart data={salesTrends} margin={{ top: 10, right: 10, left: 0, bottom: 0 }}>
-                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                      <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} />
-                      <YAxis tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: '#64748b' }} tickFormatter={(v) => `GHS ${v}`} />
-                      <Tooltip 
-                        contentStyle={{ backgroundColor: '#ffffff', borderColor: '#e2e8f0', borderRadius: '8px', fontSize: '12px' }}
-                        formatter={(value: any) => [formatGHS(Number(value)), 'Revenue']} 
-                      />
-                      <Bar dataKey="total" fill="#2563eb" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  )}
-                </ResponsiveContainer>
-              </div>
+            {/* DAILY SALES TREND VISUALIZATION USING RECHARTS (QUICK INSIGHTS INTO RETAIL PERFORMANCE) */}
+            <div className="lg:col-span-2">
+              <DailySalesTrendChart
+                data={salesTrends}
+                timeframe={trendTimeframe}
+                onTimeframeChange={setTrendTimeframe}
+                isLoading={trendsLoading}
+              />
             </div>
 
             {/* Top Selling Products Leaderboard */}
@@ -983,136 +783,6 @@ export default function Dashboard() {
                             className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[10px] uppercase tracking-wider transition border border-slate-200"
                           >
                             {loadingInvoiceId === sale.id ? 'Loading...' : 'View Receipt'}
-                          </button>
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* LOW STOCK CONTROL CENTER */}
-          <div id="low-stock-section" className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden space-y-3">
-            <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                  <AlertTriangle size={15} className="text-amber-600" />
-                  Inventory Low Stock Alert Center ({filteredLowStock.length})
-                </h2>
-                <p className="text-[11px] text-slate-500 font-medium">Restock items running below threshold to prevent stockouts.</p>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  onClick={handleExportLowStockCSV}
-                  disabled={lowStockProducts.length === 0}
-                  className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded border border-slate-200 transition flex items-center gap-1 disabled:opacity-50"
-                >
-                  <Download size={13} /> Export CSV
-                </button>
-
-                <button
-                  onClick={() => setShowThresholdModal(true)}
-                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded transition flex items-center gap-1"
-                >
-                  <Settings size={13} /> Set Alert Threshold ({globalThreshold})
-                </button>
-              </div>
-            </div>
-
-            {/* Low stock search and filters */}
-            <div className="px-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3">
-              <div className="relative flex-1 max-w-md">
-                <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search low stock items by name, SKU, or category..."
-                  value={lowStockSearch}
-                  onChange={(e) => setLowStockSearch(e.target.value)}
-                  className="w-full pl-9 pr-3 py-1.5 border border-slate-300 rounded text-xs font-medium focus:outline-none focus:border-blue-500"
-                />
-              </div>
-
-              <div className="flex items-center bg-slate-100 p-1 rounded border border-slate-200">
-                {[
-                  { id: 'all', label: 'All Low Stock' },
-                  { id: 'out_of_stock', label: 'Out of Stock' },
-                  { id: 'critical', label: 'Critical' }
-                ].map(f => (
-                  <button
-                    key={f.id}
-                    onClick={() => setLowStockFilter(f.id as any)}
-                    className={`px-3 py-1 text-[10px] font-bold uppercase tracking-wider rounded transition-all ${
-                      lowStockFilter === f.id ? 'bg-white text-amber-800 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {f.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Low stock table */}
-            <div className="overflow-x-auto border-t border-slate-100">
-              <table className="w-full text-left text-xs">
-                <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
-                  <tr>
-                    <th className="px-4 py-2.5">SKU</th>
-                    <th className="px-4 py-2.5">Product Name</th>
-                    <th className="px-4 py-2.5">Category</th>
-                    <th className="px-4 py-2.5 text-center">Current Stock</th>
-                    <th className="px-4 py-2.5 text-center">Alert Limit</th>
-                    <th className="px-4 py-2.5 text-right">Selling Price</th>
-                    <th className="px-4 py-2.5 text-center">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {filteredLowStock.length === 0 ? (
-                    <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-400">
-                        <CheckCircle2 size={24} className="mx-auto mb-1 text-emerald-500 opacity-60" />
-                        No low stock alerts matching filter. All inventory healthy!
-                      </td>
-                    </tr>
-                  ) : (
-                    filteredLowStock.map((prod: any) => (
-                      <tr key={prod.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="px-4 py-2.5 font-mono font-bold text-slate-600">
-                          {prod.sku}
-                        </td>
-                        <td className="px-4 py-2.5 font-bold text-slate-900">
-                          {prod.name}
-                        </td>
-                        <td className="px-4 py-2.5 text-slate-600">
-                          {prod.category}
-                        </td>
-                        <td className="px-4 py-2.5 text-center font-black">
-                          <span className={`px-2 py-0.5 rounded text-[11px] ${
-                            prod.stock_quantity === 0
-                              ? 'bg-rose-100 text-rose-800 border border-rose-200 font-black'
-                              : 'bg-amber-100 text-amber-800 border border-amber-200'
-                          }`}>
-                            {prod.stock_quantity} units
-                          </span>
-                        </td>
-                        <td className="px-4 py-2.5 text-center font-bold text-slate-500">
-                          {prod.threshold || globalThreshold}
-                        </td>
-                        <td className="px-4 py-2.5 text-right font-black text-slate-900">
-                          {formatGHS(prod.selling_price)}
-                        </td>
-                        <td className="px-4 py-2.5 text-center">
-                          <button
-                            onClick={() => {
-                              setSelectedProductForRestock(prod);
-                              setRestockQty(10);
-                              setShowRestockModal(true);
-                            }}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-bold text-[10px] uppercase tracking-wider transition shadow-2xs"
-                          >
-                            + Quick Restock
                           </button>
                         </td>
                       </tr>
@@ -1304,15 +974,13 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
-          {/* STAFF LOW-STOCK REAL-TIME ALERT INDICATOR (READ-ONLY FOR STAFF) */}
+          {/* STAFF LOW-STOCK REAL-TIME ALERT NOTIFICATION (MONITORS QUANTITIES & REORDER POINTS) */}
           {showStaffAlerts && (
-            <LowStockAlertIndicator
-              products={allProducts.length > 0 ? allProducts : lowStockProducts}
+            <AutomatedLowStockNotification
+              products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
               globalThreshold={globalThreshold}
+              proximityData={stockProximityData}
               userRole="staff"
-              allowStaffAdjustments={false}
-              showStaffAlerts={showStaffAlerts}
-              onQuickRestock={undefined}
               onRefresh={loadDashboardData}
               isLoading={loading}
             />
@@ -1346,6 +1014,14 @@ export default function Dashboard() {
               <div className="text-xs text-slate-500 mt-1">Based on monthly performance</div>
             </div>
           </div>
+
+          {/* DAILY SALES TREND VISUALIZATION FOR RETAIL PERFORMANCE INSIGHTS */}
+          <DailySalesTrendChart
+            data={salesTrends}
+            timeframe={trendTimeframe}
+            onTimeframeChange={setTrendTimeframe}
+            isLoading={trendsLoading}
+          />
 
           {/* Staff Sales Ledger */}
           <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">

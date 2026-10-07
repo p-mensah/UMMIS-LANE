@@ -5,7 +5,8 @@ export interface PaginationProps {
   currentPage: number;
   totalPages: number;
   totalItems: number;
-  itemsPerPage: number;
+  itemsPerPage?: number;
+  pageSize?: number;
   onPageChange: (page: number) => void;
   onItemsPerPageChange?: (itemsPerPage: number) => void;
   pageSizeOptions?: number[];
@@ -17,15 +18,17 @@ export default function Pagination({
   totalPages,
   totalItems,
   itemsPerPage,
+  pageSize,
   onPageChange,
   onItemsPerPageChange,
   pageSizeOptions = [10, 20, 50, 100],
   className = '',
 }: PaginationProps) {
+  const effectiveItemsPerPage = itemsPerPage || pageSize || 10;
   if (totalItems === 0) return null;
 
-  const startItem = Math.min((currentPage - 1) * itemsPerPage + 1, totalItems);
-  const endItem = Math.min(currentPage * itemsPerPage, totalItems);
+  const startItem = Math.min((currentPage - 1) * effectiveItemsPerPage + 1, totalItems);
+  const endItem = Math.min(currentPage * effectiveItemsPerPage, totalItems);
 
   // Generate visible page numbers
   const getPageNumbers = () => {
@@ -76,7 +79,7 @@ export default function Pagination({
           <div className="flex items-center gap-1.5 pl-3 border-l border-slate-200">
             <span className="text-[11px] text-slate-400">Rows per page:</span>
             <select
-              value={itemsPerPage}
+              value={effectiveItemsPerPage}
               onChange={(e) => onItemsPerPageChange(Number(e.target.value))}
               className="px-2 py-1 bg-slate-50 border border-slate-200 rounded text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500 cursor-pointer"
             >
