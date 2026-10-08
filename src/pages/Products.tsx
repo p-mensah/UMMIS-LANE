@@ -16,6 +16,7 @@ interface Product {
   name: string;
   sku: string;
   category: string;
+  sub_category?: string;
   cost_price: number;
   selling_price: number;
   stock_quantity: number;
@@ -773,7 +774,10 @@ export default function Products() {
                   <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
                 )}
                 <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
-                  {p.category}
+                  <div className="font-medium text-slate-800">{p.category}</div>
+                  {p.sub_category && (
+                    <div className="text-[11px] text-slate-400 font-normal">{p.sub_category}</div>
+                  )}
                 </td>
                 <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-900 font-semibold">{formatGHS(p.selling_price)}</td>
                 <td className="px-5 py-3 whitespace-nowrap text-[13px]">
@@ -837,6 +841,7 @@ export default function Products() {
           onSubmit={handleProductSubmit}
           editingProduct={editingProduct}
           categories={categories}
+          existingProducts={products}
         />
       )}
 

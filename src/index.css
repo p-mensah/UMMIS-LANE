@@ -79,7 +79,7 @@ body {
     visibility: hidden !important;
   }
 
-  /* Reset layout constraints for full printer page flow */
+  /* Reset layout constraints for full printer page flow and multi-page pagination */
   html, body, #root, main {
     height: auto !important;
     min-height: 0 !important;
@@ -88,16 +88,49 @@ body {
     color: #000000 !important;
     padding: 0 !important;
     margin: 0 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
   }
 
-  /* Ensure print receipts and invoices expand cleanly */
-  #invoice-print-area {
+  /* Un-trap modal containers so print content is not cut off by overflow:hidden or max-height */
+  .fixed,
+  [role="dialog"],
+  .modal-overlay,
+  .overflow-y-auto,
+  .overflow-hidden,
+  .max-h-\[96dvh\],
+  .max-h-\[100dvh\] {
+    position: static !important;
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    width: 100% !important;
+    background: transparent !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    box-shadow: none !important;
+    border: none !important;
+    backdrop-filter: none !important;
+  }
+
+  /* Ensure print receipts and invoices expand cleanly without absolute positioning traps */
+  #invoice-print-area,
+  #return-print-area {
     visibility: visible !important;
+    position: relative !important;
+    display: block !important;
     margin: 0 auto !important;
     box-shadow: none !important;
     border: none !important;
     background: #ffffff !important;
     color: #000000 !important;
+    page-break-inside: auto;
+    break-inside: auto;
+  }
+
+  tr, .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
   }
 }
 

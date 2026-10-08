@@ -293,6 +293,7 @@ function initDb() {
   addColumnOrIgnore('purchases', 'confirmed_by', 'TEXT');
   addColumnOrIgnore('purchases', 'tracking_number', 'TEXT');
   addColumnOrIgnore('products', 'category_id', 'INTEGER');
+  addColumnOrIgnore('products', 'sub_category', 'TEXT');
   addColumnOrIgnore('products', 'unit_of_measure', 'TEXT');
   addColumnOrIgnore('products', 'brand', 'TEXT');
   addColumnOrIgnore('products', 'image_url', 'TEXT');
@@ -821,6 +822,31 @@ function seedDatabase(dbInstance: any) {
     const categories = ['Beverages', 'Groceries', 'Bakery & Pastry', 'Household & Cleaning', 'Snacks & Sweets', 'Dairy & Frozen', 'Personal Care'];
     for (const cat of categories) {
       dbInstance.prepare('INSERT OR IGNORE INTO categories (name) VALUES (?)').run(cat);
+    }
+
+    const subCategories = [
+      { name: 'Juices & Sodas', parent: 'Beverages' },
+      { name: 'Water & Hydration', parent: 'Beverages' },
+      { name: 'Coffee & Tea', parent: 'Beverages' },
+      { name: 'Rice & Grains', parent: 'Groceries' },
+      { name: 'Canned Foods', parent: 'Groceries' },
+      { name: 'Cooking Oils & Sauces', parent: 'Groceries' },
+      { name: 'Breads & Rolls', parent: 'Bakery & Pastry' },
+      { name: 'Cakes & Pastries', parent: 'Bakery & Pastry' },
+      { name: 'Detergents & Soaps', parent: 'Household & Cleaning' },
+      { name: 'Cleaners & Sanitizers', parent: 'Household & Cleaning' },
+      { name: 'Biscuits & Cookies', parent: 'Snacks & Sweets' },
+      { name: 'Chocolates & Candies', parent: 'Snacks & Sweets' },
+      { name: 'Milk & Dairy', parent: 'Dairy & Frozen' },
+      { name: 'Frozen Foods', parent: 'Dairy & Frozen' },
+      { name: 'Oral Care', parent: 'Personal Care' },
+      { name: 'Soaps & Hygiene', parent: 'Personal Care' },
+    ];
+    for (const sub of subCategories) {
+      const parentRow: any = dbInstance.prepare('SELECT id FROM categories WHERE name = ?').get(sub.parent);
+      if (parentRow) {
+        dbInstance.prepare('INSERT OR IGNORE INTO categories (name, parent_id) VALUES (?, ?)').run(sub.name, parentRow.id);
+      }
     }
 
     const adminUser: any = dbInstance.prepare('SELECT id FROM users WHERE role = ?').get('admin');
@@ -1886,21 +1912,135 @@ app.get('/api/products', authenticate, (req, res) => {
   res.json(products);
 });
 
-app.post('/api/products', authenticate, requireAdmin, (req, res) => {
-  let { name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
-  
-  if (!sku || sku.trim() === '') {
-    let isUnique = false;
-    while (!isUnique) {
-      sku = 'SKU-' + Math.random().toString(36).substr(2, 6).toUpperCase();
-      const existing = db.prepare('SELECT id FROM products WHERE sku = ?').get(sku);
-      if (!existing) isUnique = true;
+// SKU Generator Service: Automatically suggests unique product codes based on category, sub-category, and numeric sequence
+function generateUniqueProductSku(category = '', subCategory = '', format = 'standard', customPrefix?: string) {
+  const CATEGORY_MAP: Record<string, string> = {
+    'beverages': 'BEV', 'beverage': 'BEV', 'groceries': 'GRO', 'grocery': 'GRO',
+    'provisions': 'PRV', 'provision': 'PRV', 'dairy & frozen': 'DAI', 'dairy': 'DAI',
+    'frozen': 'FRZ', 'household & cleaning': 'HOU', 'household': 'HOU', 'cleaning': 'CLN',
+    'snacks & sweets': 'SNK', 'snacks': 'SNK', 'sweets': 'SWT', 'personal care': 'PER',
+    'bakery & pastry': 'BAK', 'bakery': 'BAK', 'canned goods': 'CAN', 'produce': 'PRD'
+  };
+
+  const SUB_MAP: Record<string, string> = {
+    'juices & sodas': 'JUC', 'juice': 'JUC', 'water & hydration': 'WAT', 'water': 'WAT',
+    'coffee & tea': 'COF', 'tea & coffee': 'TEA', 'tea': 'TEA', 'coffee': 'COF',
+    'rice & grains': 'RIC', 'rice': 'RIC', 'cereal & breakfast': 'CER', 'canned foods': 'CAN',
+    'cooking oils & sauces': 'OIL', 'cooking oil': 'OIL', 'breads & rolls': 'BRD', 'bread': 'BRD',
+    'cakes & pastries': 'CAK', 'detergents & soaps': 'DET', 'soaps & detergents': 'DET',
+    'cleaners & sanitizers': 'CLN', 'biscuits & cookies': 'BIS', 'chocolates & candies': 'CHO',
+    'milk & dairy': 'MLK', 'milk': 'MLK', 'frozen foods': 'FRZ', 'oral care': 'ORL',
+    'soaps & hygiene': 'SOP', 'general': 'GEN'
+  };
+
+  const getPrefix = (val: string, map: Record<string, string>, fallback = 'PRD') => {
+    if (!val || !val.trim()) return '';
+    const norm = val.trim().toLowerCase();
+    if (map[norm]) return map[norm];
+    for (const [k, code] of Object.entries(map)) {
+      if (norm.includes(k) || k.includes(norm)) return code;
+    }
+    const clean = val.trim().toUpperCase().replace(/[^A-Z0-9\s]/g, '');
+    const words = clean.split(/\s+/).filter(Boolean);
+    if (words.length >= 2) {
+      if (words.length >= 3) return words.map(w => w[0]).join('').slice(0, 3);
+      return (words[0].slice(0, 2) + words[1].slice(0, 1)).slice(0, 3);
+    }
+    const single = words[0] || fallback;
+    return single.length >= 3 ? single.slice(0, 3) : single.padEnd(3, 'X');
+  };
+
+  const catCode = customPrefix || getPrefix(category, CATEGORY_MAP, 'PRD') || 'PRD';
+  const subCode = getPrefix(subCategory, SUB_MAP, '');
+
+  let basePrefix = catCode;
+  if (subCode && subCode.trim().length > 0) {
+    basePrefix = `${catCode}-${subCode}`;
+  }
+
+  const rows = db.prepare('SELECT sku FROM products').all() as Array<{ sku: string }>;
+  const existingSkus = new Set(rows.map(r => (r.sku || '').trim().toUpperCase()));
+
+  const escaped = basePrefix.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, '\\$&');
+  const regex = new RegExp(`^${escaped}-?(\\d+)$`, 'i');
+
+  let maxSeq = 0;
+  for (const r of rows) {
+    if (!r.sku) continue;
+    const match = r.sku.trim().toUpperCase().match(regex);
+    if (match && match[1]) {
+      const num = parseInt(match[1], 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
     }
   }
 
+  let nextSeq = maxSeq + 1;
+  let candidate = `${basePrefix}-${String(nextSeq).padStart(3, '0')}`;
+  if (format === 'compact') {
+    candidate = `${catCode}${subCode}${String(nextSeq).padStart(3, '0')}`;
+  } else if (format === 'simple') {
+    candidate = `${catCode}-${String(nextSeq).padStart(3, '0')}`;
+  }
+
+  while (existingSkus.has(candidate.toUpperCase())) {
+    nextSeq++;
+    if (format === 'compact') {
+      candidate = `${catCode}${subCode}${String(nextSeq).padStart(3, '0')}`;
+    } else if (format === 'simple') {
+      candidate = `${catCode}-${String(nextSeq).padStart(3, '0')}`;
+    } else {
+      candidate = `${basePrefix}-${String(nextSeq).padStart(3, '0')}`;
+    }
+  }
+
+  const standardSku = `${basePrefix}-${String(nextSeq).padStart(3, '0')}`;
+  const compactSku = `${catCode}${subCode}${String(nextSeq).padStart(3, '0')}`;
+  const simpleSku = `${catCode}-${String(nextSeq).padStart(3, '0')}`;
+
+  return {
+    sku: candidate,
+    categoryPrefix: catCode,
+    subCategoryPrefix: subCode,
+    basePrefix,
+    sequence: nextSeq,
+    formattedSequence: String(nextSeq).padStart(3, '0'),
+    isUnique: true,
+    alternatives: [
+      { label: 'Standard (CAT-SUB-NUM)', sku: standardSku, style: 'standard' },
+      { label: 'Compact (No Hyphens)', sku: compactSku, style: 'compact' },
+      ...(subCode ? [{ label: 'Category Only (CAT-NUM)', sku: simpleSku, style: 'simple' }] : [])
+    ]
+  };
+}
+
+app.get('/api/products/generate-sku', authenticate, (req: any, res) => {
   try {
-    const result = db.prepare('INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, image_url, min_stock_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
-      name, sku, category, cost_price, selling_price, stock_quantity || 0, barcode, brand, unit_of_measure, image_url || null, min_stock_level !== undefined && min_stock_level !== '' ? Number(min_stock_level) : null
+    const { category, sub_category, format, prefix } = req.query;
+    const result = generateUniqueProductSku(
+      String(category || ''),
+      String(sub_category || ''),
+      String(format || 'standard'),
+      prefix ? String(prefix) : undefined
+    );
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.post('/api/products', authenticate, requireAdmin, (req, res) => {
+  let { name, sku, category, sub_category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
+  
+  if (!sku || sku.trim() === '') {
+    const generated = generateUniqueProductSku(category, sub_category);
+    sku = generated.sku;
+  }
+
+  try {
+    const result = db.prepare('INSERT INTO products (name, sku, category, sub_category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, image_url, min_stock_level) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(
+      name, sku, category, sub_category || null, cost_price, selling_price, stock_quantity || 0, barcode, brand, unit_of_measure, image_url || null, min_stock_level !== undefined && min_stock_level !== '' ? Number(min_stock_level) : null
     );
     res.json({ id: result.lastInsertRowid, sku });
   } catch (err: any) {
@@ -1910,15 +2050,15 @@ app.post('/api/products', authenticate, requireAdmin, (req, res) => {
 
 app.put('/api/products/:id', authenticate, requireAdmin, (req, res) => {
   const { id } = req.params;
-  const { name, sku, category, cost_price, selling_price, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
+  const { name, sku, category, sub_category, cost_price, selling_price, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
   const oldProduct: any = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(id);
 
   const dbTx = db.transaction(() => {
     if (oldProduct && oldProduct.selling_price !== selling_price) {
       db.prepare('INSERT INTO price_history (product_id, old_selling_price, new_selling_price) VALUES (?, ?, ?)').run(id, oldProduct.selling_price, selling_price);
     }
-    db.prepare('UPDATE products SET name = ?, sku = ?, category = ?, cost_price = ?, selling_price = ?, barcode = ?, brand = ?, unit_of_measure = ?, image_url = ?, min_stock_level = ? WHERE id = ?').run(
-      name, sku, category, cost_price, selling_price, barcode, brand, unit_of_measure, image_url || null, min_stock_level !== undefined && min_stock_level !== '' ? Number(min_stock_level) : null, id
+    db.prepare('UPDATE products SET name = ?, sku = ?, category = ?, sub_category = ?, cost_price = ?, selling_price = ?, barcode = ?, brand = ?, unit_of_measure = ?, image_url = ?, min_stock_level = ? WHERE id = ?').run(
+      name, sku, category, sub_category || null, cost_price, selling_price, barcode, brand, unit_of_measure, image_url || null, min_stock_level !== undefined && min_stock_level !== '' ? Number(min_stock_level) : null, id
     );
   });
   try {
@@ -2366,7 +2506,7 @@ app.get('/api/sales/:id', authenticate, (req: any, res) => {
     }
 
     const items = db.prepare(`
-      SELECT si.*, p.name as product_name
+      SELECT si.*, p.name as product_name, p.sku, p.barcode
       FROM sale_items si
       JOIN products p ON si.product_id = p.id
       WHERE si.sale_id = ?
@@ -7691,13 +7831,17 @@ app.get('/api/settings', authenticate, (req, res) => {
 app.put('/api/settings', authenticate, requireAdmin, (req: any, res) => {
   const allowedKeys = [
     'store_name',
+    'store_tagline',
     'store_address',
     'store_phone',
     'store_email',
+    'store_tin',
     'tax_id',
     'currency_code',
     'currency_symbol',
     'tax_rate',
+    'tax_percentage',
+    'enable_tax_by_default',
     'tax_inclusive',
     'max_staff_discount_percent',
     'receipt_header',
@@ -7956,7 +8100,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);
