@@ -21,7 +21,7 @@ export default defineConfig(({mode}) => {
       },
     },
     server: {
-      hmr: process.env.DISABLE_HMR === 'true' ? false : { clientPort: 443 },
+      hmr: false,
       proxy: {
         // Forward relative Supabase endpoints to the actual Supabase project
         '/rest/v1': {

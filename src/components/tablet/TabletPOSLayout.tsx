@@ -905,65 +905,23 @@ export default function TabletPOSLayout({
               ))}
             </div>
 
-            {/* Quick-Cash Buttons Wrapped/Scaled Correctly Without Horizontal Clipping */}
+            {/* Custom Cash Tendered Section: Presets removed, leaving custom numpad input */}
             {paymentMethod === 'Cash' && totalCart > 0 && (
               <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 space-y-2">
-                <div className="grid grid-cols-4 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender('exact')}
-                    className="min-h-[44px] px-2 py-1.5 rounded-xl bg-emerald-950 text-emerald-300 border border-emerald-800 text-xs font-black uppercase tracking-wider flex items-center justify-center text-center active:scale-95"
-                    title="Exact cash tendered"
-                  >
-                    Exact
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender(10)}
-                    className="min-h-[44px] px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold flex items-center justify-center active:scale-95"
-                  >
-                    +10
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender(20)}
-                    className="min-h-[44px] px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold flex items-center justify-center active:scale-95"
-                  >
-                    +20
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender(50)}
-                    className="min-h-[44px] px-2 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold flex items-center justify-center active:scale-95"
-                  >
-                    +50
-                  </button>
-                </div>
-
-                {/* Second row of quick cash & custom numpad trigger */}
-                <div className="grid grid-cols-3 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender(100)}
-                    className="min-h-[42px] px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold flex items-center justify-center active:scale-95"
-                  >
-                    +100
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => applyQuickTender(200)}
-                    className="min-h-[42px] px-2 py-1 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-mono font-bold flex items-center justify-center active:scale-95"
-                  >
-                    +200
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openTenderNumpad}
-                    className="min-h-[42px] px-2 py-1 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-300 border border-blue-500/50 text-xs font-black flex items-center justify-center gap-1 active:scale-95"
-                  >
-                    <Calculator size={14} /> Custom
-                  </button>
-                </div>
+                <button
+                  type="button"
+                  onClick={openTenderNumpad}
+                  className="w-full min-h-[46px] px-3 py-2 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/50 text-xs font-bold flex items-center justify-between gap-2 active:scale-98 transition cursor-pointer"
+                  title="Enter custom cash amount tendered via touch numpad"
+                >
+                  <span className="flex items-center gap-2 font-black uppercase tracking-wider text-white">
+                    <Calculator size={16} className="text-blue-400" />
+                    Custom Tender Amount
+                  </span>
+                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-400/30">
+                    {cashTendered ? formatGHS(numericTendered) : 'Tap to set'}
+                  </span>
+                </button>
 
                 {/* Tendered Input & Dynamic Change Due */}
                 <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-800 font-mono">

@@ -9,9 +9,10 @@ import {
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
   CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store,
-  Monitor, Globe, Trash2, Minus, Receipt
+  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
+import { useChat } from '../context/ChatContext';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
@@ -27,6 +28,7 @@ import CreatePOModal from '../components/CreatePOModal';
 export default function Dashboard() {
   const { user } = useAuth();
   const navigate = useNavigate();
+  const { channels, totalUnread, onlineUsers, teamMembers, setActiveChannelId } = useChat();
 
   // Mode Selection
   const [viewMode, setViewMode] = useState<'admin' | 'staff'>(user?.role === 'admin' ? 'admin' : 'staff');
@@ -542,6 +544,19 @@ export default function Dashboard() {
           >
             <Users size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
             <span className="text-xs font-black uppercase tracking-wider">Customers</span>
+          </Link>
+
+          <Link
+            to="/communication"
+            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
+          >
+            <MessageSquare size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+            <span className="text-xs font-black uppercase tracking-wider">Communication</span>
+            {totalUnread > 0 && (
+              <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-black -mt-1">
+                {totalUnread}
+              </span>
+            )}
           </Link>
         </div>
       </div>
@@ -1089,6 +1104,105 @@ export default function Dashboard() {
                 </tbody>
               </table>
             </div>
+          </div>
+
+          {/* REORGANIZED STAFF COMMUNICATION & SHIFT NOTICE BOARD (Positioned down below transactions ledger) */}
+          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
+                  <MessageSquare size={18} />
+                </div>
+                <div>
+                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    Shift Communication & Team Broadcasts
+                    {totalUnread > 0 && (
+                      <span className="px-2 py-0.5 bg-rose-600 text-white rounded-full text-[10px] font-black animate-pulse">
+                        {totalUnread} New
+                      </span>
+                    )}
+                  </h2>
+                  <p className="text-[11px] text-slate-500 font-medium">Internal announcements, shift handovers, and real-time team coordination.</p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <Link
+                  to="/communication"
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs"
+                >
+                  <MessageSquare size={14} /> Open Communication Hub
+                </Link>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              {/* Active Channels */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Active Channels</div>
+                  <div className="text-lg font-black text-slate-900 mt-0.5">{channels?.length || 0} Channels</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Team & shift broadcast topics</div>
+                </div>
+                <div className="p-2.5 bg-white text-slate-700 rounded-lg border border-slate-200">
+                  <Layers size={18} />
+                </div>
+              </div>
+
+              {/* Staff On-Duty / Online */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Staff On-Duty / Online</div>
+                  <div className="text-lg font-black text-emerald-700 mt-0.5 flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 inline-block animate-ping" />
+                    {onlineUsers?.length || teamMembers?.length || 1} Active
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">Connected across shifts</div>
+                </div>
+                <div className="p-2.5 bg-white text-slate-700 rounded-lg border border-slate-200">
+                  <Users size={18} />
+                </div>
+              </div>
+
+              {/* Unread / Status Card */}
+              <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-lg flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Unread Messages</div>
+                  <div className="text-lg font-black text-slate-900 mt-0.5">
+                    {totalUnread > 0 ? `${totalUnread} Unread` : 'All Caught Up'}
+                  </div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">
+                    {totalUnread > 0 ? 'Urgent notifications pending' : 'Zero unread messages'}
+                  </div>
+                </div>
+                <div className={`p-2.5 rounded-lg border ${totalUnread > 0 ? 'bg-rose-50 text-rose-600 border-rose-200' : 'bg-white text-emerald-600 border-slate-200'}`}>
+                  {totalUnread > 0 ? <AlertCircle size={18} /> : <CheckCircle2 size={18} />}
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Channel Jumpers */}
+            {channels && channels.length > 0 && (
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-[11px] font-bold text-slate-500">Quick Channels:</span>
+                {channels.slice(0, 4).map((ch: any) => (
+                  <Link
+                    key={ch.id}
+                    to="/communication"
+                    onClick={() => setActiveChannelId(ch.id)}
+                    className="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded font-semibold text-[11px] transition flex items-center gap-1.5"
+                  >
+                    <span className="text-slate-400 font-mono">#</span>
+                    <span>{ch.name}</span>
+                    {ch.unread_count > 0 && (
+                      <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-black">
+                        {ch.unread_count}
+                      </span>
+                    )}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         </div>
       )}
