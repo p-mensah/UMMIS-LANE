@@ -109,7 +109,7 @@ export default function RecentActivityPanel({
       },
       quantityChange: adj.quantity_change,
       user: adj.user_name || 'Inventory Staff',
-      link: `/inventory`
+      link: `/adjustments`
     });
   });
 
@@ -150,7 +150,7 @@ export default function RecentActivityPanel({
           variant: actionLower.includes('restock') || actionLower.includes('received') ? 'blue' : 'amber'
         },
         user: log.user_name || 'Staff',
-        link: `/inventory`
+        link: `/adjustments`
       });
     }
   });
@@ -359,11 +359,11 @@ export default function RecentActivityPanel({
           Displaying {displayItems.length} most recent status changes
         </span>
         <div className="flex items-center gap-3">
-          <Link to="/sales" className="text-blue-600 hover:underline flex items-center gap-1">
+          <Link to="/transactions" className="text-blue-600 hover:underline flex items-center gap-1">
             Sales Ledger <ExternalLink size={11} />
           </Link>
           <span className="text-slate-300">|</span>
-          <Link to="/inventory" className="text-blue-600 hover:underline flex items-center gap-1">
+          <Link to="/adjustments" className="text-blue-600 hover:underline flex items-center gap-1">
             Inventory Logs <ExternalLink size={11} />
           </Link>
         </div>

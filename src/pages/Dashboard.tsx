@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
   CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store,
-  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare
+  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare, Scale
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -18,7 +18,6 @@ import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import InvoiceModal from '../components/InvoiceModal';
-import LowStockAlertIndicator from '../components/LowStockAlertIndicator';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
 import DailySalesTrendChart from '../components/DailySalesTrendChart';
 import RecentActivityPanel from '../components/RecentActivityPanel';
@@ -83,10 +82,6 @@ export default function Dashboard() {
   const [selectedMonth, setSelectedMonth] = useState<string>(new Date().toISOString().substring(0, 7));
   const [monthlySummaryData, setMonthlySummaryData] = useState<any>(null);
   const [monthlyLoading, setMonthlyLoading] = useState(false);
-
-  // Low Stock Table Filters
-  const [lowStockSearch, setLowStockSearch] = useState('');
-  const [lowStockFilter, setLowStockFilter] = useState<'all' | 'out_of_stock' | 'critical'>('all');
 
   // Staff Personal Data
   const [staffSummary, setStaffSummary] = useState<any>(null);
@@ -375,18 +370,6 @@ export default function Dashboard() {
   const avgTrendRevenue = salesTrends.length > 0 ? totalTrendRevenue / salesTrends.length : 0;
   const peakTrendDay = salesTrends.length > 0 ? [...salesTrends].sort((a, b) => (b.total || 0) - (a.total || 0))[0] : null;
 
-  // Low Stock Table Filter Math
-  const filteredLowStock = lowStockProducts.filter(p => {
-    const matchSearch = !lowStockSearch || 
-      p.name.toLowerCase().includes(lowStockSearch.toLowerCase()) || 
-      p.sku.toLowerCase().includes(lowStockSearch.toLowerCase()) ||
-      p.category.toLowerCase().includes(lowStockSearch.toLowerCase());
-
-    if (lowStockFilter === 'out_of_stock') return matchSearch && p.stock_quantity === 0;
-    if (lowStockFilter === 'critical') return matchSearch && p.stock_quantity > 0 && p.stock_quantity <= Math.ceil((p.threshold || 10) / 2);
-    return matchSearch;
-  });
-
   // Background Scroll Locking when any modal is active
   const isAnyModalOpen = Boolean(
     showAdminReportsModal || 
@@ -558,33 +541,42 @@ export default function Dashboard() {
               </span>
             )}
           </Link>
+
+          {user?.role === 'admin' && (
+            <Link
+              to="/adjustments"
+              className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
+            >
+              <Scale size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
+              <span className="text-xs font-black uppercase tracking-wider">Stock Take</span>
+            </Link>
+          )}
         </div>
       </div>
-
-      {/* 'LOW STOCK' NOTIFICATION SYSTEM THAT MONITORS PRODUCT QUANTITIES AND FLAGS ITEMS NEARING REORDER POINTS */}
-      <AutomatedLowStockNotification
-        products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
-        globalThreshold={globalThreshold}
-        proximityData={stockProximityData}
-        userRole={user?.role}
-        onQuickRestock={user?.role === 'admin' || allowStaffAdjustments ? (prod) => {
-          setSelectedProductForRestock(prod);
-          setRestockQty(Math.max(10, ((prod.min_stock_level || globalThreshold) * 2) - prod.stock_quantity));
-          setShowRestockModal(true);
-        } : undefined}
-        onCreatePO={(prod) => {
-          setPoPreselectedProduct(prod);
-          setShowCreatePoModal(true);
-        }}
-        onOpenThresholdModal={() => setShowThresholdModal(true)}
-        onExportCSV={handleExportLowStockCSV}
-        onRefresh={loadDashboardData}
-        isLoading={loading}
-      />
 
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
         <>
+          {/* 'LOW STOCK' NOTIFICATION SYSTEM (MONITORS QUANTITIES & FLAGS ITEMS NEARING REORDER POINTS) */}
+          <AutomatedLowStockNotification
+            products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
+            globalThreshold={globalThreshold}
+            proximityData={stockProximityData}
+            userRole={user?.role}
+            onQuickRestock={user?.role === 'admin' || allowStaffAdjustments ? (prod) => {
+              setSelectedProductForRestock(prod);
+              setRestockQty(Math.max(10, ((prod.min_stock_level || globalThreshold) * 2) - prod.stock_quantity));
+              setShowRestockModal(true);
+            } : undefined}
+            onCreatePO={(prod) => {
+              setPoPreselectedProduct(prod);
+              setShowCreatePoModal(true);
+            }}
+            onOpenThresholdModal={() => setShowThresholdModal(true)}
+            onExportCSV={handleExportLowStockCSV}
+            onRefresh={loadDashboardData}
+            isLoading={loading}
+          />
           {/* PRIMARY BUSINESS KPI CARDS (Mobile snap-slider, desktop auto-fit grid) */}
           <div className="space-y-1">
             <div className="flex items-center justify-between sm:hidden px-1 text-[11px] font-bold text-slate-500">
@@ -654,7 +646,14 @@ export default function Dashboard() {
                 </div>
                 <div className="flex items-center justify-between text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
                   <span>{lowStockProducts.filter(p => p.stock_quantity === 0).length} completely out of stock</span>
-                  <a href="#low-stock-notification-system" className="font-bold underline hover:text-amber-900">
+                  <a 
+                    href="#low-stock-notification-system" 
+                    onClick={(e) => {
+                      e.preventDefault();
+                      document.getElementById('low-stock-notification-system')?.scrollIntoView({ behavior: 'smooth' });
+                    }}
+                    className="font-bold underline hover:text-amber-900 cursor-pointer"
+                  >
                     Restock
                   </a>
                 </div>
@@ -743,7 +742,10 @@ export default function Dashboard() {
                 </h2>
                 <p className="text-[11px] text-slate-500 font-medium">Live transaction activity log across all register counters.</p>
               </div>
-              <Link to="/sales" className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1">
+              <Link 
+                to={user?.role === 'admin' ? "/transactions" : "/sales"} 
+                className="text-xs font-bold text-blue-600 hover:underline flex items-center gap-1"
+              >
                 All Transactions <ChevronRight size={14} />
               </Link>
             </div>
@@ -989,18 +991,6 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
-          {/* STAFF LOW-STOCK REAL-TIME ALERT NOTIFICATION (MONITORS QUANTITIES & REORDER POINTS) */}
-          {showStaffAlerts && (
-            <AutomatedLowStockNotification
-              products={stockProximityData?.products || (allProducts.length > 0 ? allProducts : lowStockProducts)}
-              globalThreshold={globalThreshold}
-              proximityData={stockProximityData}
-              userRole="staff"
-              onRefresh={loadDashboardData}
-              isLoading={loading}
-            />
-          )}
-
           {/* Staff Counter KPI Strip */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">

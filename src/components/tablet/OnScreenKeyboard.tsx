@@ -91,7 +91,7 @@ export default function OnScreenKeyboard({
 
   return (
     <div 
-      className={`fixed bottom-0 left-0 right-0 z-40 bg-slate-950/98 border-t-2 border-slate-700/80 backdrop-blur-md shadow-2xl p-2 sm:p-3 transition-transform animate-in slide-in-from-bottom-5 duration-200 select-none no-print ${className}`}
+      className={`fixed bottom-0 left-0 z-30 bg-slate-950/98 border-t-2 border-slate-700/80 backdrop-blur-md shadow-2xl p-2 sm:p-3 transition-transform animate-in slide-in-from-bottom-5 duration-200 select-none no-print ${className || 'right-0'}`}
       role="region"
       aria-label="On-Screen Tablet Keyboard"
     >

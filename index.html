@@ -28,6 +28,18 @@
             return false;
           }
         }, true);
+        var origError = console.error;
+        console.error = function() {
+          var text = Array.prototype.slice.call(arguments).map(function(a) { return String(a && a.message || a || ''); }).join(' ');
+          if (isBenignWsError(text)) return;
+          origError.apply(console, arguments);
+        };
+        var origWarn = console.warn;
+        console.warn = function() {
+          var text = Array.prototype.slice.call(arguments).map(function(a) { return String(a && a.message || a || ''); }).join(' ');
+          if (isBenignWsError(text)) return;
+          origWarn.apply(console, arguments);
+        };
       })();
     </script>
     <title>Ummis Lane Enterprise</title>

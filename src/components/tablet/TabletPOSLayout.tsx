@@ -71,8 +71,8 @@ export default function TabletPOSLayout({
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Mobile Money'>('Cash');
   const [cashTendered, setCashTendered] = useState<string>('');
   
-  // On-Screen Virtual Keyboard State for Tablet Mode
-  const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(true);
+  // On-Screen Virtual Keyboard State for Tablet Mode (always hidden by default until staff clicks to open)
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(false);
   
   // Touch Numpad Modal / Drawer State
   const [showNumpadModal, setShowNumpadModal] = useState<boolean>(false);
@@ -360,6 +360,7 @@ export default function TabletPOSLayout({
       );
 
       if (soundEnabled) soundFeedback.playAdjustmentSuccess();
+      setIsKeyboardOpen(false);
 
       // Build sale receipt payload
       const customerObj = customers.find(c => c.id.toString() === selectedCustomerId);
@@ -1080,7 +1081,7 @@ export default function TabletPOSLayout({
         title="Tablet Search"
         placeholder="Type item title, SKU, or barcode..."
         soundEnabled={soundEnabled}
-        className="md:right-[380px] lg:right-[420px] xl:right-[450px] border-r border-slate-800"
+        className="w-full md:w-[calc(100%-380px)] lg:w-[calc(100%-420px)] xl:w-[calc(100%-450px)] border-r border-slate-800 shadow-2xl"
       />
 
       {/* Floating Keyboard Pill when closed: repositioned strictly to the bottom-LEFT so it NEVER touches the Charge button or payment side */}

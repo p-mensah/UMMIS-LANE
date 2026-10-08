@@ -484,8 +484,10 @@ export default function Sales() {
           </button>
 
           <button 
-            onClick={() => setIsTabletMode(true)} 
+            type="button"
+            onClick={() => setShowPOSModal(true)} 
             className="min-h-[48px] px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
+            title="Launch standard POS Session"
           >
             <ShoppingCart size={17} /> New Sales Session
           </button>

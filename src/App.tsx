@@ -94,6 +94,7 @@ export default function App() {
               <Route path="/returns" element={<PrivateRoute><Returns /></PrivateRoute>} />
               <Route path="/purchases" element={<PrivateRoute><PurchasesRoute /></PrivateRoute>} />
               <Route path="/adjustments" element={<PrivateRoute><Adjustments /></PrivateRoute>} />
+              <Route path="/inventory" element={<PrivateRoute><Navigate to="/adjustments" replace /></PrivateRoute>} />
               <Route path="/settings" element={<PrivateRoute><Settings /></PrivateRoute>} />
               <Route path="/reports" element={<PrivateRoute><Dashboard /></PrivateRoute>} />
               <Route path="/users" element={<PrivateRoute><Users /></PrivateRoute>} />
@@ -104,7 +105,7 @@ export default function App() {
               <Route path="/suppliers" element={<PrivateRoute><Suppliers /></PrivateRoute>} />
               <Route path="/transactions" element={<PrivateRoute><Transactions /></PrivateRoute>} />
               <Route path="/audit-logs" element={<PrivateRoute><AuditLogs /></PrivateRoute>} />
-              <Route path="/tablet-pos" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
+              <Route path="/tablet-pos" element={<PrivateRoute><Navigate to="/sales?mode=tablet" replace /></PrivateRoute>} />
               <Route path="/tablet-inventory" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
               <Route path="/tablet-mode" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
             </Routes>
