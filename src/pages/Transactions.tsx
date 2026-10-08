@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer } from 'lucide-react';
-import InvoiceModal from '../components/InvoiceModal';
+import PrintPreviewModal from '../components/PrintPreviewModal';
 
 export default function Transactions() {
   const [transactions, setTransactions] = useState<any[]>([]);
@@ -160,10 +160,11 @@ export default function Transactions() {
         </table>
       </div>
 
-      {/* Sales Receipt Modal */}
+      {/* Sales Receipt Print Preview Modal */}
       {selectedSaleData && (
-        <InvoiceModal
-          saleData={selectedSaleData}
+        <PrintPreviewModal
+          isOpen={Boolean(selectedSaleData)}
+          receiptData={selectedSaleData}
           initialFormat="receipt"
           onClose={() => setSelectedSaleData(null)}
         />

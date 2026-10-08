@@ -1295,18 +1295,14 @@ export default function Dashboard() {
                   {dailySummary.paymentBreakdown && (
                     <div className="border border-slate-200 rounded-lg p-4 space-y-2">
                       <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider">Payment Method Channels</h4>
-                      <div className="grid grid-cols-3 gap-2 text-center text-xs">
-                        <div className="p-2 bg-slate-50 rounded-md border border-slate-100">
+                      <div className="grid grid-cols-2 gap-2 text-center text-xs">
+                        <div className="p-2.5 bg-slate-50 rounded-md border border-slate-100">
                           <div className="text-[10px] text-slate-500 font-bold uppercase">Cash</div>
                           <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown.Cash || 0)}</div>
                         </div>
-                        <div className="p-2 bg-slate-50 rounded-md border border-slate-100">
-                          <div className="text-[10px] text-slate-500 font-bold uppercase">Mobile Money</div>
-                          <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown['Mobile Money'] || 0)}</div>
-                        </div>
-                        <div className="p-2 bg-slate-50 rounded-md border border-slate-100">
-                          <div className="text-[10px] text-slate-500 font-bold uppercase">Card</div>
-                          <div className="font-black text-slate-900">{formatGHS(dailySummary.paymentBreakdown.Card || 0)}</div>
+                        <div className="p-2.5 bg-slate-50 rounded-md border border-slate-100">
+                          <div className="text-[10px] text-slate-500 font-bold uppercase">Mobile Money (MoMo)</div>
+                          <div className="font-black text-slate-900">{formatGHS((dailySummary.paymentBreakdown['Mobile Money'] || 0) + (dailySummary.paymentBreakdown.MoMo || 0) + (dailySummary.paymentBreakdown.Card || 0))}</div>
                         </div>
                       </div>
                     </div>

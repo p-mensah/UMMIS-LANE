@@ -23,11 +23,13 @@ import {
   Check,
   Building2,
   Eye,
-  X
+  X,
+  Keyboard
 } from 'lucide-react';
 import type { TabletInventoryItem, StockStatus, QuickAdjustmentAudit } from '../../types/tablet';
 import TouchStockAdjuster from './TouchStockAdjuster';
 import BarcodeScannerOverlay from './BarcodeScannerOverlay';
+import OnScreenKeyboard from './OnScreenKeyboard';
 import { formatGHS } from '../../lib/formatters';
 import { soundFeedback } from '../../lib/soundFeedback';
 
@@ -71,6 +73,7 @@ export default function TabletInventoryLayout({
   // State
   const [selectedItemId, setSelectedItemId] = useState<number | null>(inventoryItems[0]?.id || null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
   const [selectedCategory, setSelectedCategory] = useState('ALL');
   const [statusFilter, setStatusFilter] = useState<'all' | StockStatus>('all');
   const [isScannerOpen, setIsScannerOpen] = useState(false);
@@ -193,6 +196,21 @@ export default function TabletInventoryLayout({
 
         {/* Global Hardware & Barcode Trigger */}
         <div className="flex items-center gap-2">
+          {/* On-Screen Keyboard Toggle */}
+          <button
+            type="button"
+            onClick={() => setIsKeyboardOpen(prev => !prev)}
+            className={`min-h-[44px] px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 ${
+              isKeyboardOpen 
+                ? 'bg-blue-600 text-white ring-2 ring-blue-400/40' 
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+            }`}
+            title="Toggle On-Screen Keyboard"
+          >
+            <Keyboard size={16} />
+            <span className="hidden sm:inline">Keyboard</span>
+          </button>
+
           <button
             type="button"
             onClick={() => setIsScannerOpen(true)}
@@ -225,6 +243,7 @@ export default function TabletInventoryLayout({
               <input
                 type="text"
                 value={searchQuery}
+                onFocus={() => setIsKeyboardOpen(true)}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search Item, SKU, Barcode, Bin..."
                 className="w-full min-h-[44px] pl-10 pr-9 py-2 bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-2xs"
@@ -613,6 +632,17 @@ export default function TabletInventoryLayout({
           </div>
         </div>
       )}
+
+      {/* On-Screen Virtual Keyboard for Tablet Mode */}
+      <OnScreenKeyboard
+        isOpen={isKeyboardOpen}
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onSubmit={() => setIsKeyboardOpen(false)}
+        onClose={() => setIsKeyboardOpen(false)}
+        title="Tablet Inventory Search"
+        placeholder="Search Item, SKU, Barcode, Bin..."
+      />
     </div>
   );
 }

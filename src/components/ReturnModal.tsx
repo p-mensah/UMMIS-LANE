@@ -33,7 +33,7 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
   // Return Form State
   const [selectedItems, setSelectedItems] = useState<Record<number, SelectedReturnItem>>({});
 
-  const [refundMethod, setRefundMethod] = useState<'Cash' | 'Mobile Money' | 'Card' | 'Store Credit'>('Cash');
+  const [refundMethod, setRefundMethod] = useState<'Cash' | 'Mobile Money' | 'Store Credit'>('Cash');
   const [globalReason, setGlobalReason] = useState<string>('Defective / Damaged Item');
   const [notes, setNotes] = useState<string>('');
   const [submitting, setSubmitting] = useState<boolean>(false);
@@ -365,8 +365,8 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
 
                   <div>
                     <label className="block text-xs font-bold text-slate-700 mb-1">Refund Payment Channel</label>
-                    <div className="grid grid-cols-2 gap-2 text-xs">
-                      {(['Cash', 'Mobile Money', 'Card', 'Store Credit'] as const).map(mode => (
+                    <div className="grid grid-cols-3 gap-2 text-xs">
+                      {(['Cash', 'Mobile Money', 'Store Credit'] as const).map(mode => (
                         <button
                           type="button"
                           key={mode}
@@ -377,7 +377,7 @@ export default function ReturnModal({ initialSaleId, onClose, onReturnProcessed 
                               : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                           }`}
                         >
-                          {mode}
+                          {mode === 'Mobile Money' ? 'MoMo' : mode}
                         </button>
                       ))}
                     </div>

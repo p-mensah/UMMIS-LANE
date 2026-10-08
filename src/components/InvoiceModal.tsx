@@ -163,6 +163,9 @@ export default function InvoiceModal({
   const customerEmail = getDisplayCustomerEmail(rawEmail, user?.role);
 
   const paymentMethod = saleData.paymentMethod || saleData.payment_method || 'Cash';
+  const displayPaymentMethod = paymentMethod.toLowerCase().includes('momo') || paymentMethod.toLowerCase().includes('mobile')
+    ? 'MOMO'
+    : 'CASH';
   const cashierName = saleData.user_name || 'Staff Member';
   const grandTotal = saleData.total !== undefined ? saleData.total : (saleData.total_amount || 0);
   const isRefunded = saleData.status === 'refunded';
@@ -695,7 +698,7 @@ export default function InvoiceModal({
                   </div>
                   <div className="flex justify-between text-slate-600 pt-0.5">
                     <span>PAY METHOD:</span>
-                    <span className="font-bold">{paymentMethod}</span>
+                    <span className="font-bold">{displayPaymentMethod}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>TENDERED:</span>
@@ -818,7 +821,7 @@ export default function InvoiceModal({
                   </div>
                   <div className="flex justify-between text-slate-600 pt-1">
                     <span>PAY METHOD:</span>
-                    <span className="font-bold">{paymentMethod}</span>
+                    <span className="font-bold">{displayPaymentMethod}</span>
                   </div>
                   <div className="flex justify-between text-slate-600">
                     <span>TENDERED:</span>

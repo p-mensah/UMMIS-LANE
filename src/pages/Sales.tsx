@@ -19,6 +19,7 @@ import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
 import { getDisplayCustomerPhone } from '../lib/privacy';
 import TabletPOSLayout from '../components/tablet/TabletPOSLayout';
+import PrintPreviewModal from '../components/PrintPreviewModal';
 
 export default function Sales() {
   const { user } = useAuth();
@@ -46,7 +47,7 @@ export default function Sales() {
   // Cart & POS filters
   const [cart, setCart] = useState<{product_id: number, quantity: number, unit_price: number, notes?: string}[]>([]);
   const [selectedCustomer, setSelectedCustomer] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Mobile Money'>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Mobile Money'>('Cash');
   const [posSearchQuery, setPosSearchQuery] = useState('');
   const [posCategoryFilter, setPosCategoryFilter] = useState('');
 
@@ -740,7 +741,6 @@ export default function Sales() {
             >
               <option value="">All Payment Modes</option>
               <option value="Cash">Cash</option>
-              <option value="Card">Card</option>
               <option value="Mobile Money">Mobile Money (MoMo)</option>
             </select>
 
@@ -1239,8 +1239,7 @@ export default function Sales() {
                       className="w-full border border-slate-300 rounded px-1.5 py-1 text-[11px] bg-white focus:outline-none focus:border-blue-500 font-medium"
                     >
                       <option value="Cash">Physical Cash</option>
-                      <option value="Card">Bank Card</option>
-                      <option value="Mobile Money">MoMo / Digital</option>
+                      <option value="Mobile Money">MoMo (Mobile Money)</option>
                     </select>
                   </div>
                 </div>
@@ -1370,7 +1369,7 @@ export default function Sales() {
               <div className="py-3 border-y border-slate-100 space-y-1">
                  <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Amount Due</div>
                  <div className="text-2xl font-black text-slate-900">{formatGHS(totalCart)}</div>
-                 <div className="text-xs font-bold text-blue-600 uppercase">Payment Mode: {paymentMethod}</div>
+                 <div className="text-xs font-bold text-blue-600 uppercase">Payment Mode: {paymentMethod === 'Mobile Money' ? 'MOMO' : 'CASH'}</div>
               </div>
 
               <div className="flex flex-col gap-2 pt-2">

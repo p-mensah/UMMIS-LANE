@@ -27,12 +27,15 @@ import {
   Calculator,
   Receipt,
   Maximize2,
-  Minimize2
+  Minimize2,
+  Keyboard
 } from 'lucide-react';
 import { formatGHS } from '../../lib/formatters';
 import { soundFeedback } from '../../lib/soundFeedback';
 import BarcodeScannerOverlay from './BarcodeScannerOverlay';
 import InvoiceModal from '../InvoiceModal';
+import PrintPreviewModal from '../PrintPreviewModal';
+import OnScreenKeyboard from './OnScreenKeyboard';
 
 export interface CartItem {
   product_id: number;
@@ -65,8 +68,11 @@ export default function TabletPOSLayout({
   // Cart & Transaction States
   const [cart, setCart] = useState<CartItem[]>([]);
   const [selectedCustomerId, setSelectedCustomerId] = useState<string>('');
-  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Card' | 'Mobile Money'>('Cash');
+  const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Mobile Money'>('Cash');
   const [cashTendered, setCashTendered] = useState<string>('');
+  
+  // On-Screen Virtual Keyboard State for Tablet Mode
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState<boolean>(true);
   
   // Touch Numpad Modal / Drawer State
   const [showNumpadModal, setShowNumpadModal] = useState<boolean>(false);
@@ -382,11 +388,12 @@ export default function TabletPOSLayout({
         user_name: user?.name || 'Cashier'
       });
 
-      // Clear cart for next customer
+      // Clear cart for next customer & close keyboard
       setCart([]);
       setCashTendered('');
       setSelectedCustomerId('');
       setPaymentMethod('Cash');
+      setIsKeyboardOpen(false);
     } catch (err: any) {
       if (soundEnabled) soundFeedback.playScanError();
     } finally {
@@ -505,6 +512,26 @@ export default function TabletPOSLayout({
             <span className="hidden sm:inline">Scan</span>
           </button>
 
+          {/* On-Screen Keyboard Toggle Button for Tablet Mode */}
+          <button
+            type="button"
+            onClick={() => setIsKeyboardOpen(prev => !prev)}
+            className={`min-h-[42px] px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 ${
+              isKeyboardOpen 
+                ? 'bg-blue-600 text-white ring-2 ring-blue-400/40 shadow-md' 
+                : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+            }`}
+            title={isKeyboardOpen ? 'On-screen keyboard active (click to hide)' : 'Open on-screen keyboard for typing and search'}
+          >
+            <Keyboard size={16} className={isKeyboardOpen ? 'text-white' : 'text-slate-400'} />
+            <span className="hidden md:inline">Keyboard</span>
+            <span className={`text-[10px] px-1 py-0.2 rounded font-black uppercase ${
+              isKeyboardOpen ? 'bg-blue-800 text-blue-200' : 'bg-slate-700 text-slate-400'
+            }`}>
+              {isKeyboardOpen ? 'ON' : 'OFF'}
+            </span>
+          </button>
+
           {/* Audio Feedback Toggle */}
           <button
             type="button"
@@ -548,6 +575,7 @@ export default function TabletPOSLayout({
               <input
                 type="text"
                 value={searchQuery}
+                onFocus={() => setIsKeyboardOpen(true)}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search Item title, SKU, or Barcode..."
                 className="w-full min-h-[48px] bg-slate-800/90 border border-slate-700 rounded-2xl pl-11 pr-11 py-3 text-sm font-semibold text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-inner"
@@ -603,7 +631,7 @@ export default function TabletPOSLayout({
           </div>
 
           {/* Product Touch Grid (Min 48px Buttons, Distinct High-Contrast Stock Status Badges) */}
-          <div className="flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0">
+          <div className={`flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 ${isKeyboardOpen ? 'pb-72 sm:pb-80' : 'pb-16'}`}>
             {filteredProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-8 text-slate-500 space-y-3">
                 <Package size={40} className="opacity-30" />
@@ -851,12 +879,11 @@ export default function TabletPOSLayout({
             </div>
           </div>
 
-          {/* Payment Method Selector (Min 48px Touch Targets) */}
+          {/* Payment Method Selector (Min 48px Touch Targets) - STRICTLY CASH & MOMO ONLY */}
           <div className="shrink-0 space-y-2">
-            <div className="grid grid-cols-3 gap-2 text-xs font-bold">
+            <div className="grid grid-cols-2 gap-2 text-xs font-bold">
               {[
                 { id: 'Cash', label: 'Cash', icon: <Banknote size={16} /> },
-                { id: 'Card', label: 'Card', icon: <CreditCard size={16} /> },
                 { id: 'Mobile Money', label: 'MoMo', icon: <Smartphone size={16} /> },
               ].map(mode => (
                 <button
@@ -1085,14 +1112,42 @@ export default function TabletPOSLayout({
         title="POS Barcode Scanner"
       />
 
-      {/* Receipt & Invoice Modal upon Completed Sale */}
+      {/* On-Screen Virtual Keyboard for Tablet Mode: Strictly bounded to catalog section so it NEVER affects the payment side */}
+      <OnScreenKeyboard
+        isOpen={isKeyboardOpen && !completedSaleData && !showNumpadModal && !isScannerOpen && activeTab === 'catalog'}
+        value={searchQuery}
+        onChange={setSearchQuery}
+        onSubmit={() => setIsKeyboardOpen(false)}
+        onClose={() => setIsKeyboardOpen(false)}
+        title="Tablet Search"
+        placeholder="Type item title, SKU, or barcode..."
+        soundEnabled={soundEnabled}
+        className="md:right-[380px] lg:right-[420px] xl:right-[450px] border-r border-slate-800"
+      />
+
+      {/* Floating Keyboard Pill when closed: repositioned strictly to the bottom-LEFT so it NEVER touches the Charge button or payment side */}
+      {!isKeyboardOpen && !completedSaleData && !showNumpadModal && !isScannerOpen && activeTab === 'catalog' && (
+        <button
+          type="button"
+          onClick={() => {
+            if (soundEnabled) soundFeedback.playKeypadClick();
+            setIsKeyboardOpen(true);
+          }}
+          className="fixed bottom-4 left-4 z-30 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-3.5 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-blue-400/40 no-print"
+          title="Open On-Screen Keyboard"
+        >
+          <Keyboard size={18} />
+          <span>Keyboard</span>
+        </button>
+      )}
+
+      {/* Reusable Print Preview Modal upon Completed Sale */}
       {completedSaleData && (
-        <InvoiceModal
-          saleData={completedSaleData}
-          products={products}
+        <PrintPreviewModal
+          isOpen={Boolean(completedSaleData)}
+          receiptData={completedSaleData}
           initialFormat="receipt"
           onClose={() => setCompletedSaleData(null)}
-          onNewSale={() => setCompletedSaleData(null)}
         />
       )}
     </div>
