@@ -146,62 +146,74 @@ export default function NotificationBell() {
         )}
       </button>
 
-      {/* Normal-Sized In-App Notifications Popover */}
+      {/* Redesigned In-App Notifications Center Popover */}
       {isOpen && (
         <div 
           id="notification-inbox-popover"
-          className="absolute right-0 mt-2 w-80 sm:w-96 bg-white rounded-lg shadow-xl border border-slate-200 z-50 overflow-hidden flex flex-col max-h-[440px] animate-in fade-in zoom-in-95 duration-150"
+          className="absolute right-0 mt-2.5 w-84 sm:w-[420px] bg-white rounded-2xl shadow-2xl border border-slate-200 z-50 overflow-hidden flex flex-col max-h-[500px] animate-in fade-in zoom-in-95 duration-150"
         >
-          {/* Header */}
-          <div className="px-4 py-3 bg-black text-white flex items-center justify-between border-b border-black">
-            <div>
-              <h3 className="text-xs font-bold uppercase tracking-wider text-white">In-App Notifications</h3>
-              <p className="text-[11px] text-zinc-400 font-medium">System alerts & operational updates</p>
+          {/* Header Bar (#111827) */}
+          <div className="px-4 py-3.5 bg-[#111827] text-white flex items-center justify-between border-b border-slate-800">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                <Bell size={16} />
+              </div>
+              <div>
+                <h3 className="text-xs font-black uppercase tracking-wider text-white flex items-center gap-2">
+                  <span>In-App Notifications</span>
+                  {unreadCount > 0 && (
+                    <span className="px-1.5 py-0.2 bg-emerald-500/30 text-emerald-300 text-[10px] font-mono rounded font-bold">
+                      {unreadCount} NEW
+                    </span>
+                  )}
+                </h3>
+                <p className="text-[10px] text-slate-400 font-medium">Real-time alerts, stock warnings & register updates</p>
+              </div>
             </div>
 
             <div className="flex items-center gap-1.5">
               <button
                 onClick={refreshNotifications}
-                className="p-1 hover:bg-zinc-800 text-zinc-300 hover:text-white rounded transition-colors"
-                title="Refresh"
+                className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-white rounded-lg transition-colors cursor-pointer"
+                title="Refresh notifications"
               >
-                <RefreshCw size={13} />
+                <RefreshCw size={14} />
               </button>
               {unreadCount > 0 && (
                 <button
                   onClick={handleMarkAllRead}
-                  className="text-[10px] font-bold text-white bg-zinc-800 hover:bg-zinc-700 px-2 py-1 rounded transition-colors flex items-center gap-1 border border-zinc-700"
+                  className="text-[10px] font-bold text-white bg-slate-800 hover:bg-slate-700 px-2.5 py-1 rounded-lg transition-colors flex items-center gap-1 border border-slate-700 cursor-pointer"
                 >
-                  <CheckCheck size={11} />
-                  <span>Mark Read</span>
+                  <CheckCheck size={12} className="text-emerald-400" />
+                  <span>Mark All Read</span>
                 </button>
               )}
             </div>
           </div>
 
-          {/* Filter Bar */}
-          <div className="flex items-center justify-between px-3 py-2 bg-white border-b border-zinc-200 text-xs">
-            <div className="inline-flex bg-zinc-100 p-0.5 rounded border border-zinc-200 text-[11px] font-medium">
+          {/* Filter Navigation Bar */}
+          <div className="flex items-center justify-between px-3 py-2 bg-slate-50 border-b border-slate-200 text-xs">
+            <div className="inline-flex bg-slate-200/70 p-0.5 rounded-lg border border-slate-200 text-[11px] font-medium">
               <button
                 onClick={() => setFilter('all')}
-                className={`px-2.5 py-0.5 rounded transition-colors ${
-                  filter === 'all' ? 'bg-black text-white font-bold' : 'text-zinc-700 hover:text-black'
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                  filter === 'all' ? 'bg-white text-slate-900 font-extrabold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 All ({notifications.length})
               </button>
               <button
                 onClick={() => setFilter('unread')}
-                className={`px-2.5 py-0.5 rounded transition-colors ${
-                  filter === 'unread' ? 'bg-black text-white font-bold' : 'text-zinc-700 hover:text-black'
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                  filter === 'unread' ? 'bg-white text-slate-900 font-extrabold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Unread ({unreadCount})
               </button>
               <button
                 onClick={() => setFilter('warnings')}
-                className={`px-2.5 py-0.5 rounded transition-colors ${
-                  filter === 'warnings' ? 'bg-black text-white font-bold' : 'text-zinc-700 hover:text-black'
+                className={`px-2.5 py-1 rounded-md transition-all cursor-pointer ${
+                  filter === 'warnings' ? 'bg-white text-slate-900 font-extrabold shadow-xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
                 Warnings
@@ -211,7 +223,7 @@ export default function NotificationBell() {
             {notifications.some(n => n.is_read === 1) && (
               <button
                 onClick={handleClearRead}
-                className="text-[11px] font-semibold text-zinc-600 hover:text-black transition-colors"
+                className="text-[11px] font-semibold text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
                 title="Clear read items"
               >
                 Clear Read
@@ -219,84 +231,89 @@ export default function NotificationBell() {
             )}
           </div>
 
-          {/* Notification Items List - Strict Black & White card styling aside from the tags */}
-          <div className="flex-1 overflow-y-auto p-2.5 space-y-2 min-h-[160px] bg-zinc-50">
+          {/* Notification Items List */}
+          <div className="flex-1 overflow-y-auto p-3 space-y-2.5 min-h-[180px] max-h-[340px] bg-slate-100/60 custom-scrollbar">
             {filtered.length > 0 ? (
               filtered.map(item => {
                 const semanticType = getSemanticType(item);
                 const isRead = item.is_read === 1;
 
-                // Color tags: CRITICAL (Red), WARNING (Amber), INFO (Blue)
-                let badgeClasses = 'bg-blue-100 text-blue-800 border-blue-200 font-bold';
+                let badgeClasses = 'bg-slate-100 text-slate-700 border-slate-200';
                 let badgeLabel = 'INFO';
+                let dotColor = 'bg-blue-500';
 
                 if (semanticType === 'critical') {
-                  badgeClasses = 'bg-rose-100 text-rose-800 border-rose-300 font-bold';
+                  badgeClasses = 'bg-rose-50 text-rose-700 border-rose-200 font-bold';
                   badgeLabel = 'CRITICAL';
+                  dotColor = 'bg-rose-500';
                 } else if (semanticType === 'warning') {
-                  badgeClasses = 'bg-amber-100 text-amber-800 border-amber-300 font-bold';
+                  badgeClasses = 'bg-amber-50 text-amber-700 border-amber-200 font-bold';
                   badgeLabel = 'WARNING';
-                } else {
-                  badgeClasses = 'bg-blue-50 text-blue-700 border-blue-200 font-semibold';
-                  badgeLabel = 'INFO';
+                  dotColor = 'bg-amber-500';
                 }
 
-                // Strict Black and White card styling
                 const cardBase = isRead
-                  ? 'bg-white border-zinc-200 text-zinc-700'
-                  : 'bg-white border-black/30 shadow-2xs text-black ring-1 ring-black/10';
+                  ? 'bg-white/80 border-slate-200 text-slate-700 hover:border-slate-300'
+                  : 'bg-white border-slate-300 shadow-xs text-slate-900 ring-1 ring-slate-900/5 hover:border-slate-400';
 
                 return (
                   <div
                     key={item.id}
                     onClick={() => handleNotificationClick(item)}
-                    className={`p-3 text-xs rounded-lg border transition-all cursor-pointer hover:border-black hover:shadow-sm flex flex-col gap-1.5 ${cardBase}`}
+                    className={`p-3 text-xs rounded-xl border transition-all cursor-pointer hover:shadow-sm flex flex-col gap-1.5 ${cardBase}`}
                     title="Click to view details directly"
                   >
                     <div className="flex items-start justify-between gap-2">
-                      <div className="flex items-center gap-1.5 flex-wrap">
-                        {/* Only the status tags have colors */}
-                        <span className={`px-1.5 py-0.5 text-[9px] uppercase tracking-wider rounded border ${badgeClasses}`}>
+                      <div className="flex items-center gap-1.5 flex-wrap min-w-0">
+                        <span className={`w-2 h-2 rounded-full ${dotColor} shrink-0`} />
+                        <span className={`px-1.5 py-0.5 text-[9px] uppercase tracking-wider rounded border shrink-0 ${badgeClasses}`}>
                           {badgeLabel}
                         </span>
-                        <h4 className={`text-xs tracking-tight ${isRead ? 'font-semibold text-zinc-900' : 'font-extrabold text-black'}`}>
+                        <h4 className={`text-xs tracking-tight truncate ${isRead ? 'font-semibold text-slate-800' : 'font-black text-slate-900'}`}>
                           {item.title}
                         </h4>
                       </div>
 
                       <div className="flex items-center gap-1.5 shrink-0">
-                        <span className="text-[10px] text-zinc-500 font-medium font-mono">
+                        <span className="text-[10px] text-slate-400 font-medium font-mono">
                           {timeAgo(item.created_at)}
                         </span>
-                        {item.is_read === 0 && (
-                          <span className="w-2 h-2 rounded-full bg-black shrink-0" title="Unread notification" />
+                        {!isRead && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" title="Unread" />
                         )}
                         <button
                           onClick={(e) => handleDelete(item.id, e)}
-                          className="text-zinc-400 hover:text-black p-0.5 rounded transition-colors"
+                          className="text-slate-400 hover:text-rose-600 p-0.5 rounded transition-colors cursor-pointer"
                           title="Dismiss"
                         >
-                          <X size={12} />
+                          <X size={13} />
                         </button>
                       </div>
                     </div>
 
-                    <p className={`text-[11px] leading-relaxed ${isRead ? 'text-zinc-600' : 'text-zinc-900 font-normal'}`}>
+                    <p className={`text-[11px] leading-relaxed pl-3.5 ${isRead ? 'text-slate-500' : 'text-slate-700 font-medium'}`}>
                       {item.message}
                     </p>
+
+                    <div className="flex items-center justify-between pt-1 pl-3.5 text-[10px] text-blue-600 font-bold group-hover:underline">
+                      <span>Jump to page</span>
+                      <span className="text-slate-400">→</span>
+                    </div>
                   </div>
                 );
               })
             ) : (
-              <div className="p-8 text-center text-zinc-400 text-xs">
-                No notifications in this view.
+              <div className="p-8 text-center text-slate-400 text-xs flex flex-col items-center justify-center gap-2">
+                <CheckCheck size={28} className="text-slate-300" />
+                <span>All caught up! No notifications in this view.</span>
               </div>
             )}
           </div>
 
-          {/* Footer */}
-          <div className="px-3 py-2 bg-white border-t border-zinc-200 text-center text-[10px] text-zinc-600 font-medium">
-            System Alerts & Operational Warnings • Click notice to navigate
+          {/* Footer Bar */}
+          <div className="px-3 py-2 bg-white border-t border-slate-200 text-center text-[10px] text-slate-500 font-medium flex items-center justify-between">
+            <span>In-App Notification Dispatcher</span>
+            <span className="text-emerald-600 font-bold">Live Synced</span>
           </div>
         </div>
       )}

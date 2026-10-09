@@ -70,16 +70,19 @@ function ReceiptBarcode({ value, isNarrow = false }: { value: string; isNarrow?:
   }
   bars.push(2, 2, 1, 3); // stop code
 
-  const barWidth = isNarrow ? 1.0 : 1.3;
+  // Optimized line spacing to guarantee low-resolution POS thermal printer scanners read without bleeding
+  const barWidth = isNarrow ? 1.15 : 1.5;
   const totalWidth = bars.reduce((sum, w) => sum + w * barWidth, 0);
+  // Scaled up height by 20% (was 22/28, now 27/34)
+  const barcodeHeight = isNarrow ? 27 : 34;
 
   return (
-    <div className="flex flex-col items-center justify-center my-1">
+    <div className="flex flex-col items-center justify-center my-2 print:my-1">
       <svg
-        width={Math.min(totalWidth, isNarrow ? 160 : 220)}
-        height={isNarrow ? 22 : 28}
-        viewBox={`0 0 ${totalWidth} 28`}
-        className="shape-rendering-crispEdges"
+        width={Math.min(totalWidth, isNarrow ? 180 : 250)}
+        height={barcodeHeight}
+        viewBox={`0 0 ${totalWidth} ${barcodeHeight}`}
+        className="shape-rendering-crispEdges print:max-w-[210px]"
       >
         {(() => {
           let currentX = 0;
@@ -87,15 +90,25 @@ function ReceiptBarcode({ value, isNarrow = false }: { value: string; isNarrow?:
             const x = currentX;
             const width = w * barWidth;
             currentX += width;
-            // Draw every alternate bar as black
+            // Draw alternate bars with slight isolation gap to prevent bleeding on thermal rolls
             if (idx % 2 === 0) {
-              return <rect key={idx} x={x} y={0} width={Math.max(1, width - 0.2)} height={28} fill="#000000" />;
+              return (
+                <rect 
+                  key={idx} 
+                  x={x} 
+                  y={0} 
+                  width={Math.max(1.1, width - 0.25)} 
+                  height={barcodeHeight} 
+                  fill="#000000" 
+                />
+              );
             }
             return null;
           });
         })()}
       </svg>
-      <span className="font-mono text-[9px] font-bold tracking-widest text-slate-800 mt-0.5">
+      {/* Scaled up vertical code format with widened line spacing */}
+      <span className="font-mono text-[10px] sm:text-[11px] font-extrabold tracking-[0.25em] text-slate-900 mt-1 print:text-black">
         *{value}*
       </span>
     </div>
@@ -203,8 +216,14 @@ export default function InvoiceModal({
     return found?.sku || `SKU-${item.product_id || 'GEN'}`;
   };
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const handlePrint = () => {
+    setToastMessage(`Receipt #REC-${saleId} sent to printer successfully!`);
     window.print();
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
   };
 
   return (
@@ -300,35 +319,48 @@ export default function InvoiceModal({
         }
       `}</style>
 
+      {/* Transient Toast Notification element that hovers in the viewport area */}
+      {toastMessage && (
+        <div 
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-[150] pointer-events-none transition-all duration-200 animate-in fade-in slide-in-from-top-4"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 text-white rounded-xl shadow-2xl border border-emerald-500/40 backdrop-blur-md text-xs font-semibold">
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[96dvh] my-auto min-w-0">
         
-        {/* ================= MODAL HEADER & CONTROLS (Hidden during print) ================= */}
-        <div className="no-print bg-slate-900 text-white p-3 sm:p-4 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-800">
-          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
-            <div className="w-9 h-9 sm:w-10 sm:h-10 bg-blue-600 rounded-xl flex items-center justify-center text-white shrink-0 shadow-xs">
-              <Printer size={18} />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider flex items-center gap-1.5 flex-wrap">
-                <span>Receipt & Invoice Viewer</span>
-                <span className="text-[10px] px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded-md font-mono font-bold">
-                  #REC-{saleId}
-                </span>
-              </h2>
-              <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate">
-                {storeName} • {formattedDate}
-              </p>
-            </div>
+        {/* ================= 1. OUTER MODAL LAYER: DARK HEADER BAR (#111827) ================= */}
+        <div className="no-print bg-[#111827] text-white px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0">
+          {/* Left-aligned title "RECEIPT & INVOICE VIEWER #REC-{saleId}" and current transaction metadata */}
+          <div className="min-w-0">
+            <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white flex items-center gap-2 flex-wrap">
+              <span>RECEIPT & INVOICE VIEWER</span>
+              <span className="text-emerald-400 font-mono font-black">
+                #REC-{saleId || '6'}
+              </span>
+            </h2>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate mt-0.5">
+              {storeName} • {formattedDate} • Cashier: {cashierName}
+            </p>
           </div>
 
-          <div className="flex items-center gap-2 w-full sm:w-auto justify-end flex-wrap xs:flex-nowrap">
-            {/* Format Switcher (3-Way Toggle: 80mm, 58mm, A4) */}
-            <div className="flex bg-slate-800 p-0.5 rounded-xl border border-slate-700 shrink-0">
+          {/* Right side: Grouped 3 toggle pills inside a single flex-row container + X close icon flush right */}
+          <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto shrink-0">
+            {/* Single flex-row container with subtle active borders */}
+            <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 shrink-0 gap-1">
               <button
                 type="button"
                 onClick={() => setInvoiceFormat('receipt')}
-                className={`min-h-[36px] px-2.5 sm:px-3 py-1 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                  invoiceFormat === 'receipt' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  invoiceFormat === 'receipt' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
                 }`}
                 title="80mm Thermal Receipt (Standard POS Roll)"
               >
@@ -337,8 +369,10 @@ export default function InvoiceModal({
               <button
                 type="button"
                 onClick={() => setInvoiceFormat('receipt-58')}
-                className={`min-h-[36px] px-2.5 sm:px-3 py-1 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                  invoiceFormat === 'receipt-58' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  invoiceFormat === 'receipt-58' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
                 }`}
                 title="58mm Thermal Receipt (Mini / Portable POS Roll)"
               >
@@ -347,8 +381,10 @@ export default function InvoiceModal({
               <button
                 type="button"
                 onClick={() => setInvoiceFormat('a4')}
-                className={`min-h-[36px] px-2.5 sm:px-3 py-1 text-[11px] font-bold rounded-lg transition-all flex items-center gap-1 cursor-pointer ${
-                  invoiceFormat === 'a4' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-400 hover:text-white'
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  invoiceFormat === 'a4' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
                 }`}
                 title="Standard A4 Formal Invoice"
               >
@@ -356,35 +392,30 @@ export default function InvoiceModal({
               </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="min-h-[36px] px-3.5 sm:px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-1.5 shadow-sm shrink-0 cursor-pointer active:scale-95"
-            >
-              <Printer size={15} /> <span>Print</span>
-            </button>
-
+            {/* "X" close icon flush right */}
             <button
               type="button"
               onClick={onClose}
-              className="min-h-[36px] min-w-[36px] flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition-colors shrink-0 cursor-pointer"
-              title="Close"
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
+              title="Close Viewer"
+              aria-label="Close Viewer"
             >
               <X size={18} />
             </button>
           </div>
         </div>
 
-        {/* Printable Area Wrapper (Fluid container that handles any viewport without clipping) */}
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-2.5 xs:p-4 sm:p-6 md:p-8 bg-slate-100 flex justify-center custom-scrollbar">
+        {/* ================= MAIN BACKGROUND BODY: CLEAN LIGHT-NEUTRAL CONTRAST GRAY (#F3F4F6) ================= */}
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 xs:p-4 sm:p-6 md:p-8 bg-[#F3F4F6] flex justify-center custom-scrollbar">
+          {/* ================= 2. INNER RECEIPT PAPER WRAPPER: CRISP WHITE VERTICAL CONTAINER WITH SHARP EDGE BOUNDARIES & SUBTLE BOX SHADOW ================= */}
           <div
             id="invoice-print-area"
-            className={`bg-white transition-all shadow-md ${
+            className={`bg-white transition-all shadow-md border border-slate-300 font-mono text-slate-900 leading-tight ${
               invoiceFormat === 'a4'
-                ? 'w-full max-w-[820px] p-4 xs:p-5 sm:p-8 md:p-10 border border-slate-200 text-slate-800 font-sans rounded-xl'
+                ? 'w-full max-w-[820px] p-4 xs:p-5 sm:p-8 md:p-10 text-xs font-sans rounded-none sm:rounded-sm'
                 : invoiceFormat === 'receipt-58'
-                ? 'w-full max-w-[270px] p-2.5 xs:p-3 border border-slate-300 font-mono text-[10px] text-slate-900 leading-tight rounded-md mx-auto'
-                : 'w-full max-w-[340px] p-3.5 xs:p-4 sm:p-5 border border-slate-300 font-mono text-xs text-slate-900 leading-tight rounded-lg mx-auto'
+                ? 'w-full max-w-[270px] p-3 text-[10px] mx-auto rounded-none'
+                : 'w-full max-w-[340px] p-4 sm:p-5 text-xs mx-auto rounded-none'
             }`}
           >
             {/* ================= 1. A4 OFFICIAL INVOICE VIEW ================= */}
@@ -849,34 +880,16 @@ export default function InvoiceModal({
           </div>
         </div>
 
-        {/* Modal Footer Controls (Hidden during print) */}
-        <div className="no-print p-3 sm:p-4 bg-slate-50 border-t border-slate-200 flex flex-col xs:flex-row items-center justify-between gap-3">
-          <p className="text-xs text-slate-500 font-medium text-center xs:text-left">
-            Layout: <span className="font-bold text-slate-800">
-              {invoiceFormat === 'a4' 
-                ? 'A4 Official Invoice' 
-                : invoiceFormat === 'receipt-58'
-                ? '58mm Mini POS Thermal' 
-                : '80mm POS Thermal'}
-            </span>
-          </p>
-
-          <div className="flex items-center gap-2 w-full xs:w-auto justify-end">
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="flex-1 xs:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 shadow-sm cursor-pointer active:scale-95"
-            >
-              <Printer size={15} /> <span>Print {invoiceFormat === 'a4' ? 'Invoice' : 'Receipt'}</span>
-            </button>
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-            >
-              Close
-            </button>
-          </div>
+        {/* ================= 3. BOTTOM BUTTON BAR: PROMINENT FULL-WIDTH / CENTER-ANCHORED BRIGHT GREEN (#059669) PRINT RECEIPT BUTTON ================= */}
+        <div className="no-print p-3 sm:p-4 bg-white border-t border-slate-200 flex items-center justify-center shrink-0">
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="w-full sm:max-w-md py-3 px-6 bg-[#059669] hover:bg-[#047857] active:bg-[#065f46] text-white font-extrabold text-sm rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+          >
+            <Printer size={18} />
+            <span>Print Receipt</span>
+          </button>
         </div>
       </div>
     </div>

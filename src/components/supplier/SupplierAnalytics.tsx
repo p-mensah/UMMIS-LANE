@@ -155,7 +155,7 @@ export default function SupplierAnalytics({ analyticsData, activeSupplier }: Sup
               <BarChart data={spendByCategory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="category" tick={{ fontSize: 10, fill: '#64748b' }} />
-                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(val) => `GH₵${val}`} />
+                <YAxis tick={{ fontSize: 10, fill: '#64748b' }} tickFormatter={(val) => `₵${val}`} />
                 <Tooltip
                   formatter={(val: any) => [formatGHS(Number(val)), 'Procurement Spend']}
                   contentStyle={{ backgroundColor: '#fff', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '11px' }}

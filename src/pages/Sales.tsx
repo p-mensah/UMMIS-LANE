@@ -311,8 +311,8 @@ export default function Sales() {
       'Customer', 
       'Payment Method', 
       'Status', 
-      'Total Amount (GHS)', 
-      ...(isAdmin ? ['Gross Profit (GHS)'] : [])
+      'Total Amount (₵)', 
+      ...(isAdmin ? ['Gross Profit (₵)'] : [])
     ];
     const csvRows = [headers.join(',')];
 
@@ -524,7 +524,7 @@ export default function Sales() {
                 onClick={() => setChartMetric('revenue')}
                 className={`px-3 py-1 rounded transition-colors ${chartMetric === 'revenue' ? 'bg-white text-blue-700 shadow-2xs font-black' : 'text-slate-600 hover:text-slate-900'}`}
               >
-                Revenue (GH₵)
+                Revenue (₵)
               </button>
               <button 
                 id="chart-mode-orders-btn"
@@ -599,7 +599,7 @@ export default function Sales() {
                     fontSize={11} 
                     tickLine={false} 
                     axisLine={false} 
-                    tickFormatter={(val) => `GH₵${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`}
+                    tickFormatter={(val) => `₵${val >= 1000 ? (val/1000).toFixed(1) + 'k' : val}`}
                   />
                   {(chartMetric === 'orders' || chartMetric === 'dual') && (
                     <YAxis 
@@ -659,7 +659,7 @@ export default function Sales() {
                       yAxisId="left"
                       type="monotone" 
                       dataKey="total" 
-                      name="Revenue (GH₵)" 
+                      name="Revenue (₵)" 
                       stroke="#2563eb" 
                       strokeWidth={3}
                       dot={{ r: 4, fill: '#2563eb', stroke: '#ffffff', strokeWidth: 2 }}

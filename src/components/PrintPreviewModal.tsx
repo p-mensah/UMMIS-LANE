@@ -82,16 +82,18 @@ function ScannableBarcode({ value, isNarrow = false }: { value: string; isNarrow
   }
   bars.push(2, 2, 1, 3);
 
-  const barWidth = isNarrow ? 1.0 : 1.3;
+  // Scaled line spacing and 20% height increase for high-contrast thermal scanning
+  const barWidth = isNarrow ? 1.15 : 1.5;
   const totalWidth = bars.reduce((sum, w) => sum + w * barWidth, 0);
+  const barcodeHeight = isNarrow ? 27 : 34;
 
   return (
-    <div className="flex flex-col items-center justify-center my-1 print:my-0.5">
+    <div className="flex flex-col items-center justify-center my-2 print:my-1">
       <svg
-        width={Math.min(totalWidth, isNarrow ? 160 : 220)}
-        height={isNarrow ? 22 : 28}
-        viewBox={`0 0 ${totalWidth} 28`}
-        className="shape-rendering-crispEdges print:h-5 print:max-w-[180px]"
+        width={Math.min(totalWidth, isNarrow ? 180 : 250)}
+        height={barcodeHeight}
+        viewBox={`0 0 ${totalWidth} ${barcodeHeight}`}
+        className="shape-rendering-crispEdges print:h-6 print:max-w-[210px]"
       >
         {(() => {
           let currentX = 0;
@@ -100,13 +102,23 @@ function ScannableBarcode({ value, isNarrow = false }: { value: string; isNarrow
             const width = w * barWidth;
             currentX += width;
             if (idx % 2 === 0) {
-              return <rect key={idx} x={x} y={0} width={Math.max(1, width - 0.2)} height={28} fill="#000000" />;
+              return (
+                <rect 
+                  key={idx} 
+                  x={x} 
+                  y={0} 
+                  width={Math.max(1.1, width - 0.25)} 
+                  height={barcodeHeight} 
+                  fill="#000000" 
+                />
+              );
             }
             return null;
           });
         })()}
       </svg>
-      <span className="font-mono text-[9px] font-bold tracking-widest text-slate-800 print:text-black mt-0.5">
+      {/* Scaled up vertical code format with widened line spacing */}
+      <span className="font-mono text-[10px] sm:text-[11px] font-extrabold tracking-[0.25em] text-slate-900 print:text-black mt-1">
         *{value}*
       </span>
     </div>
@@ -210,11 +222,17 @@ export default function PrintPreviewModal({
 
   const items: ReceiptItem[] = Array.isArray(activeData.items) ? activeData.items : [];
 
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
   const handlePrint = () => {
+    setToastMessage(`Receipt #${receiptNumber} sent to printer successfully!`);
     if (onPrint) {
       onPrint();
     }
     window.print();
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
   };
 
   return (
@@ -301,77 +319,87 @@ export default function PrintPreviewModal({
         }
       `}</style>
 
+      {/* Transient Toast Notification element that hovers in the viewport area */}
+      {toastMessage && (
+        <div 
+          className="fixed top-5 left-1/2 -translate-x-1/2 z-[150] pointer-events-none transition-all duration-200 animate-in fade-in slide-in-from-top-4"
+          role="status"
+          aria-live="polite"
+        >
+          <div className="flex items-center gap-2.5 px-4 py-2.5 bg-slate-900/95 text-white rounded-xl shadow-2xl border border-emerald-500/40 backdrop-blur-md text-xs font-semibold">
+            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
+
       {/* Centered Modal Container */}
       <div 
-        className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[92vh] print:max-w-none print:w-full print:max-h-none print:shadow-none print:border-none print:rounded-none print:bg-white"
+        className="relative w-full max-w-xl bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[94vh] print:max-w-none print:w-full print:max-h-none print:shadow-none print:border-none print:rounded-none print:bg-white"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* ================= MODAL HEADER & ACTION CONTROLS (SCREEN ONLY) ================= */}
-        <div className="shrink-0 bg-slate-900 text-white px-4 sm:px-6 py-3.5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 no-print print:hidden">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-lg bg-blue-600/30 text-blue-400 flex items-center justify-center">
-              <Receipt size={18} />
-            </div>
-            <div>
-              <h2 className="text-sm font-black tracking-tight text-white">{title}</h2>
-              <p className="text-[11px] text-slate-400 font-mono">{receiptNumber}</p>
-            </div>
+        {/* ================= 1. OUTER MODAL LAYER: DARK HEADER BAR (#111827) ================= */}
+        <div className="shrink-0 bg-[#111827] text-white px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-800 no-print print:hidden">
+          {/* Left-aligned title "RECEIPT & INVOICE VIEWER #REC-..." and current transaction metadata */}
+          <div className="min-w-0">
+            <h2 className="text-xs sm:text-sm font-black uppercase tracking-wider text-white flex items-center gap-2 flex-wrap">
+              <span>RECEIPT & INVOICE VIEWER</span>
+              <span className="text-emerald-400 font-mono font-black">
+                #{receiptNumber}
+              </span>
+            </h2>
+            <p className="text-[10px] sm:text-[11px] text-slate-400 font-medium truncate mt-0.5">
+              {storeSettings.store_name} • {formattedDate} • Cashier: {cashierName}
+            </p>
           </div>
 
-          {/* Format Selector Pills (80mm / 58mm / A4) */}
-          <div className="flex items-center gap-1 bg-slate-800 p-1 rounded-xl border border-slate-700 text-xs">
-            <button
-              type="button"
-              onClick={() => setFormat('receipt')}
-              className={`px-2.5 py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
-                format === 'receipt' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-300 hover:text-white'
-              }`}
-              title="80mm Thermal Receipt (Standard)"
-            >
-              80mm Roll
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormat('receipt-58')}
-              className={`px-2.5 py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
-                format === 'receipt-58' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-300 hover:text-white'
-              }`}
-              title="58mm Compact Thermal Receipt"
-            >
-              58mm Roll
-            </button>
-            <button
-              type="button"
-              onClick={() => setFormat('a4')}
-              className={`px-2.5 py-1 rounded-lg font-bold text-xs transition cursor-pointer ${
-                format === 'a4' 
-                  ? 'bg-blue-600 text-white shadow-xs' 
-                  : 'text-slate-300 hover:text-white'
-              }`}
-              title="A4 Full Page Document"
-            >
-              A4 Sheet
-            </button>
-          </div>
+          {/* Right side: Grouped 3 toggle pills inside a single flex-row container + X close icon flush right */}
+          <div className="flex items-center gap-2 sm:gap-3 self-end sm:self-auto shrink-0">
+            {/* Single flex-row container with subtle active borders */}
+            <div className="flex items-center bg-slate-900 p-1 rounded-xl border border-slate-800 shrink-0 gap-1">
+              <button
+                type="button"
+                onClick={() => setFormat('receipt')}
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  format === 'receipt' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="80mm Thermal Receipt (Standard)"
+              >
+                <span>80mm Thermal</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormat('receipt-58')}
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  format === 'receipt-58' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="58mm Compact Thermal Receipt"
+              >
+                <span>58mm Mini</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setFormat('a4')}
+                className={`min-h-[32px] px-2.5 sm:px-3 py-1 text-[11px] rounded-lg transition-all flex items-center gap-1 cursor-pointer font-medium ${
+                  format === 'a4' 
+                    ? 'bg-slate-800 text-white font-bold border border-slate-600 shadow-xs' 
+                    : 'text-slate-400 hover:text-white border border-transparent'
+                }`}
+                title="A4 Full Page Document"
+              >
+                <span>A4 Official</span>
+              </button>
+            </div>
 
-          {/* Action Buttons: Print & Close */}
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              onClick={handlePrint}
-              className="px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md transition active:scale-95 cursor-pointer"
-            >
-              <Printer size={16} />
-              <span>Print</span>
-            </button>
+            {/* "X" close icon flush right */}
             <button
               type="button"
               onClick={onClose}
-              className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              className="w-8 h-8 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition-colors cursor-pointer shrink-0"
               aria-label="Close Preview"
             >
               <X size={18} />
@@ -379,18 +407,18 @@ export default function PrintPreviewModal({
           </div>
         </div>
 
-        {/* ================= DOCUMENT PREVIEW WRAPPER ================= */}
-        <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center print:p-0 print:m-0 print:bg-white print:overflow-visible">
+        {/* ================= MAIN BACKGROUND BODY: CLEAN LIGHT-NEUTRAL CONTRAST GRAY (#F3F4F6) ================= */}
+        <div className="flex-1 overflow-y-auto p-3 xs:p-4 sm:p-6 bg-[#F3F4F6] flex justify-center print:p-0 print:m-0 print:bg-white print:overflow-visible">
           
-          {/* ================= PRINT DOCUMENT CONTAINER ================= */}
+          {/* ================= 2. INNER RECEIPT PAPER WRAPPER: CRISP WHITE VERTICAL CONTAINER WITH SHARP EDGE BOUNDARIES & SUBTLE BOX SHADOW ================= */}
           <div
             id="print-preview-document"
-            className={`bg-white text-slate-900 shadow-xl border border-slate-200 transition-all ${
+            className={`bg-white text-slate-900 shadow-md border border-slate-300 font-mono transition-all leading-tight ${
               format === 'receipt-58'
-                ? 'w-[58mm] max-w-[240px] p-2 text-[10px]'
+                ? 'w-[58mm] max-w-[270px] p-3 text-[10px] rounded-none'
                 : format === 'receipt'
-                ? 'w-[80mm] max-w-[340px] p-4 text-[11px]'
-                : 'w-full max-w-[720px] p-6 sm:p-8 text-xs'
+                ? 'w-[80mm] max-w-[340px] p-4 text-[11px] rounded-none'
+                : 'w-full max-w-[720px] p-6 sm:p-8 text-xs font-sans rounded-none sm:rounded-sm'
             } print:w-full print:max-w-none print:shadow-none print:border-none print:p-0 print:m-0 print:bg-white print:text-black print:block`}
           >
             {/* Header: Store Branding & Tax Info */}
@@ -547,6 +575,18 @@ export default function PrintPreviewModal({
               </div>
             </div>
           </div>
+        </div>
+
+        {/* ================= 3. BOTTOM BUTTON BAR: PROMINENT FULL-WIDTH / CENTER-ANCHORED BRIGHT GREEN (#059669) PRINT RECEIPT BUTTON ================= */}
+        <div className="no-print p-3 sm:p-4 bg-white border-t border-slate-200 flex items-center justify-center shrink-0">
+          <button
+            type="button"
+            onClick={handlePrint}
+            className="w-full sm:max-w-md py-3 px-6 bg-[#059669] hover:bg-[#047857] active:bg-[#065f46] text-white font-extrabold text-sm rounded-xl transition-all shadow-md hover:shadow-lg flex items-center justify-center gap-2 cursor-pointer active:scale-[0.98]"
+          >
+            <Printer size={18} />
+            <span>Print Receipt</span>
+          </button>
         </div>
       </div>
     </div>

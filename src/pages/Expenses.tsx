@@ -4,9 +4,10 @@ import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { 
-  Receipt, Plus, Search, Calendar, User, DollarSign, ArrowDownRight,
+  Receipt, Plus, Search, Calendar, User, ArrowDownRight,
   TrendingDown, FileText, X, AlertCircle
 } from 'lucide-react';
+import { CediSign } from '../components/common/CediSign';
 
 export default function Expenses() {
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -139,7 +140,7 @@ export default function Expenses() {
             <span className="text-xl font-extrabold text-rose-600 mt-1 block">{formatGHS(todayExpenseAmount)}</span>
           </div>
           <div className="p-3 bg-amber-50 text-amber-600 rounded-xl border border-amber-100">
-            <DollarSign size={20} />
+            <CediSign size={20} />
           </div>
         </div>
 
@@ -292,10 +293,10 @@ export default function Expenses() {
 
               <div>
                 <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
-                  Amount (GH₵) *
+                  Amount (₵) *
                 </label>
                 <div className="relative">
-                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">GH₵</span>
+                  <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs font-bold text-slate-400">₵</span>
                   <input 
                     required 
                     type="number" 

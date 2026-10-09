@@ -617,7 +617,7 @@ export default function ProductFormModal({
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FormField
-                label="Cost Price (GH₵)"
+                label="Cost Price (₵)"
                 required
                 error={errors.cost_price}
                 isTouched={touched.cost_price}
@@ -640,7 +640,7 @@ export default function ProductFormModal({
               </FormField>
 
               <FormField
-                label="Selling Price (GH₵)"
+                label="Selling Price (₵)"
                 required
                 error={errors.selling_price}
                 isTouched={touched.selling_price}

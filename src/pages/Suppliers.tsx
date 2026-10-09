@@ -6,10 +6,11 @@ import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import { 
   Truck, Plus, Search, Edit, Trash2, X, RefreshCw, 
-  Phone, Mail, MapPin, User, FileText, DollarSign, 
+  Phone, Mail, MapPin, User, FileText, 
   ShoppingBag, Calendar, LayoutGrid, List, ChevronRight, ExternalLink,
   Building2, CheckCircle2, Clock, History
 } from 'lucide-react';
+import { CediSign } from '../components/common/CediSign';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
 
@@ -263,7 +264,7 @@ export default function Suppliers() {
         <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Total Vendor Expenditure</span>
-            <DollarSign size={16} className="text-emerald-600" />
+            <CediSign size={16} className="text-emerald-600" />
           </div>
           <div className="text-2xl font-black text-emerald-800">{formatGHS(totalPurchaseSpend)}</div>
           <div className="text-[11px] text-slate-500 font-medium mt-1">
@@ -274,7 +275,7 @@ export default function Suppliers() {
         <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Avg Spend / Supplier</span>
-            <DollarSign size={16} className="text-slate-600" />
+            <CediSign size={16} className="text-slate-600" />
           </div>
           <div className="text-2xl font-black text-slate-900">{formatGHS(avgSpendPerSupplier)}</div>
           <div className="text-[11px] text-slate-500 font-medium mt-1">

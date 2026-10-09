@@ -11,7 +11,6 @@ import {
   AlertCircle,
   Clock,
   ShieldCheck,
-  DollarSign,
   Calendar,
   AlertTriangle,
   RefreshCw

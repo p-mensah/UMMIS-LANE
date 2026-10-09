@@ -2,7 +2,8 @@ import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import { useNotifications } from '../context/NotificationContext';
-import { Clock, DollarSign, CheckCircle2, AlertCircle, PlayCircle, StopCircle, RefreshCw } from 'lucide-react';
+import { Clock, CheckCircle2, AlertCircle, PlayCircle, StopCircle, RefreshCw } from 'lucide-react';
+import { CediSign } from '../components/common/CediSign';
 
 export default function Shifts() {
   const [currentShift, setCurrentShift] = useState<any>(null);
@@ -153,10 +154,10 @@ export default function Shifts() {
 
             <div className="text-left max-w-sm mx-auto space-y-1.5">
               <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                Starting Cash Float (GH₵) *
+                Starting Cash Float (₵) *
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">GH₵</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">₵</span>
                 <input 
                   type="number" 
                   step="0.01" 
@@ -207,10 +208,10 @@ export default function Shifts() {
 
             <div className="text-left max-w-sm mx-auto space-y-1.5">
               <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide">
-                Ending Drawer Cash Count (GH₵) *
+                Ending Drawer Cash Count (₵) *
               </label>
               <div className="relative">
-                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">GH₵</span>
+                <span className="absolute left-3.5 top-1/2 -translate-y-1/2 text-xs text-slate-400 font-bold">₵</span>
                 <input 
                   type="number" 
                   step="0.01" 

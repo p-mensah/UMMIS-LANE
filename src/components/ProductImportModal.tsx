@@ -299,7 +299,7 @@ export default function ProductImportModal({
   };
 
   const downloadSampleTemplate = () => {
-    const headers = ['SKU', 'Name', 'Category', 'Cost Price (GH₵)', 'Selling Price (GH₵)', 'Stock Quantity', 'Barcode', 'Brand', 'Unit of Measure', 'Min Stock Level'];
+    const headers = ['SKU', 'Name', 'Category', 'Cost Price (₵)', 'Selling Price (₵)', 'Stock Quantity', 'Barcode', 'Brand', 'Unit of Measure', 'Min Stock Level'];
     const sampleRows = [
       ['MLK-160', 'Ideal Evaporated Milk 160g', 'Groceries', '5.50', '7.20', '100', '60010010001', 'Nestle', 'tin', '20'],
       ['RIC-5KG', 'Gino Jasmine Rice 5kg', 'Grains & Pasta', '78.00', '95.00', '35', '60010010002', 'Gino', 'bag', '5'],
@@ -672,8 +672,8 @@ export default function ProductImportModal({
                       <th className="p-2.5">SKU / Code</th>
                       <th className="p-2.5">Product Name</th>
                       <th className="p-2.5">Category</th>
-                      <th className="p-2.5 text-right">Cost (GH₵)</th>
-                      <th className="p-2.5 text-right">Price (GH₵)</th>
+                      <th className="p-2.5 text-right">Cost (₵)</th>
+                      <th className="p-2.5 text-right">Price (₵)</th>
                       <th className="p-2.5 text-right">Stock</th>
                       <th className="p-2.5">Barcode</th>
                       <th className="p-2.5 text-center">Action</th>

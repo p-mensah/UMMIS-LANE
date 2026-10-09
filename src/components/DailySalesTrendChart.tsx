@@ -16,7 +16,6 @@ import {
 } from 'recharts';
 import {
   TrendingUp,
-  DollarSign,
   ShoppingCart,
   Receipt,
   Calendar,
@@ -26,6 +25,7 @@ import {
   Layers,
   BarChart3
 } from 'lucide-react';
+import { CediSign } from './common/CediSign';
 import { formatGHS } from '../lib/formatters';
 
 export interface SalesTrendDataPoint {
@@ -224,7 +224,7 @@ export default function DailySalesTrendChart({
           {/* Metric View Switcher */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80">
             {[
-              { id: 'revenue', label: 'Revenue', icon: DollarSign },
+              { id: 'revenue', label: 'Revenue', icon: CediSign },
               { id: 'orders', label: 'Orders', icon: ShoppingCart },
               { id: 'aov', label: 'Avg Ticket', icon: Receipt },
               { id: 'dual', label: 'Combo', icon: Layers }
@@ -275,7 +275,7 @@ export default function DailySalesTrendChart({
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 bg-slate-50/80 p-3.5 rounded-xl border border-slate-200/80 text-xs">
         <div className="space-y-0.5">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-1">
-            <DollarSign size={11} className="text-blue-600" />
+            <CediSign size={11} className="text-blue-600" />
             <span>Period Gross Sales</span>
           </div>
           <div className="text-lg font-black text-slate-900">

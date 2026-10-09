@@ -288,7 +288,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               <span className="font-bold text-slate-900 truncate">{p.name}</span>
                               <span className="text-[10px] font-mono text-slate-400">SKU: {p.sku}</span>
                             </div>
-                            <span className="font-black text-blue-600">GH₵{p.selling_price?.toFixed(2)}</span>
+                            <span className="font-black text-blue-600">₵{p.selling_price?.toFixed(2)}</span>
                           </div>
                         ))}
                       </div>
@@ -328,7 +328,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
                               <ArrowLeftRight size={14} className="text-indigo-600 shrink-0" />
                               <span className="font-bold text-slate-900">Sale #{t.id} - {t.customer_name || 'Walk-in'}</span>
                             </div>
-                            <span className="font-black text-slate-900">GH₵{t.total?.toFixed(2)}</span>
+                            <span className="font-black text-slate-900">₵{t.total?.toFixed(2)}</span>
                           </div>
                         ))}
                       </div>

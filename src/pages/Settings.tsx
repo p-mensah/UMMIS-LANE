@@ -4,8 +4,9 @@ import { useNotifications } from '../context/NotificationContext';
 import { 
   Store, ShieldCheck, Database, Receipt, CheckCircle2, 
   Trash2, RefreshCw, SlidersHorizontal, Eye, Lock,
-  Save, Download, DollarSign, Building2, Phone, Mail, FileText
+  Save, Download, Building2, Phone, Mail, FileText
 } from 'lucide-react';
+import { CediSign } from '../components/common/CediSign';
 
 export default function Settings() {
   // Store Identity
@@ -17,7 +18,7 @@ export default function Settings() {
   const [storeTin, setStoreTin] = useState('TIN-9842104-X');
 
   // Currency & Tax
-  const [currencySymbol, setCurrencySymbol] = useState('GH₵');
+  const [currencySymbol, setCurrencySymbol] = useState('₵');
   const [currencyCode, setCurrencyCode] = useState('GHS');
   const [taxPercentage, setTaxPercentage] = useState('15.0');
   const [enableTaxByDefault, setEnableTaxByDefault] = useState(false);
@@ -316,7 +317,7 @@ export default function Settings() {
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
           <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <DollarSign size={16} className="text-emerald-600" />
+              <CediSign size={16} className="text-emerald-600" />
               <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Currency & Financial Parameters</h2>
             </div>
             <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 text-[10px] font-extrabold uppercase rounded border border-emerald-200">
@@ -325,6 +326,18 @@ export default function Settings() {
           </div>
 
           <div className="p-6 grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="md:col-span-3 flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200/80 mb-1">
+              <img 
+                src="/src/assets/images/ghanaian_cedi_icon_1791535361473.jpg" 
+                alt="Ghanaian Cedi Digital Utility Symbol"
+                className="w-12 h-12 rounded-xl object-cover shadow-xs border border-slate-200"
+              />
+              <div>
+                <h4 className="text-xs font-bold text-slate-900">National Currency Standard: Ghanaian Cedi (₵)</h4>
+                <p className="text-[11px] text-slate-500">System pricing, ledger balances, POS receipts, and cash drawers are calibrated to Ghanaian Cedis (ISO: GHS).</p>
+              </div>
+            </div>
+
             <div>
               <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
                 Currency Symbol
@@ -334,7 +347,7 @@ export default function Settings() {
                 required 
                 value={currencySymbol} 
                 onChange={e => setCurrencySymbol(e.target.value)}
-                placeholder="e.g. GH₵, $, €, £"
+                placeholder="e.g. ₵"
                 className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-emerald-500"
               />
             </div>

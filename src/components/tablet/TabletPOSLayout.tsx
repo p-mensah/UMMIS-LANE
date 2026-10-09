@@ -565,7 +565,7 @@ export default function TabletPOSLayout({
       <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-800 bg-slate-900">
         
         {/* ================= LEFT SECTION: CATALOG & TOUCH PRODUCTS ================= */}
-        <div className={`flex-1 min-w-0 min-h-0 flex flex-col bg-slate-900 text-white p-2.5 sm:p-4 space-y-2.5 sm:space-y-3 overflow-hidden ${
+        <div className={`relative flex-1 min-w-0 min-h-0 flex flex-col bg-slate-900 text-white p-2.5 sm:p-4 space-y-2.5 sm:space-y-3 overflow-hidden ${
           !isWideScreen && activeTab !== 'catalog' ? 'hidden' : 'flex'
         }`}>
           
@@ -577,6 +577,7 @@ export default function TabletPOSLayout({
                 type="text"
                 value={searchQuery}
                 onFocus={() => setIsKeyboardOpen(true)}
+                onClick={() => setIsKeyboardOpen(true)}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 placeholder="Search Item title, SKU, or Barcode..."
                 className="w-full min-h-[48px] bg-slate-800/90 border border-slate-700 rounded-2xl pl-11 pr-11 py-3 text-sm font-semibold text-white placeholder:text-slate-400 focus:outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 shadow-inner"
@@ -729,6 +730,27 @@ export default function TabletPOSLayout({
               </button>
             </div>
           )}
+
+          {/* Z-indexed, absolute-positioned container for onscreen keyboard: specifically anchored to the left of the screen, ensuring it NEVER overlaps or interacts with the payment sidebar content */}
+          {isKeyboardOpen && !completedSaleData && !showNumpadModal && !isScannerOpen && activeTab === 'catalog' && (
+            <div 
+              className="absolute inset-x-0 bottom-0 z-30 bg-slate-950/98 border-t-2 border-slate-700/80 backdrop-blur-md shadow-2xl p-2 sm:p-3 transition-transform animate-in slide-in-from-bottom-5 duration-200 select-none pointer-events-auto"
+              role="region"
+              aria-label="On-Screen Tablet Keyboard Container"
+            >
+              <OnScreenKeyboard
+                isOpen={true}
+                value={searchQuery}
+                onChange={setSearchQuery}
+                onSubmit={() => setIsKeyboardOpen(false)}
+                onClose={() => setIsKeyboardOpen(false)}
+                title="Tablet Search"
+                placeholder="Type item title, SKU, or barcode..."
+                soundEnabled={soundEnabled}
+                className="w-full"
+              />
+            </div>
+          )}
         </div>
 
         {/* ================= RIGHT SECTION: CART & ENHANCED PAYMENT PANE ================= */}
@@ -774,6 +796,7 @@ export default function TabletPOSLayout({
                   if (soundEnabled) soundFeedback.playKeypadClick();
                   setCart([]);
                   setCashTendered('');
+                  setIsKeyboardOpen(false);
                 }}
                 className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
                 title="Clear entire cart"
@@ -999,7 +1022,7 @@ export default function TabletPOSLayout({
             {/* Display Screen */}
             <div className="bg-slate-950 border border-slate-800 rounded-2xl p-3 text-right">
               <span className="text-[10px] text-slate-500 uppercase font-mono block">
-                {numpadMode === 'tender' ? 'Amount (GH₵)' : 'Units Count'}
+                {numpadMode === 'tender' ? 'Amount (₵)' : 'Units Count'}
               </span>
               <span className="font-mono text-3xl font-black text-emerald-400">
                 {numpadValue || '0'}
@@ -1070,35 +1093,6 @@ export default function TabletPOSLayout({
         onScanResult={handleBarcodeScanned}
         title="POS Barcode Scanner"
       />
-
-      {/* On-Screen Virtual Keyboard for Tablet Mode: Strictly bounded to catalog section so it NEVER affects the payment side */}
-      <OnScreenKeyboard
-        isOpen={isKeyboardOpen && !completedSaleData && !showNumpadModal && !isScannerOpen && activeTab === 'catalog'}
-        value={searchQuery}
-        onChange={setSearchQuery}
-        onSubmit={() => setIsKeyboardOpen(false)}
-        onClose={() => setIsKeyboardOpen(false)}
-        title="Tablet Search"
-        placeholder="Type item title, SKU, or barcode..."
-        soundEnabled={soundEnabled}
-        className="w-full md:w-[calc(100%-380px)] lg:w-[calc(100%-420px)] xl:w-[calc(100%-450px)] border-r border-slate-800 shadow-2xl"
-      />
-
-      {/* Floating Keyboard Pill when closed: repositioned strictly to the bottom-LEFT so it NEVER touches the Charge button or payment side */}
-      {!isKeyboardOpen && !completedSaleData && !showNumpadModal && !isScannerOpen && activeTab === 'catalog' && (
-        <button
-          type="button"
-          onClick={() => {
-            if (soundEnabled) soundFeedback.playKeypadClick();
-            setIsKeyboardOpen(true);
-          }}
-          className="fixed bottom-4 left-4 z-30 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white px-3.5 py-2.5 rounded-full shadow-2xl flex items-center gap-2 text-xs font-bold transition-all active:scale-95 cursor-pointer border border-blue-400/40 no-print"
-          title="Open On-Screen Keyboard"
-        >
-          <Keyboard size={18} />
-          <span>Keyboard</span>
-        </button>
-      )}
 
       {/* Reusable Print Preview Modal upon Completed Sale */}
       {completedSaleData && (

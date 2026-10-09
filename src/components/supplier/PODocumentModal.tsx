@@ -292,7 +292,7 @@ export default function PODocumentModal({ po, isOpen, onClose }: PODocumentModal
               </div>
               <div className="flex justify-between text-slate-600">
                 <span>Estimated VAT / Levies:</span>
-                <span className="font-mono text-slate-600">GH₵ 0.00 (Exempt)</span>
+                <span className="font-mono text-slate-600">₵0.00 (Exempt)</span>
               </div>
               <div className="border-t border-slate-200 pt-2 flex justify-between font-black text-slate-900 text-sm">
                 <span>Total Amount:</span>

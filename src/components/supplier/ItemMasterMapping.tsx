@@ -6,7 +6,6 @@ import {
   Boxes,
   Barcode,
   Tag,
-  DollarSign,
   FileText,
   Upload,
   Search,
@@ -21,6 +20,7 @@ import {
   RefreshCw,
   FolderOpen
 } from 'lucide-react';
+import { CediSign } from '../common/CediSign';
 
 interface TierDiscount {
   min_qty: number;
@@ -184,7 +184,7 @@ export default function ItemMasterMapping({ activeSupplier, userRole = 'admin' }
               activeSubTab === 'pricing' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900'
             }`}
           >
-            <DollarSign size={14} className="text-emerald-600" />
+            <CediSign size={14} className="text-emerald-600" />
             <span>Pricing Rules & Tier Discounts</span>
           </button>
 

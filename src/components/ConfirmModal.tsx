@@ -1,12 +1,12 @@
 import React, { useEffect, useRef } from 'react';
-import { AlertTriangle, AlertCircle, Info, HelpCircle, X } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Info, HelpCircle, CheckCircle2, X } from 'lucide-react';
 
 export interface ConfirmDialogOptions {
   title: string;
   message: string;
   confirmText?: string;
   cancelText?: string;
-  type?: 'danger' | 'warning' | 'info';
+  type?: 'danger' | 'warning' | 'info' | 'success';
 }
 
 interface ConfirmModalProps {
@@ -55,9 +55,7 @@ export default function ConfirmModal({
 
   if (!isOpen || !options) return null;
 
-  const type = options.type || 'danger';
-
-  const typeConfig = {
+  const typeConfigMap = {
     danger: {
       icon: AlertTriangle,
       iconColor: 'text-rose-600',
@@ -79,9 +77,19 @@ export default function ConfirmModal({
       confirmBtn: 'bg-blue-600 hover:bg-blue-700 text-white focus:ring-blue-500',
       defaultConfirm: 'Confirm',
     },
-  }[type];
+    success: {
+      icon: CheckCircle2,
+      iconColor: 'text-emerald-600',
+      iconBg: 'bg-emerald-50 border-emerald-200',
+      confirmBtn: 'bg-emerald-600 hover:bg-emerald-700 text-white focus:ring-emerald-500',
+      defaultConfirm: 'Confirm',
+    },
+  };
 
-  const Icon = typeConfig.icon;
+  const type = options.type || 'danger';
+  const typeConfig = typeConfigMap[type as keyof typeof typeConfigMap] || typeConfigMap.danger;
+
+  const Icon = typeConfig?.icon || AlertTriangle;
 
   return (
     <div 

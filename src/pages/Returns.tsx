@@ -11,9 +11,10 @@ import Pagination from '../components/common/Pagination';
 import { getDisplayCustomerPhone } from '../lib/privacy';
 import { 
   RotateCcw, Search, Calendar, Download, RefreshCw, FileText, 
-  DollarSign, Package, AlertCircle, ShieldAlert, CheckCircle2, Filter,
+  Package, AlertCircle, ShieldAlert, CheckCircle2, Filter,
   Printer, ShoppingCart, Eye
 } from 'lucide-react';
+import { CediSign } from '../components/common/CediSign';
 
 export default function Returns() {
   const { user } = useAuth();
@@ -195,7 +196,7 @@ export default function Returns() {
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
           <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">
             <span>Today's Refunds</span>
-            <DollarSign size={16} className="text-rose-600" />
+            <CediSign size={16} className="text-rose-600" />
           </div>
           <div className="text-2xl font-black text-rose-700">
             {formatGHS(returnsSummary?.todayRefundValue || 0)}

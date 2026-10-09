@@ -19,7 +19,6 @@ import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import InvoiceModal from '../components/InvoiceModal';
 import AutomatedLowStockNotification from '../components/AutomatedLowStockNotification';
-import DailySalesTrendChart from '../components/DailySalesTrendChart';
 import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
@@ -661,64 +660,54 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* REVENUE & SALES VELOCITY ANALYTICS */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* DAILY SALES TREND VISUALIZATION USING RECHARTS (QUICK INSIGHTS INTO RETAIL PERFORMANCE) */}
-            <div className="lg:col-span-2">
-              <DailySalesTrendChart
-                data={salesTrends}
-                timeframe={trendTimeframe}
-                onTimeframeChange={setTrendTimeframe}
-                isLoading={trendsLoading}
-              />
+          {/* TOP SELLING PRODUCTS LEADERBOARD */}
+          <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
+            <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
+              <div>
+                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <Award size={16} className="text-amber-500" />
+                  Top Selling Products
+                </h2>
+                <p className="text-[11px] text-slate-500 font-medium">Highest volume items by units sold across counter and catalog checkouts.</p>
+              </div>
+              <Link to="/products" className="text-xs font-bold text-blue-600 hover:underline">
+                View Full Catalog →
+              </Link>
             </div>
 
-            {/* Top Selling Products Leaderboard */}
-            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
-              <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
-                <div>
-                  <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
-                    <Award size={16} className="text-amber-500" />
-                    Top Selling Products
-                  </h2>
-                  <p className="text-[11px] text-slate-500 font-medium">Highest volume items by units sold.</p>
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+              {bestSellers.length === 0 ? (
+                <div className="col-span-full py-8 text-center text-slate-400 text-xs font-medium">
+                  No sales data available yet.
                 </div>
-                <Link to="/products" className="text-xs font-bold text-blue-600 hover:underline">
-                  Catalog
-                </Link>
-              </div>
+              ) : (
+                bestSellers.slice(0, 5).map((item: any, idx: number) => {
+                  const maxQty = Math.max(...bestSellers.map((b: any) => b.total_qty || 1));
+                  const percent = Math.round(((item.total_qty || 0) / maxQty) * 100);
 
-              <div className="space-y-3">
-                {bestSellers.length === 0 ? (
-                  <div className="py-12 text-center text-slate-400 text-xs font-medium">
-                    No sales data available yet.
-                  </div>
-                ) : (
-                  bestSellers.slice(0, 5).map((item: any, idx: number) => {
-                    const maxQty = Math.max(...bestSellers.map((b: any) => b.total_qty || 1));
-                    const percent = Math.round(((item.total_qty || 0) / maxQty) * 100);
-
-                    return (
-                      <div key={idx} className="space-y-1">
-                        <div className="flex items-center justify-between text-xs">
-                          <span className="font-bold text-slate-800 truncate max-w-[180px]">
-                            {idx + 1}. {item.name}
-                          </span>
-                          <span className="font-black text-slate-900">
-                            {item.total_qty} units
-                          </span>
-                        </div>
-                        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                          <div 
-                            className="bg-blue-600 h-full rounded-full transition-all duration-500" 
-                            style={{ width: `${percent}%` }}
-                          />
-                        </div>
+                  return (
+                    <div key={idx} className="p-3 bg-slate-50 rounded-xl border border-slate-200/80 space-y-2">
+                      <div className="flex items-center justify-between text-xs">
+                        <span className="font-extrabold text-slate-800 truncate" title={item.name}>
+                          #{idx + 1} {item.name}
+                        </span>
                       </div>
-                    );
-                  })
-                )}
-              </div>
+                      <div className="flex items-baseline justify-between">
+                        <span className="text-xs text-slate-500 font-medium">Units Sold</span>
+                        <span className="text-sm font-black text-slate-900">
+                          {item.total_qty} units
+                        </span>
+                      </div>
+                      <div className="w-full bg-slate-200 h-2 rounded-full overflow-hidden">
+                        <div 
+                          className="bg-blue-600 h-full rounded-full transition-all duration-500" 
+                          style={{ width: `${percent}%` }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })
+              )}
             </div>
           </div>
 
@@ -1019,14 +1008,6 @@ export default function Dashboard() {
               <div className="text-xs text-slate-500 mt-1">Based on monthly performance</div>
             </div>
           </div>
-
-          {/* DAILY SALES TREND VISUALIZATION FOR RETAIL PERFORMANCE INSIGHTS */}
-          <DailySalesTrendChart
-            data={salesTrends}
-            timeframe={trendTimeframe}
-            onTimeframeChange={setTrendTimeframe}
-            isLoading={trendsLoading}
-          />
 
           {/* Staff Sales Ledger */}
           <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
