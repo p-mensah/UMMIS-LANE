@@ -14,7 +14,7 @@ import {
   SlidersHorizontal,
   Receipt
 } from 'lucide-react';
-import { formatGHS } from '../lib/formatters';
+import { formatGHS, calculateGhanaTax } from '../lib/formatters';
 import { useAuth } from '../context/AuthContext';
 import { fetchApi } from '../lib/api';
 import { getDisplayCustomerPhone, getDisplayCustomerEmail } from '../lib/privacy';
@@ -63,52 +63,54 @@ function ReceiptBarcode({ value, isNarrow = false }: { value: string; isNarrow?:
   const bars: number[] = [2, 1, 1, 2];
   for (let i = 0; i < value.length; i++) {
     const code = value.charCodeAt(i);
-    bars.push((code % 3) + 1);
-    bars.push(((code >> 2) % 2) + 1);
-    bars.push(((code >> 3) % 3) + 1);
-    bars.push(1);
+    bars.push((code % 3) + 2); // Bar width: 2 to 4 px
+    bars.push(((code >> 2) % 2) + 2); // Space width: 2 to 3 px
   }
   bars.push(2, 2, 1, 3); // stop code
 
-  // Optimized line spacing to guarantee low-resolution POS thermal printer scanners read without bleeding
-  const barWidth = isNarrow ? 1.15 : 1.5;
-  const totalWidth = bars.reduce((sum, w) => sum + w * barWidth, 0);
-  // Scaled up height by 20% (was 22/28, now 27/34)
-  const barcodeHeight = isNarrow ? 27 : 34;
+  // Optimized line spacing and thickness to guarantee 203 DPI POS thermal printer scanners read without bleeding
+  const barWidth = isNarrow ? 1.3 : 1.6;
+  const quietZone = isNarrow ? 12 : 16;
+  const contentWidth = bars.reduce((sum, w) => sum + w * barWidth, 0);
+  const totalSvgWidth = contentWidth + quietZone * 2;
+  // Scaled up height by 25%+ (48px for 58mm, 54px for 80mm) to guarantee instant laser/optical scan
+  const barcodeHeight = isNarrow ? 48 : 54;
 
   return (
-    <div className="flex flex-col items-center justify-center my-2 print:my-1">
-      <svg
-        width={Math.min(totalWidth, isNarrow ? 180 : 250)}
-        height={barcodeHeight}
-        viewBox={`0 0 ${totalWidth} ${barcodeHeight}`}
-        className="shape-rendering-crispEdges print:max-w-[210px]"
-      >
-        {(() => {
-          let currentX = 0;
-          return bars.map((w, idx) => {
-            const x = currentX;
-            const width = w * barWidth;
-            currentX += width;
-            // Draw alternate bars with slight isolation gap to prevent bleeding on thermal rolls
-            if (idx % 2 === 0) {
-              return (
-                <rect 
-                  key={idx} 
-                  x={x} 
-                  y={0} 
-                  width={Math.max(1.1, width - 0.25)} 
-                  height={barcodeHeight} 
-                  fill="#000000" 
-                />
-              );
-            }
-            return null;
-          });
-        })()}
-      </svg>
+    <div className="flex flex-col items-center justify-center my-2.5 print:my-1.5">
+      <div className="bg-white px-2 py-1 rounded-sm">
+        <svg
+          width={Math.min(totalSvgWidth, isNarrow ? 200 : 280)}
+          height={barcodeHeight}
+          viewBox={`0 0 ${totalSvgWidth} ${barcodeHeight}`}
+          className="shape-rendering-crispEdges print:max-w-[220px]"
+        >
+          {(() => {
+            let currentX = quietZone;
+            return bars.map((w, idx) => {
+              const x = currentX;
+              const width = w * barWidth;
+              currentX += width;
+              // Draw alternate bars with slight isolation gap to prevent bleeding on thermal rolls
+              if (idx % 2 === 0) {
+                return (
+                  <rect 
+                    key={idx} 
+                    x={x} 
+                    y={0} 
+                    width={Math.max(1.4, width - 0.2)} 
+                    height={barcodeHeight} 
+                    fill="#000000" 
+                  />
+                );
+              }
+              return null;
+            });
+          })()}
+        </svg>
+      </div>
       {/* Scaled up vertical code format with widened line spacing */}
-      <span className="font-mono text-[10px] sm:text-[11px] font-extrabold tracking-[0.25em] text-slate-900 mt-1 print:text-black">
+      <span className="font-mono text-[10px] sm:text-[11px] font-extrabold tracking-[0.28em] text-slate-900 mt-1 print:text-black">
         *{value}*
       </span>
     </div>
@@ -125,6 +127,12 @@ export default function InvoiceModal({
   const { user } = useAuth();
   const [invoiceFormat, setInvoiceFormat] = useState<InvoiceFormatType>(initialFormat);
 
+  useEffect(() => {
+    if (initialFormat) {
+      setInvoiceFormat(initialFormat);
+    }
+  }, [initialFormat]);
+
   // Store settings state loaded dynamically from /api/settings
   const [storeSettings, setStoreSettings] = useState({
     store_name: 'Ummis Lane Enterprise',
@@ -134,7 +142,7 @@ export default function InvoiceModal({
     store_email: 'Issakrabiat92@gmail.com',
     store_tin: 'TIN-GH90218821',
     tax_id: 'TIN-GH90218821',
-    currency_symbol: 'GH₵',
+    currency_symbol: '₵',
     currency_code: 'GHS',
     tax_percentage: '0',
     receipt_header: '',
@@ -196,12 +204,11 @@ export default function InvoiceModal({
   const receiptFooterText = storeSettings.receipt_footer || 'Thank you for your patronage! Goods sold in good condition are non-refundable after 7 days. Original receipt required for all exchanges or queries.';
   const taxPercentageNum = parseFloat(storeSettings.tax_percentage || '0') || 0;
   
-  // Tax breakdown calculation
-  const hasTax = taxPercentageNum > 0 || (saleData.tax_amount && saleData.tax_amount > 0);
-  const taxAmount = saleData.tax_amount !== undefined 
-    ? saleData.tax_amount 
-    : (hasTax ? (grandTotal * (taxPercentageNum / (100 + taxPercentageNum))) : 0);
-  const subtotalAmount = grandTotal - taxAmount;
+  // Ghanaian GRA Tax breakdown calculation (NHIL 2.5%, GETFund 2.5%, COVID-19 1%, VAT 15%)
+  const ghanaTax = calculateGhanaTax(grandTotal, taxPercentageNum, saleData.tax_amount);
+  const subtotalAmount = ghanaTax.taxableSubtotal;
+  const taxAmount = ghanaTax.totalTax;
+  const hasTax = !ghanaTax.isExempt;
 
   const getItemName = (item: any) => {
     if (item.product_name) return item.product_name;
@@ -333,7 +340,7 @@ export default function InvoiceModal({
         </div>
       )}
 
-      <div className="bg-white rounded-2xl max-w-4xl w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[96dvh] my-auto min-w-0">
+      <div className={`bg-white rounded-2xl ${invoiceFormat === 'a4' ? 'max-w-4xl sm:max-w-5xl' : 'max-w-xl'} w-full border border-slate-200 shadow-2xl overflow-hidden flex flex-col max-h-[96dvh] my-auto min-w-0 transition-all duration-200`}>
         
         {/* ================= 1. OUTER MODAL LAYER: DARK HEADER BAR (#111827) ================= */}
         <div className="no-print bg-[#111827] text-white px-4 sm:px-6 py-3.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-800 shrink-0">
@@ -406,16 +413,16 @@ export default function InvoiceModal({
         </div>
 
         {/* ================= MAIN BACKGROUND BODY: CLEAN LIGHT-NEUTRAL CONTRAST GRAY (#F3F4F6) ================= */}
-        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 xs:p-4 sm:p-6 md:p-8 bg-[#F3F4F6] flex justify-center custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3 xs:p-4 sm:p-6 md:p-8 pb-12 bg-[#F3F4F6] flex justify-center items-start custom-scrollbar">
           {/* ================= 2. INNER RECEIPT PAPER WRAPPER: CRISP WHITE VERTICAL CONTAINER WITH SHARP EDGE BOUNDARIES & SUBTLE BOX SHADOW ================= */}
           <div
             id="invoice-print-area"
-            className={`bg-white transition-all shadow-md border border-slate-300 font-mono text-slate-900 leading-tight ${
+            className={`bg-white shrink-0 transition-all shadow-md border border-slate-300 font-mono text-slate-900 leading-tight ${
               invoiceFormat === 'a4'
-                ? 'w-full max-w-[820px] p-4 xs:p-5 sm:p-8 md:p-10 text-xs font-sans rounded-none sm:rounded-sm'
+                ? 'w-full max-w-[840px] p-4 xs:p-5 sm:p-8 md:p-10 text-xs font-sans rounded-none sm:rounded-sm'
                 : invoiceFormat === 'receipt-58'
-                ? 'w-full max-w-[270px] p-3 text-[10px] mx-auto rounded-none'
-                : 'w-full max-w-[340px] p-4 sm:p-5 text-xs mx-auto rounded-none'
+                ? 'w-full max-w-[270px] p-3 pb-8 text-[10px] mx-auto rounded-none'
+                : 'w-full max-w-[340px] p-4 sm:p-5 pb-8 text-xs mx-auto rounded-none'
             }`}
           >
             {/* ================= 1. A4 OFFICIAL INVOICE VIEW ================= */}
@@ -581,33 +588,58 @@ export default function InvoiceModal({
                   </table>
                 </div>
 
-                {/* Financial Summary Breakdown */}
-                <div className="flex justify-end pt-1 print-avoid-break">
-                  <div className="w-full sm:w-80 max-w-full space-y-1.5 sm:space-y-2 text-xs">
-                    <div className="flex justify-between py-1 text-slate-600">
-                      <span>Subtotal (Net):</span>
-                      <span className="font-mono font-bold text-slate-900">{formatGHS(subtotalAmount)}</span>
+                {/* Ghanaian GRA Statutory Tax & Financial Summary Breakdown */}
+                <div className="flex justify-end pt-2 print-avoid-break">
+                  <div className="w-full sm:w-96 max-w-full space-y-1.5 text-xs">
+                    <div className="flex justify-between py-1 text-slate-600 border-b border-slate-100">
+                      <span>Taxable Subtotal (Base):</span>
+                      <span className="font-mono font-bold text-slate-900">{formatGHS(ghanaTax.taxableSubtotal)}</span>
                     </div>
-                    <div className="flex justify-between py-1 text-slate-600">
-                      <span>
-                        Tax / VAT ({taxPercentageNum > 0 ? `${taxPercentageNum}%` : '0% Exempt'}):
-                      </span>
-                      <span className="font-mono text-slate-900">{formatGHS(taxAmount)}</span>
+
+                    {/* Ghana Statutory Levies Breakdown */}
+                    <div className="bg-slate-50 rounded-lg p-2.5 border border-slate-200/80 space-y-1 my-1">
+                      <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500 pb-0.5 border-b border-slate-200 flex justify-between">
+                        <span>Ghana Statutory Levies (GRA)</span>
+                        <span>Rate</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[11px]">
+                        <span>NHIL (Nat. Health Ins. Levy):</span>
+                        <span className="font-mono">{ghanaTax.isExempt ? '₵0.00 (Exempt)' : formatGHS(ghanaTax.nhilAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[11px]">
+                        <span>GETFund (Educ. Trust Fund):</span>
+                        <span className="font-mono">{ghanaTax.isExempt ? '₵0.00 (Exempt)' : formatGHS(ghanaTax.getFundAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[11px]">
+                        <span>COVID-19 Health Recovery Levy:</span>
+                        <span className="font-mono">{ghanaTax.isExempt ? '₵0.00 (Exempt)' : formatGHS(ghanaTax.covidLevyAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[11px]">
+                        <span>Standard VAT (15.0%):</span>
+                        <span className="font-mono">{ghanaTax.isExempt ? '₵0.00 (Exempt)' : formatGHS(ghanaTax.vatAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-800 font-bold text-[11px] pt-1 border-t border-slate-200">
+                        <span>Total Levies & VAT:</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.totalTax)}</span>
+                      </div>
                     </div>
+
                     <div className="flex justify-between py-2 border-t-2 border-slate-900 font-black text-sm text-slate-900">
-                      <span>Grand Total:</span>
-                      <span className="font-mono text-blue-700">{formatGHS(grandTotal)}</span>
+                      <span>Grand Total Payable:</span>
+                      <span className="font-mono text-emerald-700">{formatGHS(grandTotal)}</span>
                     </div>
                     <div className="flex justify-between py-1 text-slate-600 border-t border-slate-200">
-                      <span className="truncate mr-2">Amount Tendered ({paymentMethod}):</span>
+                      <span className="truncate mr-2">Amount Tendered ({displayPaymentMethod}):</span>
                       <span className="font-mono font-bold text-slate-900 shrink-0">{formatGHS(amountPaid)}</span>
                     </div>
-                    <div className="flex justify-between py-1 text-emerald-700 font-bold">
-                      <span>Change Due:</span>
-                      <span className="font-mono shrink-0">{formatGHS(changeDue)}</span>
-                    </div>
+                    {changeDue > 0 && (
+                      <div className="flex justify-between py-1 text-emerald-700 font-bold">
+                        <span>Change Due:</span>
+                        <span className="font-mono shrink-0">{formatGHS(changeDue)}</span>
+                      </div>
+                    )}
                     <div className="text-[10px] text-right font-bold text-emerald-600 uppercase tracking-wider pt-1 flex items-center justify-end gap-1">
-                      <CheckCircle2 size={12} className="shrink-0" /> <span>Transaction Fully Settled</span>
+                      <CheckCircle2 size={12} className="shrink-0" /> <span>GRA Compliant • Fully Settled</span>
                     </div>
                   </div>
                 </div>
@@ -716,15 +748,28 @@ export default function InvoiceModal({
                 {/* 58mm Totals Section */}
                 <div className="border-b border-dashed border-slate-400 pb-1.5 space-y-0.5 text-right text-[9px]">
                   <div className="flex justify-between text-slate-600">
-                    <span>SUBTOTAL:</span>
-                    <span className="font-mono">{formatGHS(subtotalAmount)}</span>
+                    <span>TAXABLE SUBTOTAL:</span>
+                    <span className="font-mono">{formatGHS(ghanaTax.taxableSubtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>TAX ({taxPercentageNum}%):</span>
-                    <span className="font-mono">{formatGHS(taxAmount)}</span>
-                  </div>
+                  {ghanaTax.isExempt ? (
+                    <div className="flex justify-between text-slate-600 text-[8px]">
+                      <span>GRA TAX STATUS:</span>
+                      <span className="font-bold">EXEMPT / 0%</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-slate-600 text-[8px]">
+                        <span>LEVIES (NHIL+GETF+COV 6%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.totalLevies)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[8px]">
+                        <span>VAT (15%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.vatAmount)}</span>
+                      </div>
+                    </>
+                  )}
                   <div className="flex justify-between font-black text-[11px] text-black pt-0.5 border-t border-slate-400">
-                    <span>TOTAL:</span>
+                    <span>TOTAL DUE:</span>
                     <span className="font-mono">{formatGHS(grandTotal)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600 pt-0.5">
@@ -744,12 +789,15 @@ export default function InvoiceModal({
                 </div>
 
                 {/* 58mm Barcode & Return Policy */}
-                <div className="pt-1 space-y-1">
+                <div className="pt-1.5 space-y-1">
                   <ReceiptBarcode value={`REC-${saleId}`} isNarrow={true} />
                   <div className="text-[7.5px] text-slate-700 leading-tight space-y-0.5 break-words">
                     <p className="font-bold text-black uppercase">THANK YOU FOR YOUR PATRONAGE!</p>
                     <p>{receiptFooterText}</p>
+                    <p className="font-mono text-[7px] text-slate-400">GRA FISCAL ID: GRA-GH-{saleId}</p>
                   </div>
+                  {/* Thermal paper bottom print safety zone feed spacer */}
+                  <div className="h-6 print:h-12 w-full shrink-0" aria-hidden="true" />
                 </div>
               </div>
             ) : (
@@ -839,15 +887,40 @@ export default function InvoiceModal({
                 {/* 80mm Totals Section */}
                 <div className="border-b border-dashed border-slate-400 pb-2 space-y-1 text-right text-[10px]">
                   <div className="flex justify-between text-slate-600">
-                    <span>SUBTOTAL:</span>
-                    <span className="font-mono">{formatGHS(subtotalAmount)}</span>
+                    <span>TAXABLE SUBTOTAL:</span>
+                    <span className="font-mono">{formatGHS(ghanaTax.taxableSubtotal)}</span>
                   </div>
-                  <div className="flex justify-between text-slate-600">
-                    <span>TAX / VAT ({taxPercentageNum}%):</span>
-                    <span className="font-mono">{formatGHS(taxAmount)}</span>
-                  </div>
-                  <div className="flex justify-between font-black text-xs text-slate-900 pt-1 border-t border-slate-300">
-                    <span>TOTAL:</span>
+                  {ghanaTax.isExempt ? (
+                    <div className="flex justify-between text-slate-600 text-[9px]">
+                      <span>GRA TAX STATUS:</span>
+                      <span className="font-bold">ZERO-RATED / EXEMPT (ACT 870)</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex justify-between text-slate-600 text-[9px]">
+                        <span>NHIL (2.5%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.nhilAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[9px]">
+                        <span>GETFund Levy (2.5%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.getFundAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[9px]">
+                        <span>COVID-19 Levy (1.0%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.covidLevyAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-600 text-[9px]">
+                        <span>Standard VAT (15.0%):</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.vatAmount)}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-700 font-bold text-[9.5px] pt-0.5 border-t border-dotted border-slate-300">
+                        <span>TOTAL LEVIES & VAT:</span>
+                        <span className="font-mono">{formatGHS(ghanaTax.totalTax)}</span>
+                      </div>
+                    </>
+                  )}
+                  <div className="flex justify-between font-black text-xs text-slate-900 pt-1 border-t border-slate-400">
+                    <span>TOTAL PAYABLE:</span>
                     <span className="font-mono">{formatGHS(grandTotal)}</span>
                   </div>
                   <div className="flex justify-between text-slate-600 pt-1">
@@ -860,20 +933,24 @@ export default function InvoiceModal({
                   </div>
                   {changeDue > 0 && (
                     <div className="flex justify-between text-emerald-700 font-bold">
-                      <span>CHANGE:</span>
+                      <span>CHANGE DUE:</span>
                       <span className="font-mono">{formatGHS(changeDue)}</span>
                     </div>
                   )}
                 </div>
 
                 {/* 80mm Scannable Barcode & Policies */}
-                <div className="pt-1 space-y-1.5">
+                <div className="pt-1.5 space-y-1.5">
                   <ReceiptBarcode value={`REC-${saleId}`} isNarrow={false} />
 
                   <div className="text-[8px] text-slate-600 leading-tight space-y-0.5 break-words">
                     <p className="font-bold text-slate-800 uppercase">THANK YOU FOR YOUR PATRONAGE!</p>
                     <p>{receiptFooterText}</p>
+                    <p className="font-mono text-[7.5px] text-slate-400 pt-0.5">GRA FISCAL ID: GRA-GH-{saleId}</p>
                   </div>
+
+                  {/* Thermal paper bottom print safety zone feed spacer */}
+                  <div className="h-8 print:h-14 w-full shrink-0" aria-hidden="true" />
                 </div>
               </div>
             )}

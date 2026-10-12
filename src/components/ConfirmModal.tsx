@@ -86,8 +86,16 @@ export default function ConfirmModal({
     },
   };
 
-  const type = options.type || 'danger';
-  const typeConfig = typeConfigMap[type as keyof typeof typeConfigMap] || typeConfigMap.danger;
+  const fallbackConfig = {
+    icon: AlertTriangle,
+    iconColor: 'text-amber-600',
+    iconBg: 'bg-amber-50 border-amber-200',
+    confirmBtn: 'bg-amber-600 hover:bg-amber-700 text-white focus:ring-amber-500',
+    defaultConfirm: 'Confirm',
+  };
+
+  const type = (options?.type as keyof typeof typeConfigMap) || 'danger';
+  const typeConfig = typeConfigMap[type] || typeConfigMap.danger || fallbackConfig;
 
   const Icon = typeConfig?.icon || AlertTriangle;
 
