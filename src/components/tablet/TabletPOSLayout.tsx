@@ -93,16 +93,16 @@ export default function TabletPOSLayout({
   const [completedSaleData, setCompletedSaleData] = useState<any | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
-  // Responsive Viewport States for zero-sliding fit on any screen size
+  // Responsive Viewport States for zero-sliding fit on any screen size (Desktop >= 1024px, Tablet & Mobile < 1024px)
   const [activeTab, setActiveTab] = useState<'catalog' | 'cart'>('catalog');
   const [isWideScreen, setIsWideScreen] = useState<boolean>(() => 
-    typeof window !== 'undefined' ? window.innerWidth >= 768 : true
+    typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
 
   useEffect(() => {
     const handleResize = () => {
-      setIsWideScreen(window.innerWidth >= 768);
+      setIsWideScreen(window.innerWidth >= 1024);
     };
     handleResize();
     window.addEventListener('resize', handleResize);
@@ -417,7 +417,7 @@ export default function TabletPOSLayout({
   }, [products, searchQuery, selectedCategory]);
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col w-full h-[100dvh] max-h-[100dvh] bg-slate-950 text-slate-100 overflow-hidden select-none touch-manipulation overscroll-none">
+    <div className="fixed inset-0 z-50 flex flex-col w-full h-full max-h-screen bg-slate-950 text-slate-100 overflow-hidden select-none touch-manipulation overscroll-none">
       
       {/* ================= 1. REFACTORED HEADER & BREADCRUMB BAR (NO COLLISION) ================= */}
       <header className="h-13 sm:h-14 bg-slate-950 text-slate-200 px-2.5 sm:px-4 flex items-center justify-between shrink-0 border-b border-slate-800 z-20 gap-2">
@@ -562,15 +562,15 @@ export default function TabletPOSLayout({
       </header>
 
       {/* ================= 2. ADAPTIVE VIEWPORT (FITS ALL SCREEN SIZES, NO SLIDING) ================= */}
-      <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col md:flex-row divide-y md:divide-y-0 md:divide-x divide-slate-800 bg-slate-900">
+      <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-800 bg-slate-900">
         
         {/* ================= LEFT SECTION: CATALOG & TOUCH PRODUCTS ================= */}
-        <div className={`relative flex-1 min-w-0 min-h-0 flex flex-col bg-slate-900 text-white p-2.5 sm:p-4 space-y-2.5 sm:space-y-3 overflow-hidden ${
+        <div className={`relative flex-1 min-w-0 min-h-0 flex flex-col bg-slate-900 text-white p-2.5 sm:p-4 overflow-hidden ${
           !isWideScreen && activeTab !== 'catalog' ? 'hidden' : 'flex'
         }`}>
           
           {/* Search Input (Min 48px Touch Height Target) */}
-          <div className="space-y-2 shrink-0">
+          <div className="space-y-2 shrink-0 mb-2 sm:mb-2.5">
             <div className="relative">
               <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
               <input
@@ -633,7 +633,7 @@ export default function TabletPOSLayout({
           </div>
 
           {/* Product Touch Grid (Min 48px Buttons, Distinct High-Contrast Stock Status Badges) */}
-          <div className={`flex-1 overflow-y-auto pr-1 custom-scrollbar min-h-0 ${isKeyboardOpen ? 'pb-72 sm:pb-80' : 'pb-16'}`}>
+          <div className={`flex-1 grow overflow-y-auto pr-1 custom-scrollbar min-h-0 ${isKeyboardOpen ? 'pb-72 sm:pb-80' : 'pb-2'}`}>
             {filteredProducts.length === 0 ? (
               <div className="h-full flex flex-col items-center justify-center p-8 text-slate-500 space-y-3">
                 <Package size={40} className="opacity-30" />
@@ -711,22 +711,32 @@ export default function TabletPOSLayout({
             )}
           </div>
 
-          {/* Quick Order Cart Bar on narrow screens */}
-          {!isWideScreen && totalItemsCount > 0 && (
-            <div className="shrink-0 pt-1">
+          {/* Prominent Charge / Order Cart Bar on mobile & tablet viewports (Permanently Pinned, Sticky Bottom, Never Overflown) */}
+          {!isWideScreen && (
+            <div className="sticky bottom-0 z-20 mt-auto shrink-0 p-2.5 sm:p-3 bg-slate-900/98 backdrop-blur-md border-t border-slate-800 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-2xl">
               <button
                 type="button"
+                disabled={totalItemsCount === 0}
                 onClick={() => {
                   if (soundEnabled) soundFeedback.playKeypadClick();
                   setActiveTab('cart');
                 }}
-                className="w-full min-h-[46px] px-4 py-2 bg-blue-600 hover:bg-blue-500 active:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-between shadow-lg active:scale-98 cursor-pointer"
+                className={`w-full min-h-[48px] px-4 py-2 rounded-xl font-black text-xs uppercase tracking-wider flex items-center justify-between shadow-xl transition-all ${
+                  totalItemsCount === 0
+                    ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
+                    : 'bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white cursor-pointer active:scale-98 ring-2 ring-emerald-500/50'
+                }`}
               >
                 <div className="flex items-center gap-2">
-                  <ShoppingCart size={16} />
-                  <span>View Order Cart ({totalItemsCount} items)</span>
+                  <ShoppingCart size={18} />
+                  <span>Cart ({totalItemsCount})</span>
                 </div>
-                <span className="font-mono text-sm font-bold">{formatGHS(totalCart)} →</span>
+                <div className={`flex items-center gap-1.5 font-bold text-sm px-3 py-1 rounded-lg ${
+                  totalItemsCount === 0 ? 'bg-slate-700/50 text-slate-400' : 'bg-emerald-700/80 text-white'
+                }`}>
+                  <span>Charge {formatGHS(totalCart)}</span>
+                  <span>→</span>
+                </div>
               </button>
             </div>
           )}
@@ -754,157 +764,158 @@ export default function TabletPOSLayout({
         </div>
 
         {/* ================= RIGHT SECTION: CART & ENHANCED PAYMENT PANE ================= */}
-        <div className={`w-full md:w-[380px] lg:w-[420px] xl:w-[450px] shrink-0 flex flex-col min-h-0 bg-slate-950 p-2.5 sm:p-3.5 space-y-2 sm:space-y-2.5 border-t md:border-t-0 md:border-l border-slate-800 overflow-hidden text-white ${
+        <div className={`w-full lg:w-[400px] xl:w-[450px] shrink-0 flex flex-col h-full min-h-0 bg-slate-950 border-t lg:border-t-0 lg:border-l border-slate-800 overflow-hidden text-white ${
           !isWideScreen && activeTab !== 'cart' ? 'hidden' : 'flex'
         }`}>
           
-          {/* Back to Catalog button when on narrow screens */}
-          {!isWideScreen && (
-            <button
-              type="button"
-              onClick={() => {
-                if (soundEnabled) soundFeedback.playKeypadClick();
-                setActiveTab('catalog');
-              }}
-              className="w-full min-h-[38px] px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 border border-slate-800 active:scale-98 cursor-pointer"
-            >
-              <ArrowLeft size={14} />
-              <span>Continue Adding Products</span>
-            </button>
-          )}
-
-          {/* Customer Selection Row */}
-          <div className="shrink-0 flex items-center justify-between gap-2 bg-slate-900 p-2.5 rounded-2xl border border-slate-800 text-xs">
-            <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs shrink-0">
-              <User size={15} className="text-blue-400" />
-              <span>Customer:</span>
-            </div>
-            <select
-              value={selectedCustomerId}
-              onChange={(e) => setSelectedCustomerId(e.target.value)}
-              className="flex-1 min-h-[38px] bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
-            >
-              <option value="">Walk-in Customer</option>
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>{c.name}</option>
-              ))}
-            </select>
-            {cart.length > 0 && (
+          {/* Scrollable Cart Content Area: Notes, items, customer info */}
+          <div className="flex-1 min-h-0 overflow-y-auto p-2.5 sm:p-3.5 space-y-2.5 custom-scrollbar">
+            {/* Back to Catalog button when on narrow screens */}
+            {!isWideScreen && (
               <button
                 type="button"
                 onClick={() => {
                   if (soundEnabled) soundFeedback.playKeypadClick();
-                  setCart([]);
-                  setCashTendered('');
-                  setIsKeyboardOpen(false);
+                  setActiveTab('catalog');
                 }}
-                className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:text-rose-400 rounded-xl transition cursor-pointer"
-                title="Clear entire cart"
+                className="w-full min-h-[40px] px-3 py-2 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 shrink-0 border border-slate-800 active:scale-98 cursor-pointer transition shadow-xs"
               >
-                <Trash2 size={16} />
+                <ArrowLeft size={14} />
+                <span>Continue Adding Products</span>
               </button>
             )}
-          </div>
 
-          {/* Cart Items List: Direct Quantity Steppers, Notes, and Clear Item Trash */}
-          <div className="flex-1 overflow-y-auto divide-y divide-slate-800/90 bg-slate-900 rounded-2xl border border-slate-800 p-2 custom-scrollbar min-h-0">
-            {cart.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center p-6 text-slate-500 text-center space-y-2.5">
-                <ShoppingCart size={36} strokeWidth={1.5} className="opacity-30" />
-                <p className="text-xs font-bold text-slate-400">Cart is empty</p>
-                <p className="text-[11px] text-slate-500">Tap items on the left or scan barcode to add</p>
+            {/* Customer Selection Row */}
+            <div className="shrink-0 flex items-center justify-between gap-2 bg-slate-900 p-2.5 rounded-2xl border border-slate-800 text-xs shadow-xs">
+              <div className="flex items-center gap-1.5 text-slate-400 font-bold text-xs shrink-0">
+                <User size={15} className="text-blue-400" />
+                <span>Customer:</span>
               </div>
-            ) : (
-              cart.map((item) => {
-                const p = products.find(prod => prod.id === item.product_id);
-                const lineTotal = item.quantity * item.unit_price;
-
-                return (
-                  <div key={item.product_id} className="py-2.5 px-1.5 space-y-1.5">
-                    <div className="flex items-center justify-between gap-2 text-xs">
-                      <div className="min-w-0 flex-1">
-                        <h5 className="font-bold text-white text-xs truncate leading-tight">
-                          {p?.name || 'Product'}
-                        </h5>
-                        <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
-                          <span className="text-emerald-400 font-bold">{formatGHS(item.unit_price)}</span>
-                          <span>•</span>
-                          <span>Subtotal: <strong className="text-slate-200">{formatGHS(lineTotal)}</strong></span>
-                        </div>
-                      </div>
-
-                      {/* Direct Touch Stepper (+ / - / Tap-for-Numpad) */}
-                      <div className="flex items-center gap-1 shrink-0 bg-slate-800 rounded-xl p-1 border border-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => handleAddToCart(p, -1)}
-                          className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg active:scale-95 cursor-pointer font-bold"
-                          title="Decrease quantity"
-                        >
-                          <Minus size={13} />
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => openQuantityNumpad(item.product_id)}
-                          className="w-9 h-8 flex items-center justify-center text-center font-mono font-black text-blue-400 text-xs hover:bg-blue-900/40 rounded-lg cursor-pointer transition"
-                          title="Tap to type custom quantity on numpad"
-                        >
-                          {item.quantity}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => handleAddToCart(p, 1)}
-                          className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg active:scale-95 cursor-pointer font-bold"
-                          title="Increase quantity"
-                        >
-                          <Plus size={13} />
-                        </button>
-                      </div>
-
-                      {/* Direct Clear-Item Trash Button */}
-                      <button
-                        type="button"
-                        onClick={() => handleRemoveFromCart(item.product_id)}
-                        className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
-                        title="Remove item from order"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-
-                    {/* Line-Item Note Field */}
-                    <input
-                      type="text"
-                      placeholder="Add customer / discount note..."
-                      value={item.notes || ''}
-                      onChange={(e) => handleUpdateItemNote(item.product_id, e.target.value)}
-                      className="w-full bg-slate-800/80 border border-slate-700/80 rounded-lg px-2.5 py-1 text-[11px] text-slate-300 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
-                    />
-                  </div>
-                );
-              })
-            )}
-          </div>
-
-          {/* Cart Summary Banner */}
-          <div className="shrink-0 bg-slate-900 border border-slate-800 rounded-2xl p-3 space-y-1.5">
-            <div className="flex items-center justify-between text-xs text-slate-400 font-medium">
-              <span>Items Total ({totalItemsCount} units)</span>
-              <span className="font-mono text-slate-200">{formatGHS(totalCart)}</span>
+              <select
+                value={selectedCustomerId}
+                onChange={(e) => setSelectedCustomerId(e.target.value)}
+                className="flex-1 min-h-[38px] bg-slate-800 border border-slate-700 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-200 focus:outline-none focus:border-blue-500"
+              >
+                <option value="">Walk-in Customer</option>
+                {customers.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              {cart.length > 0 && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (soundEnabled) soundFeedback.playKeypadClick();
+                    setCart([]);
+                    setCashTendered('');
+                    setIsKeyboardOpen(false);
+                  }}
+                  className="min-h-[38px] min-w-[38px] flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-xl transition cursor-pointer"
+                  title="Clear entire cart"
+                >
+                  <Trash2 size={16} />
+                </button>
+              )}
             </div>
 
-            <div className="flex items-center justify-between text-base font-black text-white pt-1.5 border-t border-slate-800">
-              <span className="uppercase tracking-wider text-xs font-bold text-slate-300">Total Due</span>
+            {/* Cart Items List: Direct Quantity Steppers, Notes, and Clear Item Trash */}
+            <div className="divide-y divide-slate-800/90 bg-slate-900 rounded-2xl border border-slate-800 p-2">
+              {cart.length === 0 ? (
+                <div className="flex flex-col items-center justify-center py-10 px-4 text-slate-500 text-center space-y-2">
+                  <ShoppingCart size={36} strokeWidth={1.5} className="opacity-30" />
+                  <p className="text-xs font-bold text-slate-400">Cart is empty</p>
+                  <p className="text-[11px] text-slate-500">Tap items in the catalog to add them to this order</p>
+                </div>
+              ) : (
+                cart.map((item) => {
+                  const p = products.find(prod => prod.id === item.product_id);
+                  const lineTotal = item.quantity * item.unit_price;
+
+                  return (
+                    <div key={item.product_id} className="py-2.5 px-1.5 space-y-1.5">
+                      <div className="flex items-center justify-between gap-2 text-xs">
+                        <div className="min-w-0 flex-1">
+                          <h5 className="font-bold text-white text-xs truncate leading-tight">
+                            {p?.name || 'Product'}
+                          </h5>
+                          <div className="flex items-center gap-2 text-[11px] text-slate-400 font-mono mt-0.5">
+                            <span className="text-emerald-400 font-bold">{formatGHS(item.unit_price)}</span>
+                            <span>•</span>
+                            <span>Subtotal: <strong className="text-slate-200">{formatGHS(lineTotal)}</strong></span>
+                          </div>
+                        </div>
+
+                        {/* Direct Touch Stepper (+ / - / Tap-for-Numpad) */}
+                        <div className="flex items-center gap-1 shrink-0 bg-slate-800 rounded-xl p-1 border border-slate-700">
+                          <button
+                            type="button"
+                            onClick={() => handleAddToCart(p, -1)}
+                            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg active:scale-95 cursor-pointer font-bold"
+                            title="Decrease quantity"
+                          >
+                            <Minus size={13} />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openQuantityNumpad(item.product_id)}
+                            className="w-9 h-8 flex items-center justify-center text-center font-mono font-black text-blue-400 text-xs hover:bg-blue-900/40 rounded-lg cursor-pointer transition"
+                            title="Tap to type custom quantity on numpad"
+                          >
+                            {item.quantity}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleAddToCart(p, 1)}
+                            className="w-8 h-8 flex items-center justify-center text-slate-300 hover:text-white hover:bg-slate-700 rounded-lg active:scale-95 cursor-pointer font-bold"
+                            title="Increase quantity"
+                          >
+                            <Plus size={13} />
+                          </button>
+                        </div>
+
+                        {/* Direct Clear-Item Trash Button */}
+                        <button
+                          type="button"
+                          onClick={() => handleRemoveFromCart(item.product_id)}
+                          className="w-8 h-8 flex items-center justify-center text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 rounded-lg transition cursor-pointer"
+                          title="Remove item from order"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+
+                      {/* Line-Item Note Field */}
+                      <input
+                        type="text"
+                        placeholder="Add customer / discount note..."
+                        value={item.notes || ''}
+                        onChange={(e) => handleUpdateItemNote(item.product_id, e.target.value)}
+                        className="w-full bg-slate-800/80 border border-slate-700/80 rounded-lg px-2.5 py-1 text-[11px] text-slate-300 placeholder:text-slate-500 focus:outline-none focus:border-blue-500"
+                      />
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+
+          {/* PINNED CHECKOUT FOOTER (ALWAYS VISIBLE AT BOTTOM, NEVER PUSHED OFF-SCREEN) */}
+          <div className="sticky bottom-0 z-20 mt-auto shrink-0 p-2.5 sm:p-3.5 bg-slate-950/98 backdrop-blur-md border-t border-slate-800/90 space-y-2 shadow-2xl pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            
+            {/* Cart Summary Banner */}
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-2.5 px-3 flex items-center justify-between">
+              <div>
+                <span className="uppercase tracking-wider text-[10px] font-bold text-slate-400 block">Total Due</span>
+                <span className="text-[11px] text-slate-400 font-mono">{totalItemsCount} units in order</span>
+              </div>
               <span className="font-mono text-2xl text-emerald-400 font-black">
                 {formatGHS(totalCart)}
               </span>
             </div>
-          </div>
 
-          {/* Payment Method Selector (Min 48px Touch Targets) - STRICTLY CASH & MOMO ONLY */}
-          <div className="shrink-0 space-y-2">
+            {/* Payment Method Selector (Min 44px Touch Targets) - STRICTLY CASH & MOMO ONLY */}
             <div className="grid grid-cols-2 gap-2 text-xs font-bold">
               {[
                 { id: 'Cash', label: 'Cash', icon: <Banknote size={16} /> },
@@ -917,7 +928,7 @@ export default function TabletPOSLayout({
                     if (soundEnabled) soundFeedback.playKeypadClick();
                     setPaymentMethod(mode.id as any);
                   }}
-                  className={`min-h-[48px] p-2 rounded-xl flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer ${
+                  className={`min-h-[44px] p-2 rounded-xl flex items-center justify-center gap-2 transition active:scale-95 cursor-pointer ${
                     paymentMethod === mode.id
                       ? 'bg-blue-600 text-white font-black shadow-md ring-2 ring-blue-400/40'
                       : 'bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-800'
@@ -931,65 +942,57 @@ export default function TabletPOSLayout({
 
             {/* Custom Cash Tendered Section: Presets removed, leaving custom numpad input */}
             {paymentMethod === 'Cash' && totalCart > 0 && (
-              <div className="bg-slate-900/90 border border-slate-800 rounded-2xl p-2.5 space-y-2">
-                <button
-                  type="button"
-                  onClick={openTenderNumpad}
-                  className="w-full min-h-[46px] px-3 py-2 rounded-xl bg-blue-600/30 hover:bg-blue-600/50 text-blue-200 border border-blue-500/50 text-xs font-bold flex items-center justify-between gap-2 active:scale-98 transition cursor-pointer"
-                  title="Enter custom cash amount tendered via touch numpad"
-                >
-                  <span className="flex items-center gap-2 font-black uppercase tracking-wider text-white">
-                    <Calculator size={16} className="text-blue-400" />
-                    Custom Tender Amount
-                  </span>
-                  <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 border border-blue-400/30">
-                    {cashTendered ? formatGHS(numericTendered) : 'Tap to set'}
-                  </span>
-                </button>
-
-                {/* Tendered Input & Dynamic Change Due */}
-                <div className="flex items-center justify-between text-xs pt-1.5 border-t border-slate-800 font-mono">
-                  <div className="flex items-center gap-1 text-slate-400">
-                    <span>Tendered:</span>
-                    <span className="text-white font-bold">
-                      {cashTendered ? formatGHS(numericTendered) : '---'}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-2 space-y-1.5 text-xs">
+                <div className="flex items-center justify-between gap-2">
+                  <button
+                    type="button"
+                    onClick={openTenderNumpad}
+                    className="flex-1 min-h-[38px] px-2.5 py-1.5 rounded-lg bg-blue-600/20 hover:bg-blue-600/30 text-blue-200 border border-blue-500/40 text-[11px] font-bold flex items-center justify-between gap-1 active:scale-98 transition cursor-pointer"
+                    title="Enter custom cash amount tendered via touch numpad"
+                  >
+                    <span className="flex items-center gap-1.5 font-bold uppercase tracking-wider text-white">
+                      <Calculator size={14} className="text-blue-400" />
+                      Tender:
                     </span>
-                  </div>
+                    <span className="font-mono font-bold text-blue-300">
+                      {cashTendered ? formatGHS(numericTendered) : 'Set Tender'}
+                    </span>
+                  </button>
 
-                  <div className="flex items-center gap-1 font-bold">
-                    <span className="text-slate-400">Change Due:</span>
-                    <span className={`font-black text-sm ${numericTendered >= totalCart ? 'text-emerald-400' : 'text-amber-400'}`}>
+                  <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-slate-800/80 border border-slate-700/60 font-mono text-[11px] shrink-0">
+                    <span className="text-slate-400">Change:</span>
+                    <span className={`font-black ${numericTendered >= totalCart ? 'text-emerald-400' : 'text-amber-400'}`}>
                       {formatGHS(changeDue)}
                     </span>
                   </div>
                 </div>
               </div>
             )}
-          </div>
 
-          {/* Big Instant "CHARGE / COMPLETE SALE" Button (Min 54px Target) */}
-          <button
-            type="button"
-            disabled={cart.length === 0 || isSubmitting}
-            onClick={handleProcessSale}
-            className={`w-full min-h-[54px] rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition cursor-pointer shadow-lg active:scale-98 ${
-              cart.length === 0 || isSubmitting
-                ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
-                : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-900/40 ring-2 ring-emerald-500/50'
-            }`}
-          >
-            {isSubmitting ? (
-              <div className="flex items-center gap-2">
-                <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                <span>Processing Sale...</span>
-              </div>
-            ) : (
-              <>
-                <Check size={20} strokeWidth={3} />
-                <span>Charge {formatGHS(totalCart)}</span>
-              </>
-            )}
-          </button>
+            {/* Big Instant "CHARGE / COMPLETE SALE" Button (ALWAYS VISIBLE & PINNED AT BOTTOM) */}
+            <button
+              type="button"
+              disabled={cart.length === 0 || isSubmitting}
+              onClick={handleProcessSale}
+              className={`w-full min-h-[52px] sm:min-h-[56px] rounded-xl sm:rounded-2xl font-black text-sm uppercase tracking-wider flex items-center justify-center gap-2 transition cursor-pointer shadow-xl active:scale-98 ${
+                cart.length === 0 || isSubmitting
+                  ? 'bg-slate-800 text-slate-500 border border-slate-700 cursor-not-allowed shadow-none'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-emerald-950/60 ring-2 ring-emerald-400/50'
+              }`}
+            >
+              {isSubmitting ? (
+                <div className="flex items-center gap-2">
+                  <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  <span>Processing Sale...</span>
+                </div>
+              ) : (
+                <>
+                  <Check size={20} strokeWidth={3} />
+                  <span>Charge {formatGHS(totalCart)}</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
       </div>
 

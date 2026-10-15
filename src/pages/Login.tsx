@@ -31,12 +31,6 @@ export default function Login() {
     handleLogin(email, password);
   };
 
-  const handleQuickFill = (demoEmail: string, demoPass: string) => {
-    setEmail(demoEmail);
-    setPassword(demoPass);
-    setError('');
-  };
-
   const handleLogin = async (loginEmail: string, loginPass: string) => {
     setError('');
     setTimeoutNotice(null);
@@ -45,77 +39,19 @@ export default function Login() {
     try {
       const cleanEmail = loginEmail.trim();
 
-      // 1. Primary Authentication: Local SQLite backend via /api/auth/login
-      try {
-        const res = await fetchApi('/auth/login', {
-          method: 'POST',
-          body: JSON.stringify({ email: cleanEmail, password: loginPass })
-        });
+      // Authenticate with real database backend via /api/auth/login
+      const res = await fetchApi('/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ email: cleanEmail, password: loginPass })
+      });
 
-        if (res?.token && res?.user) {
-          login(res.token, res.user);
-          navigate('/');
-          return;
-        }
-      } catch (backendErr: any) {
-        // If backend explicitly rejected credentials or user is inactive
-        if (backendErr?.status === 401 || backendErr?.status === 403 || backendErr?.message?.toLowerCase().includes('credential') || backendErr?.message?.toLowerCase().includes('suspend') || backendErr?.message?.toLowerCase().includes('inactive')) {
-          setError(backendErr.message || 'Invalid email or password credentials.');
-          return;
-        }
-        console.warn('[Login] Primary auth notice:', backendErr.message);
-      }
-
-      // 2. Fallback check for demo accounts
-      const lower = cleanEmail.toLowerCase();
-      if (lower === 'rabbi@ummis.com' || lower === 'admin@ummis.com') {
-        login('mock_admin_token_jwt', { id: 1, name: 'Rabbi Admin', email: 'rabbi@ummis.com', role: 'admin' });
-        navigate('/');
-        return;
-      }
-      if (lower === 'staff@ummis.com') {
-        login('mock_staff_token_jwt', { id: 2, name: 'Store Staff', email: 'Staff@ummis.com', role: 'staff' });
-        navigate('/');
-        return;
-      }
-      if (lower.includes('mensah') || lower === 'ing.mensah@gmail.com') {
-        login('mock_admin_token_jwt', { id: 5, name: 'Ing. Mensah (Owner)', email: 'ing.mensah@gmail.com', role: 'admin' });
-        navigate('/');
-        return;
-      }
-      if (lower === 'orders@nestle.com.gh') {
-        login('mock_supplier_token_jwt', { id: 3, name: 'Nestlé Ghana Supplier', email: 'orders@nestle.com.gh', role: 'supplier' });
+      if (res?.token && res?.user) {
+        login(res.token, res.user);
         navigate('/');
         return;
       }
 
-      // 3. Fallback Supabase client auth if configured
-      try {
-        if (typeof supabase?.auth?.signInWithPassword === 'function') {
-          const { data, error: authError } = await supabase.auth.signInWithPassword({
-            email: cleanEmail,
-            password: loginPass
-          });
-
-          if (!authError && data?.session && data?.user) {
-            const emailVal = data.user.email || cleanEmail;
-            const role = emailVal.toLowerCase().includes('rabbi') || emailVal.toLowerCase().includes('admin') || emailVal.toLowerCase().includes('mensah') ? 'admin' : (data.user.user_metadata?.role || 'staff');
-            const userObj = {
-              id: data.user.id,
-              name: data.user.user_metadata?.name || emailVal.split('@')[0],
-              email: emailVal,
-              role: role as 'admin' | 'staff'
-            };
-            login(data.session.access_token, userObj);
-            navigate('/');
-            return;
-          }
-        }
-      } catch (sbErr) {
-        // Supabase error ignored
-      }
-
-      setError('Invalid email or password credentials. Please try again.');
+      setError('Invalid email or password credentials. Please verify your login details.');
     } catch (err: any) {
       const msg = typeof err === 'string'
         ? err
@@ -126,6 +62,12 @@ export default function Login() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleQuickLogin = (quickEmail: string, quickPass: string) => {
+    setEmail(quickEmail);
+    setPassword(quickPass);
+    handleLogin(quickEmail, quickPass);
   };
 
   return (
@@ -264,60 +206,71 @@ export default function Login() {
               </button>
             </form>
 
-            {/* Quick Demo Access Badges */}
-            <div className="mt-5 pt-4 border-t border-slate-800/80">
-              <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2 flex items-center gap-1.5">
-                Fast Terminal Logins:
-              </p>
+            {/* Quick Login 1-Click Role Accounts */}
+            <div className="mt-5 pt-4 border-t border-slate-800 space-y-2">
+              <div className="flex items-center justify-between text-[10px] font-black uppercase tracking-wider text-slate-400 mb-1.5">
+                <span className="flex items-center gap-1 text-slate-300">
+                  <KeyRound size={12} className="text-amber-400" />
+                  Quick Login
+                </span>
+                <span className="text-[9px] text-slate-500 font-normal">Real Database Accounts</span>
+              </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
-                  onClick={() => {
-                    handleQuickFill('ing.mensah@gmail.com', 'Admin@ummis');
-                    handleLogin('ing.mensah@gmail.com', 'Admin@ummis');
-                  }}
-                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('ing.mensah@gmail.com', 'Admin@ummis')}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-blue-500/80 rounded-lg text-left transition group cursor-pointer disabled:opacity-50"
                 >
-                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Ing. Mensah</span>
-                  <span className="text-[10px] text-slate-400 block truncate">Owner (Super Admin)</span>
+                  <div className="text-[11px] font-bold text-white group-hover:text-blue-400 flex items-center justify-between">
+                    <span>Owner / Admin</span>
+                    <span className="text-[8px] uppercase px-1 py-0.2 bg-blue-900/60 text-blue-300 rounded font-mono">Owner</span>
+                  </div>
+                  <div className="text-[9px] text-slate-400 truncate mt-0.5">ing.mensah@gmail.com</div>
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    handleQuickFill('rabbi@ummis.com', 'Admin@ummis');
-                    handleLogin('rabbi@ummis.com', 'Admin@ummis');
-                  }}
-                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('rabbi@ummis.com', 'Admin@ummis')}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-indigo-500/80 rounded-lg text-left transition group cursor-pointer disabled:opacity-50"
                 >
-                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Rabbi Admin</span>
-                  <span className="text-[10px] text-slate-400 block truncate">Store Administrator</span>
+                  <div className="text-[11px] font-bold text-white group-hover:text-indigo-400 flex items-center justify-between">
+                    <span>Rabbi Admin</span>
+                    <span className="text-[8px] uppercase px-1 py-0.2 bg-indigo-900/60 text-indigo-300 rounded font-mono">Admin</span>
+                  </div>
+                  <div className="text-[9px] text-slate-400 truncate mt-0.5">rabbi@ummis.com</div>
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    handleQuickFill('Staff@ummis.com', 'Password@ummis');
-                    handleLogin('Staff@ummis.com', 'Password@ummis');
-                  }}
-                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('Staff@ummis.com', 'Password@ummis')}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-emerald-500/80 rounded-lg text-left transition group cursor-pointer disabled:opacity-50"
                 >
-                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Store Staff</span>
-                  <span className="text-[10px] text-slate-400 block truncate">POS Cashier</span>
+                  <div className="text-[11px] font-bold text-white group-hover:text-emerald-400 flex items-center justify-between">
+                    <span>Store Cashier</span>
+                    <span className="text-[8px] uppercase px-1 py-0.2 bg-emerald-900/60 text-emerald-300 rounded font-mono">Staff</span>
+                  </div>
+                  <div className="text-[9px] text-slate-400 truncate mt-0.5">Staff@ummis.com</div>
                 </button>
+
                 <button
                   type="button"
-                  onClick={() => {
-                    handleQuickFill('orders@nestle.com.gh', 'Supplier@ummis');
-                    handleLogin('orders@nestle.com.gh', 'Supplier@ummis');
-                  }}
-                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/60 hover:border-blue-500/60 rounded-lg text-left transition cursor-pointer group"
+                  disabled={loading}
+                  onClick={() => handleQuickLogin('orders@nestle.com.gh', 'Supplier@ummis')}
+                  className="px-2.5 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-700/80 hover:border-purple-500/80 rounded-lg text-left transition group cursor-pointer disabled:opacity-50"
                 >
-                  <span className="text-[11px] font-bold text-white block group-hover:text-blue-400">Nestlé Ghana</span>
-                  <span className="text-[10px] text-slate-400 block truncate">Vendor / Supplier</span>
+                  <div className="text-[11px] font-bold text-white group-hover:text-purple-400 flex items-center justify-between">
+                    <span>Nestlé Supplier</span>
+                    <span className="text-[8px] uppercase px-1 py-0.2 bg-purple-900/60 text-purple-300 rounded font-mono">Vendor</span>
+                  </div>
+                  <div className="text-[9px] text-slate-400 truncate mt-0.5">orders@nestle.com.gh</div>
                 </button>
               </div>
             </div>
 
-            <div className="mt-5 pt-4 border-t border-slate-900 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+            <div className="mt-4 pt-3 border-t border-slate-800 text-center text-[11px] text-slate-400 flex items-center justify-center gap-1.5 font-medium">
               <ShieldCheck size={14} className="text-emerald-500" />
               <span>Protected with 30-min shared terminal inactivity lock</span>
             </div>

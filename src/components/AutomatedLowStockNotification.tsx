@@ -5,9 +5,10 @@ import {
   ShoppingBag, Search, X, ArrowUpRight,
   AlertTriangle, Settings, Download, Plus,
   CheckCircle2, ShieldAlert, Package, RefreshCw,
-  SlidersHorizontal, Boxes
+  SlidersHorizontal, Boxes, Eye, Truck, ShoppingCart
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import RowActionMenu from './common/RowActionMenu';
 
 export interface ProductStockAlert {
   id: number;
@@ -512,36 +513,44 @@ export default function AutomatedLowStockNotification({
                           )}
                         </td>
 
-                        {/* Quick Restock / Reorder Action */}
+                        {/* Kebab Action Menu */}
                         <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-1.5">
-                            {onQuickRestock && (
-                              <button
-                                type="button"
-                                onClick={() => onQuickRestock(product)}
-                                className="px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-[11px] uppercase tracking-wider transition cursor-pointer shadow-2xs"
-                                title="Quick stock adjustment restock"
-                              >
-                                Restock
-                              </button>
-                            )}
-                            {userRole === 'admin' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  if (onCreatePO) {
-                                    onCreatePO(product);
-                                  } else {
-                                    navigate(`/purchases?reorder_product_id=${product.id}&reorder_qty=${recommendedQty}&product_name=${encodeURIComponent(product.name)}`);
-                                  }
-                                }}
-                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-[11px] uppercase tracking-wider transition cursor-pointer flex items-center gap-1 shadow-2xs"
-                                title={`Create Purchase Order for ${recommendedQty} units`}
-                              >
-                                <span>PO ({recommendedQty})</span>
-                                <ArrowUpRight size={11} />
-                              </button>
-                            )}
+                          <div className="flex items-center justify-end">
+                            <RowActionMenu
+                              triggerTitle={`Actions for ${product.name}`}
+                              actions={[
+                                onQuickRestock ? {
+                                  label: 'Quick Restock',
+                                  sublabel: `Add stock buffer (+${recommendedQty} units)`,
+                                  icon: <RefreshCw size={14} className="text-amber-600" />,
+                                  onClick: () => onQuickRestock(product),
+                                } : null,
+                                userRole === 'admin' ? {
+                                  label: `Create Purchase Order (${recommendedQty} units)`,
+                                  sublabel: 'Issue PO to supplier',
+                                  icon: <Truck size={14} className="text-blue-600" />,
+                                  onClick: () => {
+                                    if (onCreatePO) {
+                                      onCreatePO(product);
+                                    } else {
+                                      navigate(`/purchases?reorder_product_id=${product.id}&reorder_qty=${recommendedQty}&product_name=${encodeURIComponent(product.name)}`);
+                                    }
+                                  },
+                                } : null,
+                                {
+                                  label: 'View Product Details',
+                                  sublabel: 'Specs, pricing & stock',
+                                  icon: <Eye size={14} />,
+                                  onClick: () => navigate(`/products/${product.id}`),
+                                },
+                                {
+                                  label: 'Open in POS Terminal',
+                                  sublabel: 'Sell remaining stock',
+                                  icon: <ShoppingCart size={14} className="text-emerald-600" />,
+                                  onClick: () => navigate('/sales'),
+                                },
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>

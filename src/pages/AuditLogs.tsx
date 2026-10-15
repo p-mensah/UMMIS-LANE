@@ -1,5 +1,7 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { 
   ShieldCheck, Search, Filter, Trash2, RefreshCw, Calendar, User, 
@@ -29,6 +31,31 @@ interface AuditLogEntry {
 }
 
 export default function AuditLogs() {
+  const { user } = useAuth();
+  const isStaff = user?.role === 'staff';
+
+  if (user && user.role !== 'admin') {
+    return (
+      <div className="max-w-2xl mx-auto py-16 px-4 text-center space-y-4">
+        <div className="w-16 h-16 mx-auto rounded-full bg-slate-100 flex items-center justify-center text-slate-500 border border-slate-200">
+          <ShieldAlert size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Access Restricted</h2>
+        <p className="text-sm text-slate-500">
+          Security and audit logs are restricted to system administrators.
+        </p>
+        <div className="pt-2">
+          <Link
+            to="/"
+            className="inline-flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition"
+          >
+            Return to Dashboard
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   const [logs, setLogs] = useState<AuditLogEntry[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -386,7 +413,11 @@ export default function AuditLogs() {
     const params = new URLSearchParams();
     if (categoryFilter !== 'all') params.append('category', categoryFilter);
     if (subCategoryFilter !== 'all') params.append('sub_category', subCategoryFilter);
-    if (userFilter !== 'all') params.append('user_id', userFilter);
+    if (isStaff && user) {
+      params.append('user_id', user.id.toString());
+    } else if (userFilter !== 'all') {
+      params.append('user_id', userFilter);
+    }
     if (terminalFilter !== 'all') params.append('terminal', terminalFilter);
     if (startDate) params.append('startDate', startDate);
     if (endDate) params.append('endDate', endDate);
@@ -481,6 +512,13 @@ export default function AuditLogs() {
   const [exportNotice, setExportNotice] = useState<string | null>(null);
 
   const filteredLogs = logs.filter(log => {
+    // Security restriction: remove admin or other related roles audit from the staff account. Only staff should see his logged only.
+    if (isStaff && user) {
+      const isSelf = log.user_id === user.id || (log.user_name && log.user_name.toLowerCase() === user.name.toLowerCase());
+      const isNotAdminOrOther = log.actor_role !== 'admin' && log.actor_role !== 'superadmin' && log.actor_role !== 'supplier';
+      if (!isSelf || !isNotAdminOrOther) return false;
+    }
+
     // Status filter
     if (statusFilter === 'critical' && !isCriticalAlert(log)) return false;
     if (statusFilter === 'warning' && (!isWarningAlert(log) || isCriticalAlert(log))) return false;
@@ -798,8 +836,14 @@ export default function AuditLogs() {
             <ShieldCheck size={22} />
           </div>
           <div>
-            <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">System Audit & Security Logs</h1>
-            <p className="text-[12px] text-slate-500 font-medium">Immutable audit trail of user access, account genesis, pricing alterations, stock adjustments, and governance events</p>
+            <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">
+              {isStaff ? 'My Activity Log & Audit Trail' : 'System Audit & Security Logs'}
+            </h1>
+            <p className="text-[12px] text-slate-500 font-medium">
+              {isStaff 
+                ? 'Personal audit trail of your authenticated sessions, sales transactions, and register operations. Only your own logged actions are displayed.'
+                : 'Immutable audit trail of user access, account genesis, pricing alterations, stock adjustments, and governance events'}
+            </p>
           </div>
         </div>
 
@@ -849,12 +893,14 @@ export default function AuditLogs() {
             <Download size={14} /> Export CSV ({filteredLogs.length})
           </button>
 
-          <button
-            onClick={() => setShowCleanupModal(true)}
-            className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 shadow-sm shadow-amber-600/20"
-          >
-            <Trash2 size={14} /> Prune Old Logs
-          </button>
+          {!isStaff && (
+            <button
+              onClick={() => setShowCleanupModal(true)}
+              className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl transition-colors flex items-center gap-2 shadow-sm shadow-amber-600/20"
+            >
+              <Trash2 size={14} /> Prune Old Logs
+            </button>
+          )}
 
           <button
             onClick={() => loadData()}
@@ -943,9 +989,18 @@ export default function AuditLogs() {
           <div className="w-7 h-7 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
             <User size={15} />
           </div>
-          <span className="font-bold text-slate-500 text-[11px] uppercase tracking-wider">Top Operators:</span>
+          <span className="font-bold text-slate-500 text-[11px] uppercase tracking-wider">
+            {isStaff ? 'Current Operator:' : 'Top Operators:'}
+          </span>
           <div className="flex items-center gap-1 flex-wrap">
-            {topActiveUsers.length > 0 ? (
+            {isStaff ? (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 border border-indigo-200 text-indigo-700">
+                <span>{user?.name || 'Staff User'}</span>
+                <span className="font-mono text-[9px] bg-indigo-200 text-indigo-900 px-1 rounded font-black">
+                  {filteredLogs.length} events
+                </span>
+              </span>
+            ) : topActiveUsers.length > 0 ? (
               topActiveUsers.map((u, i) => (
                 <button
                   key={i}
@@ -1088,16 +1143,23 @@ export default function AuditLogs() {
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
             {/* User Filter */}
-            <select
-              value={userFilter}
-              onChange={e => setUserFilter(e.target.value)}
-              className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
-            >
-              <option value="all">All Users & System</option>
-              {users.map(u => (
-                <option key={u.id} value={u.id}>{u.name}</option>
-              ))}
-            </select>
+            {isStaff ? (
+              <span className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-bold text-slate-700 bg-slate-50 flex items-center gap-1.5 shadow-2xs">
+                <User size={12} className="text-slate-500" />
+                <span>My Logged Actions Only ({user?.name || 'Staff'})</span>
+              </span>
+            ) : (
+              <select
+                value={userFilter}
+                onChange={e => setUserFilter(e.target.value)}
+                className="border border-slate-200 rounded-lg px-2.5 py-1 text-xs font-semibold text-slate-800 bg-white focus:outline-none focus:border-blue-500"
+              >
+                <option value="all">All Users & System</option>
+                {users.map(u => (
+                  <option key={u.id} value={u.id}>{u.name}</option>
+                ))}
+              </select>
+            )}
 
             {/* Device / Terminal Filter */}
             <select

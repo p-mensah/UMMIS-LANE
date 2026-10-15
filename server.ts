@@ -11,11 +11,10 @@ import { v2 as cloudinary } from 'cloudinary';
 import { initChatDb, setupChatRoutes, setupChatSocket, WEBSOCKET_AUTH_KEY } from './chatService';
 
 // Cloudinary Configuration
-// Key Name: Ummis | Product Environment: dnjvhtal5
 cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || 'dnjvhtal5',
-  api_key: process.env.CLOUDINARY_API_KEY || '621649359688726',
-  api_secret: process.env.CLOUDINARY_API_SECRET || 'e86JxxBQDobHpIK4pLUrzNvth6s',
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME || '',
+  api_key: process.env.CLOUDINARY_API_KEY || '',
+  api_secret: process.env.CLOUDINARY_API_SECRET || '',
   secure: true
 });
 
@@ -1503,7 +1502,17 @@ function logAuditEvent(
   options?: AuditLogOptions
 ) {
   try {
-    const actorRole = options?.actorRole || (userId ? 'staff' : 'system');
+    let actorRole = options?.actorRole;
+    if (!actorRole && userId) {
+      try {
+        const u: any = db.prepare('SELECT role FROM users WHERE id = ?').get(userId);
+        actorRole = u?.role || 'staff';
+      } catch (e) {
+        actorRole = 'staff';
+      }
+    } else if (!actorRole) {
+      actorRole = 'system';
+    }
     const subCategory = options?.subCategory || category;
     const deviceTerminal = options?.deviceTerminal || 'POS Terminal #1 (Lane A)';
     const location = options?.location || 'Main Store - Accra';
@@ -1663,7 +1672,7 @@ app.use(express.json({ limit: '10mb' }));
 const SUPABASE_BASE_URL = (
   process.env.SUPABASE_URL ||
   process.env.VITE_SUPABASE_URL ||
-  'https://puxzctsfjlztnburbplf.supabase.co'
+  ''
 )
   .replace(/^\/\//, 'https://')
   .replace(/\/rest\/v1\/?$/, '')
@@ -1746,14 +1755,7 @@ const authenticate = (req: any, res: any, next: any) => {
   if (!token) return res.status(401).json({ error: 'Unauthorized' });
   try {
     if (token.startsWith('mock_')) {
-      if (token.includes('admin')) {
-        req.user = { id: 1, email: 'rabbi@ummis.com', role: 'admin', name: 'Rabbi Admin' };
-      } else if (token.includes('supplier')) {
-        req.user = { id: 3, email: 'orders@nestle.com.gh', role: 'supplier', name: 'Nestlé Ghana Supplier' };
-      } else {
-        req.user = { id: 2, email: 'Staff@ummis.com', role: 'staff', name: 'Store Staff' };
-      }
-      return next();
+      return res.status(401).json({ error: 'Session expired. Please sign in with your credentials.' });
     }
     const decoded: any = jwt.verify(token, JWT_SECRET);
     if (decoded.email && (decoded.email.toLowerCase().includes('rabbi') || decoded.email.toLowerCase().includes('admin') || decoded.email.toLowerCase().includes('mensah'))) {
@@ -7189,7 +7191,8 @@ app.post('/api/shifts/close', authenticate, (req: any, res) => {
 
 app.get('/api/shifts', authenticate, (req: any, res) => {
   try {
-    const shifts: any[] = db.prepare(`
+    const { user_id, status, startDate, endDate } = req.query;
+    let query = `
       SELECT 
         s.*,
         u.name as cashier_name,
@@ -7208,9 +7211,38 @@ app.get('/api/shifts', authenticate, (req: any, res) => {
         WHERE status != 'refunded'
         GROUP BY shift_id
       ) sales_summary ON s.id = sales_summary.shift_id
-      ORDER BY s.id DESC
-      LIMIT 100
-    `).all();
+      WHERE 1=1
+    `;
+    const params: any[] = [];
+
+    // If staff user, restrict strictly to their own shifts
+    if (req.user.role === 'staff') {
+      query += ` AND s.user_id = ?`;
+      params.push(req.user.id);
+    } else if (user_id && user_id !== 'all') {
+      // Admin/superadmin can filter by specific cashier/staff user
+      query += ` AND s.user_id = ?`;
+      params.push(user_id);
+    }
+
+    if (status && status !== 'all') {
+      query += ` AND s.status = ?`;
+      params.push(status);
+    }
+
+    if (startDate) {
+      query += ` AND date(s.start_time) >= date(?)`;
+      params.push(startDate);
+    }
+
+    if (endDate) {
+      query += ` AND date(s.start_time) <= date(?)`;
+      params.push(endDate);
+    }
+
+    query += ` ORDER BY s.id DESC LIMIT 200`;
+
+    const shifts: any[] = db.prepare(query).all(...params);
 
     const formatted = shifts.map(s => {
       const starting = Number(s.starting_cash || 0);
@@ -7228,6 +7260,106 @@ app.get('/api/shifts', authenticate, (req: any, res) => {
     });
 
     res.json(formatted);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
+app.put('/api/shifts/:id', authenticate, requireAdmin, (req: any, res) => {
+  const shiftId = req.params.id;
+  const { starting_cash, ending_cash, status, notes } = req.body;
+  try {
+    const shift: any = db.prepare('SELECT * FROM shifts WHERE id = ?').get(shiftId);
+    if (!shift) return res.status(404).json({ error: 'Shift register record not found' });
+
+    // Calculate cash movements & sales for expected cash
+    const cashSales: any = db.prepare(`
+      SELECT COALESCE(SUM(total_amount), 0) as total 
+      FROM sales 
+      WHERE shift_id = ? AND status != 'refunded' AND payment_method = 'Cash'
+    `).get(shiftId);
+
+    let cashRefundsTotal = 0;
+    try {
+      const cashRefunds: any = db.prepare(`
+        SELECT COALESCE(SUM(sr.refund_amount), 0) as total
+        FROM sales_returns sr
+        JOIN sales s ON sr.sale_id = s.id
+        WHERE s.shift_id = ? AND sr.refund_method = 'Cash'
+      `).get(shiftId);
+      cashRefundsTotal = Number(cashRefunds?.total || 0);
+    } catch (e) {
+      cashRefundsTotal = 0;
+    }
+
+    const movements: any[] = db.prepare('SELECT type, amount FROM shift_cash_movements WHERE shift_id = ?').all(shiftId);
+    const payInsTotal = movements.filter(m => m.type === 'pay_in').reduce((acc, m) => acc + Number(m.amount || 0), 0);
+    const dropsTotal = movements.filter(m => m.type === 'drop').reduce((acc, m) => acc + Number(m.amount || 0), 0);
+    const expensesTotal = movements.filter(m => m.type === 'expense').reduce((acc, m) => acc + Number(m.amount || 0), 0);
+
+    const newStarting = starting_cash !== undefined && starting_cash !== '' ? Math.max(0, Number(starting_cash) || 0) : Number(shift.starting_cash || 0);
+    const newEnding = ending_cash !== undefined && ending_cash !== '' && ending_cash !== null ? Math.max(0, Number(ending_cash) || 0) : (shift.ending_cash !== null ? Number(shift.ending_cash) : null);
+    const newStatus = status !== undefined ? status : shift.status;
+    const newNotes = notes !== undefined ? notes : shift.notes;
+
+    const cashSalesTotal = Number(cashSales?.total || 0);
+    const expected = Math.round((newStarting + cashSalesTotal + payInsTotal - dropsTotal - expensesTotal - cashRefundsTotal) * 100) / 100;
+    
+    let endTime = shift.end_time;
+    if (newStatus === 'closed' && !endTime) {
+      endTime = new Date().toISOString();
+    } else if (newStatus === 'open') {
+      endTime = null;
+    }
+
+    db.prepare(`
+      UPDATE shifts 
+      SET starting_cash = ?, ending_cash = ?, expected_cash = ?, status = ?, end_time = ?, notes = ?
+      WHERE id = ?
+    `).run(newStarting, newEnding, expected, newStatus, endTime, newNotes, shiftId);
+
+    const updatedShift: any = db.prepare(`
+      SELECT 
+        s.*,
+        u.name as cashier_name,
+        u.email as cashier_email,
+        u.role as cashier_role,
+        COALESCE(sales_summary.total_sales, 0) as total_sales,
+        COALESCE(sales_summary.sales_count, 0) as sales_count
+      FROM shifts s
+      JOIN users u ON s.user_id = u.id
+      LEFT JOIN (
+        SELECT 
+          shift_id, 
+          SUM(total_amount) as total_sales, 
+          COUNT(*) as sales_count 
+        FROM sales 
+        WHERE status != 'refunded'
+        GROUP BY shift_id
+      ) sales_summary ON s.id = sales_summary.shift_id
+      WHERE s.id = ?
+    `).get(shiftId);
+
+    const discrepancy = (updatedShift.ending_cash !== null && updatedShift.expected_cash !== null)
+      ? Math.round((Number(updatedShift.ending_cash) - Number(updatedShift.expected_cash)) * 100) / 100 
+      : null;
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Updated Shift Register & Float',
+      'shifts',
+      `Admin updated shift #${shiftId} (${updatedShift.cashier_name}). Starting float: GHS ${newStarting.toFixed(2)}, Ending float: ${newEnding !== null ? `GHS ${newEnding.toFixed(2)}` : 'N/A'}, Status: ${newStatus}${newNotes ? `, Notes: "${newNotes}"` : ''}`,
+      getClientIp(req)
+    );
+
+    res.json({
+      ...updatedShift,
+      starting_cash: Number(updatedShift.starting_cash || 0),
+      ending_cash: updatedShift.ending_cash !== null ? Number(updatedShift.ending_cash) : null,
+      expected_cash: expected,
+      discrepancy
+    });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -7653,10 +7785,13 @@ app.get('/api/products/:id', authenticate, (req, res) => {
 });
 
 // Product Full Audit Log (Adjustments, Sales, Purchases/Restocks, Refunds)
-app.get('/api/products/:id/audit-log', authenticate, (req, res) => {
+app.get('/api/products/:id/audit-log', authenticate, (req: any, res) => {
   const { id } = req.params;
   try {
-    // 1. Stock Adjustments
+    const isStaff = req.user?.role === 'staff';
+    const userId = req.user?.id;
+
+    // 1. Stock Adjustments (if staff, only show their own adjustments)
     const adjustments = db.prepare(`
       SELECT 
         'adjustment' as event_type,
@@ -7669,9 +7804,10 @@ app.get('/api/products/:id/audit-log', authenticate, (req, res) => {
       FROM stock_adjustments sa
       LEFT JOIN users u ON sa.user_id = u.id
       WHERE sa.product_id = ?
-    `).all(id) as any[];
+        ${isStaff ? "AND sa.user_id = ? AND (u.role IS NULL OR u.role NOT IN ('admin', 'superadmin'))" : ""}
+    `).all(...(isStaff ? [id, userId] : [id])) as any[];
 
-    // 2. Sales & Refunds
+    // 2. Sales & Refunds (if staff, only show their own sales/refunds)
     const sales = db.prepare(`
       SELECT 
         CASE WHEN s.status = 'refunded' THEN 'refund' ELSE 'sale' END as event_type,
@@ -7685,9 +7821,10 @@ app.get('/api/products/:id/audit-log', authenticate, (req, res) => {
       JOIN sales s ON si.sale_id = s.id
       LEFT JOIN users u ON s.user_id = u.id
       WHERE si.product_id = ?
-    `).all(id) as any[];
+        ${isStaff ? "AND s.user_id = ? AND (u.role IS NULL OR u.role NOT IN ('admin', 'superadmin'))" : ""}
+    `).all(...(isStaff ? [id, userId] : [id])) as any[];
 
-    // 3. Restocking / Purchases
+    // 3. Restocking / Purchases (if staff, only show if specifically performed by this staff)
     const purchases = db.prepare(`
       SELECT 
         'restock' as event_type,
@@ -7701,7 +7838,8 @@ app.get('/api/products/:id/audit-log', authenticate, (req, res) => {
       JOIN purchases p ON pi.purchase_id = p.id
       LEFT JOIN users u ON p.user_id = u.id
       WHERE pi.product_id = ?
-    `).all(id) as any[];
+        ${isStaff ? "AND p.user_id = ? AND (u.role IS NULL OR u.role NOT IN ('admin', 'superadmin'))" : ""}
+    `).all(...(isStaff ? [id, userId] : [id])) as any[];
 
     const auditLog = [...adjustments, ...sales, ...purchases].sort((a, b) => 
       new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
@@ -7921,10 +8059,31 @@ app.get('/api/settings/backup', authenticate, requireAdmin, (req: any, res) => {
 });
 
 // Audit Logs API
-app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
+app.get('/api/audit-logs', authenticate, (req: any, res) => {
+  if (req.user.role !== 'admin' && req.user.role !== 'staff') {
+    return res.status(403).json({ error: 'Access denied. Clearance required.' });
+  }
+
   const { category, sub_category, actor_role, user_id, search, startDate, endDate, limit, terminal } = req.query;
   let query = "SELECT * FROM audit_logs WHERE 1=1";
   const params: any[] = [];
+
+  // Security constraint: remove admin or other related roles audit from the staff account. Only staff should see his logged only.
+  if (req.user.role === 'staff') {
+    query += " AND user_id = ? AND (actor_role IS NULL OR actor_role NOT IN ('admin', 'superadmin', 'supplier'))";
+    params.push(req.user.id);
+  } else {
+    // Admin / Super Admin filters
+    if (actor_role && actor_role !== 'all') {
+      query += " AND actor_role = ?";
+      params.push(actor_role);
+    }
+
+    if (user_id && user_id !== 'all') {
+      query += " AND user_id = ?";
+      params.push(user_id);
+    }
+  }
 
   if (category && category !== 'all') {
     query += " AND category = ?";
@@ -7934,16 +8093,6 @@ app.get('/api/audit-logs', authenticate, requireAdmin, (req, res) => {
   if (sub_category && sub_category !== 'all') {
     query += " AND sub_category = ?";
     params.push(sub_category);
-  }
-
-  if (actor_role && actor_role !== 'all') {
-    query += " AND actor_role = ?";
-    params.push(actor_role);
-  }
-
-  if (user_id && user_id !== 'all') {
-    query += " AND user_id = ?";
-    params.push(user_id);
   }
 
   if (terminal && terminal !== 'all') {

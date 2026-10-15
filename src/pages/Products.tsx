@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch, Eye, Tablet } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, FileText, Upload, X, Scan, Download, CheckCircle2, AlertCircle, AlertTriangle, ArrowRight, RefreshCw, FileSpreadsheet, MoreVertical, SlidersHorizontal, Table, Filter, Tag, Package, PackageSearch, Eye, Tablet, ShoppingCart } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import ProductImportModal from '../components/ProductImportModal';
 import BulkCsvProductModal from '../components/BulkCsvProductModal';
@@ -38,6 +38,7 @@ export default function Products() {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchScope, setSearchScope] = useState<'all' | 'name' | 'sku'>('all');
   const [selectedCategory, setSelectedCategory] = useState<string>(categoryParam);
+  const [filterBelowMinStock, setFilterBelowMinStock] = useState(false);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const pageSize = 15;
@@ -410,6 +411,12 @@ export default function Products() {
     const cleanQ = q.replace(/[^a-z0-9]/gi, '');
 
     return products.filter(p => {
+      // Stock below minimum level quick restocking filter
+      if (filterBelowMinStock) {
+        const minLvl = p.min_stock_level ?? 10;
+        if ((p.stock_quantity || 0) > minLvl) return false;
+      }
+
       // 1. Category filter
       const matchesCategory = !selectedCategory || selectedCategory === 'ALL' ||
         (p.category && p.category.trim().toLowerCase() === selectedCategory.trim().toLowerCase());
@@ -441,14 +448,14 @@ export default function Products() {
 
       return wordsMatchName || matchesSku || matchesBarcode;
     });
-  }, [products, searchQuery, searchScope, selectedCategory]);
+  }, [products, searchQuery, searchScope, selectedCategory, filterBelowMinStock]);
 
   const totalPages = Math.ceil(filteredProducts.length / pageSize) || 1;
   const paginatedProducts = filteredProducts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchQuery, searchScope, selectedCategory]);
+  }, [searchQuery, searchScope, selectedCategory, filterBelowMinStock]);
 
   const exportTableToCSV = () => {
     if (filteredProducts.length === 0) {
@@ -527,9 +534,20 @@ export default function Products() {
                   {products.length} Products
                 </span>
                 {lowStockCount > 0 && (
-                  <span className="px-2 py-0.5 bg-amber-500 text-slate-900 rounded text-[11px] font-black shadow-2xs">
-                    {lowStockCount} Low/Out of Stock
-                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setFilterBelowMinStock(!filterBelowMinStock)}
+                    className={`px-2.5 py-0.5 rounded text-[11px] font-black transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
+                      filterBelowMinStock
+                        ? 'bg-amber-400 text-slate-950 ring-2 ring-white font-extrabold'
+                        : 'bg-amber-500 text-slate-900 hover:bg-amber-400'
+                    }`}
+                    title="Click to filter items below their minimum stock level"
+                  >
+                    <AlertTriangle size={12} className="text-slate-950" />
+                    <span>{lowStockCount} Below Min Stock</span>
+                    <span className="text-[10px] opacity-80 underline">{filterBelowMinStock ? 'Clear' : 'Filter'}</span>
+                  </button>
                 )}
               </div>
               <p className="text-xs text-blue-100 font-medium mt-0.5">
@@ -550,10 +568,21 @@ export default function Products() {
                 </button>
                 <button 
                   type="button"
+                  id="import-products-csv-btn"
                   onClick={() => setShowImportModal(true)}
                   className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                  title="Bulk import products from CSV file with column mapping and data integrity validation"
                 >
-                  <Table size={14} className="mr-1.5 text-blue-200" /> Import
+                  <Upload size={14} className="mr-1.5 text-blue-200" /> Bulk CSV Import
+                </button>
+                <button 
+                  type="button"
+                  id="quick-csv-paste-btn"
+                  onClick={() => setShowBulkCsvModal(true)}
+                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+                  title="Quick CSV text input with real-time format validation"
+                >
+                  <FileSpreadsheet size={14} className="mr-1.5 text-blue-200" /> Quick CSV
                 </button>
                 <button 
                   type="button"
@@ -651,6 +680,27 @@ export default function Products() {
             <Filter size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
           </div>
 
+          {/* Quick Restocking Filter Button: Highlight items below minimum stock level */}
+          <button
+            type="button"
+            id="filter-below-min-stock-btn"
+            onClick={() => setFilterBelowMinStock(!filterBelowMinStock)}
+            className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black transition cursor-pointer shrink-0 border shadow-2xs active:scale-95 ${
+              filterBelowMinStock
+                ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-300'
+                : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+            }`}
+            title="Toggle to view only items below their defined minimum stock level for quick restocking"
+          >
+            <AlertTriangle size={14} className={filterBelowMinStock ? 'text-slate-950 animate-bounce' : 'text-amber-600'} />
+            <span>Below Min Stock</span>
+            <span className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-bold ${
+              filterBelowMinStock ? 'bg-slate-950 text-amber-300' : 'bg-white text-amber-900 border border-amber-300'
+            }`}>
+              {lowStockCount}
+            </span>
+          </button>
+
           {/* Export Current Table Data Button */}
           <button
             type="button"
@@ -668,8 +718,8 @@ export default function Products() {
           </button>
         </div>
 
-        {/* Real-time search status indicator if active */}
-        {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (
+        {/* Real-time search & stock status indicator if active */}
+        {(searchQuery || (selectedCategory && selectedCategory !== 'ALL') || filterBelowMinStock) && (
           <div className="flex items-center justify-between flex-wrap gap-2 pt-2 border-t border-slate-100 text-xs text-slate-600">
             <div className="flex items-center gap-2 flex-wrap">
               <span className="font-semibold text-slate-700">Filter applied:</span>
@@ -677,6 +727,12 @@ export default function Products() {
                 {searchQuery && `Search: "${searchQuery}"`}
                 {searchQuery && selectedCategory && selectedCategory !== 'ALL' && ' • '}
                 {selectedCategory && selectedCategory !== 'ALL' && `Category: ${selectedCategory}`}
+                {filterBelowMinStock && (
+                  <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded ml-1 border border-amber-300">
+                    <AlertTriangle size={11} className="text-amber-600" />
+                    Items Below Minimum Stock Level Only
+                  </span>
+                )}
               </span>
               <span className="text-slate-400 font-medium">
                 ({filteredProducts.length} items found)
@@ -688,10 +744,11 @@ export default function Products() {
               onClick={() => {
                 setSearchQuery('');
                 handleCategoryChange('ALL');
+                setFilterBelowMinStock(false);
               }}
               className="text-[11px] font-bold text-blue-600 hover:text-red-600 transition cursor-pointer"
             >
-              Clear filters
+              Clear all filters
             </button>
           </div>
         )}
@@ -705,42 +762,43 @@ export default function Products() {
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product Name</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Brand</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">SKU</th>
-              {user?.role !== 'staff' && (
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
-              )}
-              {user?.role !== 'staff' && (
-                <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
-              )}
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock & Restock Status</th>
               <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={user?.role === 'staff' ? 8 : 10} className="py-16 text-center">
+                <td colSpan={10} className="py-16 text-center">
                   <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-500 space-y-3">
                     <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
                       <PackageSearch size={24} />
                     </div>
                     <div>
                       <p className="text-sm font-black text-slate-800">
-                        {searchQuery ? `No products matching "${searchQuery}"` : 'No products found'}
+                        {filterBelowMinStock 
+                          ? 'No items currently below minimum stock level'
+                          : searchQuery ? `No products matching "${searchQuery}"` : 'No products found'}
                       </p>
                       <p className="text-xs text-slate-500 mt-1">
-                        {searchQuery 
+                        {filterBelowMinStock
+                          ? 'All inventory items are currently at healthy stock levels above their defined restocking thresholds.'
+                          : searchQuery 
                           ? `We couldn't find any products with ${searchScope === 'sku' ? 'SKU' : searchScope === 'name' ? 'name' : 'name or SKU'} matching your search.`
                           : 'No items currently in catalog. Use "+ Add Product" to add products.'}
                       </p>
                     </div>
-                    {(searchQuery || (selectedCategory && selectedCategory !== 'ALL')) && (
+                    {(searchQuery || (selectedCategory && selectedCategory !== 'ALL') || filterBelowMinStock) && (
                       <button
                         type="button"
                         onClick={() => {
                           setSearchQuery('');
                           handleCategoryChange('ALL');
+                          setFilterBelowMinStock(false);
                         }}
                         className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-xs font-bold transition shadow-xs cursor-pointer"
                       >
@@ -751,74 +809,121 @@ export default function Products() {
                 </td>
               </tr>
             ) : (
-              paginatedProducts.map(p => (
-              <tr key={p.id} className="hover:bg-slate-50 transition-colors">
-                <td className="px-5 py-3 whitespace-nowrap text-[13px]">
-                   {p.image_url ? (
-                     <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded-sm border border-slate-200" />
-                   ) : (
-                     <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center text-slate-400 font-bold uppercase text-[10px]">{p.name.substring(0,2)}</div>
-                   )}
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] font-medium text-slate-900 leading-none">
-                  <Link to={`/products/${p.id}`} className="hover:text-blue-500 font-bold decoration-blue-500/20 underline decoration-2 underline-offset-2">
-                    {p.name}
-                  </Link>
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.brand || '-'}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.sku}</td>
-                {user?.role !== 'staff' && (
-                  <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.unit_of_measure || '-'}</td>
-                )}
-                {user?.role !== 'staff' && (
-                  <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
-                )}
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
-                  <div className="font-medium text-slate-800">{p.category}</div>
-                  {p.sub_category && (
-                    <div className="text-[11px] text-slate-400 font-normal">{p.sub_category}</div>
-                  )}
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-900 font-semibold">{formatGHS(p.selling_price)}</td>
-                <td className="px-5 py-3 whitespace-nowrap text-[13px]">
-                  <span className={`font-bold ${p.stock_quantity <= 10 ? 'text-red-600' : 'text-green-600'}`}>
-                    {p.stock_quantity}
-                  </span>
-                </td>
-                <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
-                  <div className="flex items-center justify-end">
-                    <RowActionMenu
-                      triggerTitle={`Actions for ${p.name}`}
-                      actions={[
-                        {
-                          label: 'View Details',
-                          sublabel: 'Audit log & pricing history',
-                          icon: <Eye size={14} />,
-                          onClick: () => navigate(`/products/${p.id}`),
-                        },
-                        user?.role === 'admin' ? {
-                          label: 'Adjust Stock',
-                          icon: <SlidersHorizontal size={14} className="text-amber-500" />,
-                          onClick: () => openAdjust(p),
-                        } : null,
-                        user?.role === 'admin' ? {
-                          label: 'Edit Product',
-                          icon: <Edit size={14} className="text-blue-500" />,
-                          onClick: () => handleEdit(p),
-                        } : null,
-                        user?.role === 'admin' ? {
-                          label: 'Delete Product',
-                          destructive: true,
-                          icon: <Trash2 size={14} className="text-rose-500" />,
-                          onClick: () => setDeletingProductId(p.id),
-                        } : null,
-                      ]}
-                    />
-                  </div>
-                </td>
-              </tr>
-            ))
-          )}
+              paginatedProducts.map(p => {
+                const minLevel = p.min_stock_level ?? 10;
+                const isOutOfStock = (p.stock_quantity || 0) <= 0;
+                const isBelowMin = (p.stock_quantity || 0) <= minLevel;
+
+                return (
+                  <tr 
+                    key={p.id} 
+                    className={`transition-colors ${
+                      isOutOfStock 
+                        ? 'bg-rose-50/60 hover:bg-rose-100/70 border-l-4 border-l-rose-500' 
+                        : isBelowMin 
+                        ? 'bg-amber-50/60 hover:bg-amber-100/70 border-l-4 border-l-amber-500' 
+                        : 'hover:bg-slate-50'
+                    }`}
+                  >
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px]">
+                       {p.image_url ? (
+                         <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded-sm border border-slate-200" />
+                       ) : (
+                         <div className="w-10 h-10 bg-slate-100 rounded-sm flex items-center justify-center text-slate-400 font-bold uppercase text-[10px]">{p.name.substring(0,2)}</div>
+                       )}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] font-medium text-slate-900 leading-none">
+                      <div className="flex items-center gap-2">
+                        <Link to={`/products/${p.id}`} className="hover:text-blue-500 font-bold decoration-blue-500/20 underline decoration-2 underline-offset-2">
+                          {p.name}
+                        </Link>
+                      </div>
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.brand || '-'}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.sku}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">{p.unit_of_measure || '-'}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500 font-mono bg-slate-50">{p.barcode || '-'}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
+                      <div className="font-medium text-slate-800">{p.category}</div>
+                      {p.sub_category && (
+                        <div className="text-[11px] text-slate-400 font-normal">{p.sub_category}</div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-900 font-semibold">{formatGHS(p.selling_price)}</td>
+                    <td className="px-5 py-3 whitespace-nowrap text-[13px]">
+                      {isOutOfStock ? (
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
+                            <AlertCircle size={13} className="text-rose-600 animate-pulse shrink-0" />
+                            OUT OF STOCK (0)
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 uppercase tracking-wider">
+                            Min: {minLevel} • Restock Urgent
+                          </span>
+                        </div>
+                      ) : isBelowMin ? (
+                        <div className="flex flex-col items-start gap-1">
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
+                            <AlertTriangle size={13} className="text-amber-600 shrink-0" />
+                            LOW: {p.stock_quantity} {p.unit_of_measure || 'pcs'}
+                          </span>
+                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
+                            Min: {minLevel} • Below Min Level
+                          </span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-start">
+                          <span className="inline-flex items-center gap-1.5 font-bold text-emerald-700 text-xs">
+                            <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
+                            {p.stock_quantity} {p.unit_of_measure || 'pcs'}
+                          </span>
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            Min Level: {minLevel}
+                          </span>
+                        </div>
+                      )}
+                    </td>
+                    <td className="px-5 py-3 whitespace-nowrap text-right text-[13px] font-medium">
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for ${p.name}`}
+                          actions={[
+                            {
+                              label: 'View Product Details',
+                              sublabel: user?.role === 'admin' ? 'Audit log & pricing history' : 'Item specifications & pricing',
+                              icon: <Eye size={14} />,
+                              onClick: () => navigate(`/products/${p.id}`),
+                            },
+                            {
+                              label: 'Sell in POS Terminal',
+                              sublabel: 'Open POS terminal',
+                              icon: <ShoppingCart size={14} className="text-blue-600" />,
+                              onClick: () => navigate(`/sales`),
+                            },
+                            user?.role === 'admin' ? {
+                              label: isBelowMin ? 'Restock / Adjust Stock' : 'Adjust Stock',
+                              icon: <SlidersHorizontal size={14} className={isBelowMin ? "text-amber-600 font-bold" : "text-amber-500"} />,
+                              onClick: () => openAdjust(p),
+                            } : null,
+                            user?.role === 'admin' ? {
+                              label: 'Edit Product',
+                              icon: <Edit size={14} className="text-blue-500" />,
+                              onClick: () => handleEdit(p),
+                            } : null,
+                            user?.role === 'admin' ? {
+                              label: 'Delete Product',
+                              destructive: true,
+                              icon: <Trash2 size={14} className="text-rose-500" />,
+                              onClick: () => setDeletingProductId(p.id),
+                            } : null,
+                          ]}
+                        />
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
           </tbody>
         </table>
       </div>

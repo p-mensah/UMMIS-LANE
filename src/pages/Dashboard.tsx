@@ -9,7 +9,7 @@ import {
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
   CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store,
-  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare, Scale
+  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare, Scale, Printer
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -22,6 +22,7 @@ import AutomatedLowStockNotification from '../components/AutomatedLowStockNotifi
 import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
+import RowActionMenu from '../components/common/RowActionMenu';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -161,7 +162,7 @@ export default function Dashboard() {
       fetchApi('/sales').catch(() => []),
       fetchApi('/settings').catch(() => ({})),
       fetchApi('/products').catch(() => []),
-      isAdmin ? fetchApi('/audit-logs?limit=5').catch(() => []) : Promise.resolve([]),
+      fetchApi('/audit-logs?limit=5').catch(() => []),
       isAdmin ? fetchApi('/inventory/adjustments').catch(() => []) : Promise.resolve([])
     ])
       .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs]) => {
@@ -437,12 +438,14 @@ export default function Dashboard() {
             </button>
           )}
 
-          <button
-            onClick={() => setShowAdminReportsModal(true)}
-            className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-          >
-            <FileText size={15} /> Reports & Audits
-          </button>
+          {user?.role === 'admin' && (
+            <button
+              onClick={() => setShowAdminReportsModal(true)}
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <FileText size={15} /> Reports & Audits
+            </button>
+          )}
 
           <button
             onClick={handleOpenDailySummary}
@@ -462,96 +465,7 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* QUICK SHORTCUT TOOLBAR (Mobile horizontal snap slider, desktop fluid grid) */}
-      <div className="space-y-1">
-        <div className="flex items-center justify-between sm:hidden px-1 text-[11px] font-bold text-slate-500">
-          <span>Quick Actions</span>
-          <span className="text-[10px] text-blue-600">Slide ↔</span>
-        </div>
-        <div className="flex sm:grid sm:grid-cols-[repeat(auto-fit,minmax(min(100%,130px),1fr))] overflow-x-auto snap-x snap-mandatory gap-2.5 pb-2 sm:pb-0 custom-scrollbar">
-          {user?.role === 'admin' && (
-            <button
-              type="button"
-              onClick={() => setShowCreatePoModal(true)}
-              className="p-3 bg-white hover:bg-emerald-50 text-slate-800 hover:text-emerald-800 border border-slate-200 hover:border-emerald-300 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start cursor-pointer"
-            >
-              <Truck size={20} className="text-emerald-600 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-black uppercase tracking-wider">Create PO</span>
-            </button>
-          )}
 
-          <Link
-            to="/sales"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <ShoppingCart size={20} className="text-blue-600 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Full POS Terminal</span>
-          </Link>
-
-          <Link
-            to="/returns"
-            className="p-3 bg-white hover:bg-rose-50 text-slate-800 hover:text-rose-700 border border-slate-200 hover:border-rose-300 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <RotateCcw size={20} className="text-rose-600 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Process Return</span>
-          </Link>
-
-          <Link
-            to="/products"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <Package size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Products Catalog</span>
-          </Link>
-
-          <Link
-            to="/expenses"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <CreditCard size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Record Expense</span>
-          </Link>
-
-          <Link
-            to="/shifts"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <Clock size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Shift Register</span>
-          </Link>
-
-          <Link
-            to="/customers"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <Users size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Customers</span>
-          </Link>
-
-          <Link
-            to="/communication"
-            className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-          >
-            <MessageSquare size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-            <span className="text-xs font-black uppercase tracking-wider">Communication</span>
-            {totalUnread > 0 && (
-              <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-black -mt-1">
-                {totalUnread}
-              </span>
-            )}
-          </Link>
-
-          {user?.role === 'admin' && (
-            <Link
-              to="/adjustments"
-              className="p-3 bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 rounded-lg shadow-2xs transition flex flex-col items-center text-center gap-1.5 group shrink-0 min-w-[125px] sm:min-w-0 snap-start"
-            >
-              <Scale size={20} className="text-slate-700 group-hover:scale-110 transition-transform" />
-              <span className="text-xs font-black uppercase tracking-wider">Stock Take</span>
-            </Link>
-          )}
-        </div>
-      </div>
 
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
@@ -749,7 +663,7 @@ export default function Dashboard() {
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3">Payment</th>
                     <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3 text-center">Receipt</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -782,14 +696,32 @@ export default function Dashboard() {
                         <td className="px-4 py-3 text-right font-black text-slate-900">
                           {formatGHS(sale.total_amount)}
                         </td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => handleViewInvoice(sale.id)}
-                            disabled={loadingInvoiceId === sale.id}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[10px] uppercase tracking-wider transition border border-slate-200"
-                          >
-                            {loadingInvoiceId === sale.id ? 'Loading...' : 'View Receipt'}
-                          </button>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end">
+                            <RowActionMenu
+                              triggerTitle={`Actions for #SALE-${sale.id}`}
+                              actions={[
+                                {
+                                  label: 'View Receipt',
+                                  sublabel: 'Print or review ticket',
+                                  icon: <Receipt size={14} className="text-blue-600" />,
+                                  onClick: () => handleViewInvoice(sale.id),
+                                },
+                                {
+                                  label: 'Inspect in Ledger',
+                                  sublabel: 'View in Cash Transactions',
+                                  icon: <Eye size={14} />,
+                                  onClick: () => navigate(user?.role === 'admin' ? '/transactions' : '/sales'),
+                                },
+                                {
+                                  label: 'Process Return',
+                                  sublabel: 'Refund customer items',
+                                  icon: <RotateCcw size={14} className="text-rose-600" />,
+                                  onClick: () => navigate('/returns'),
+                                },
+                              ]}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -898,7 +830,7 @@ export default function Dashboard() {
                     <th className="px-4 py-2.5 whitespace-nowrap">Action</th>
                     <th className="px-4 py-2.5 whitespace-nowrap">Terminal & IP</th>
                     <th className="px-4 py-2.5">Audit Details</th>
-                    <th className="px-4 py-2.5 text-right whitespace-nowrap"><span className="sr-only">Inspect</span></th>
+                    <th className="px-4 py-2.5 text-right whitespace-nowrap">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -912,8 +844,7 @@ export default function Dashboard() {
                     recentAuditLogs.map((log: any) => (
                       <tr 
                         key={log.id} 
-                        onClick={() => navigate('/audit-logs')}
-                        className="hover:bg-slate-50/80 transition-colors cursor-pointer group"
+                        className="hover:bg-slate-50/80 transition-colors group"
                       >
                         <td className="px-4 py-3 whitespace-nowrap text-slate-500 font-medium">
                           <div 
@@ -965,9 +896,28 @@ export default function Dashboard() {
                         </td>
 
                         <td className="px-4 py-3 text-right whitespace-nowrap">
-                          <span className="inline-flex items-center gap-1 text-[11px] font-bold text-blue-600 opacity-0 group-hover:opacity-100 transition-opacity">
-                            Inspect <ChevronRight size={13} />
-                          </span>
+                          <div className="flex items-center justify-end" onClick={(e) => e.stopPropagation()}>
+                            <RowActionMenu
+                              triggerTitle={`Actions for audit #${log.id}`}
+                              actions={[
+                                {
+                                  label: 'View Security Ledger',
+                                  sublabel: 'Open full audit logs page',
+                                  icon: <Eye size={14} />,
+                                  onClick: () => navigate('/audit-logs'),
+                                },
+                                {
+                                  label: 'Copy JSON Summary',
+                                  sublabel: 'Copy event payload',
+                                  icon: <FileText size={14} />,
+                                  onClick: () => {
+                                    navigator.clipboard.writeText(JSON.stringify(log, null, 2));
+                                    addToast('Audit log record copied to clipboard', 'info');
+                                  },
+                                },
+                              ]}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1041,7 +991,7 @@ export default function Dashboard() {
                     <th className="px-4 py-3">Customer</th>
                     <th className="px-4 py-3">Payment</th>
                     <th className="px-4 py-3 text-right">Amount</th>
-                    <th className="px-4 py-3 text-center">Receipt</th>
+                    <th className="px-4 py-3 text-right">Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -1061,13 +1011,26 @@ export default function Dashboard() {
                         <td className="px-4 py-3 font-medium text-slate-800">{st.customer_name || 'Walk-in Customer'}</td>
                         <td className="px-4 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">{st.payment_method}</span></td>
                         <td className="px-4 py-3 text-right font-black text-slate-900">{formatGHS(st.total_amount)}</td>
-                        <td className="px-4 py-3 text-center">
-                          <button
-                            onClick={() => handleViewInvoice(st.id)}
-                            className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded font-bold text-[10px] uppercase tracking-wider transition"
-                          >
-                            Receipt
-                          </button>
+                        <td className="px-4 py-3 text-right">
+                          <div className="flex items-center justify-end">
+                            <RowActionMenu
+                              triggerTitle={`Actions for #SALE-${st.id}`}
+                              actions={[
+                                {
+                                  label: 'View Receipt',
+                                  sublabel: 'Print or export invoice',
+                                  icon: <Receipt size={14} className="text-blue-600" />,
+                                  onClick: () => handleViewInvoice(st.id),
+                                },
+                                {
+                                  label: 'Re-issue to Customer',
+                                  sublabel: 'Print thermal receipt',
+                                  icon: <Printer size={14} />,
+                                  onClick: () => handleViewInvoice(st.id),
+                                },
+                              ]}
+                            />
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -1152,28 +1115,7 @@ export default function Dashboard() {
               </div>
             </div>
 
-            {/* Quick Channel Jumpers */}
-            {channels && channels.length > 0 && (
-              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-[11px] font-bold text-slate-500">Quick Channels:</span>
-                {channels.slice(0, 4).map((ch: any) => (
-                  <Link
-                    key={ch.id}
-                    to="/communication"
-                    onClick={() => setActiveChannelId(ch.id)}
-                    className="px-2.5 py-1 bg-white hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 rounded font-semibold text-[11px] transition flex items-center gap-1.5"
-                  >
-                    <span className="text-slate-400 font-mono">#</span>
-                    <span>{ch.name}</span>
-                    {ch.unread_count > 0 && (
-                      <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded-full text-[9px] font-black">
-                        {ch.unread_count}
-                      </span>
-                    )}
-                  </Link>
-                ))}
-              </div>
-            )}
+
           </div>
         </div>
       )}

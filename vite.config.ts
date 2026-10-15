@@ -49,6 +49,12 @@ export default defineConfig(({mode}) => {
           changeOrigin: true,
           secure: false,
           ws: true,
+          bypass: (req) => {
+            // Guarantee that /api requests are strictly proxied to the backend and never intercepted by SPA HTML fallback
+            if (req.url?.startsWith('/api')) {
+              return undefined;
+            }
+          },
         },
       },
     },

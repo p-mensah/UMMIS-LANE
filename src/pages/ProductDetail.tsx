@@ -3,6 +3,7 @@ import { useParams, useNavigate, Link } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import { useAuth } from '../context/AuthContext';
 import JsBarcode from 'jsbarcode';
 import QRCode from 'qrcode';
 import { 
@@ -56,6 +57,9 @@ interface ProductDetails {
 export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { user } = useAuth();
+  const isStaff = user?.role === 'staff';
+
   const [product, setProduct] = useState<ProductDetails | null>(null);
   const [loading, setLoading] = useState(true);
   const [showPrintModal, setShowPrintModal] = useState(false);
@@ -87,6 +91,16 @@ export default function ProductDetail() {
 
   // Filter audit logs
   const filteredAuditLogs = (product.auditLogs || []).filter(item => {
+    // If staff, remove admin or other related roles audit from the staff account. Only staff should see his logged only.
+    if (isStaff) {
+      const uLower = (item.user_name || '').toLowerCase();
+      if (uLower.includes('admin') || uLower.includes('owner') || uLower.includes('mensah') || uLower.includes('superadmin')) {
+        return false;
+      }
+      if (user?.name && !uLower.includes(user.name.toLowerCase())) {
+        return false;
+      }
+    }
     const matchesFilter = auditFilter === 'all' || item.event_type === auditFilter;
     const matchesSearch = auditSearch.trim() === '' || 
       item.description.toLowerCase().includes(auditSearch.toLowerCase()) ||
@@ -205,9 +219,9 @@ export default function ProductDetail() {
               : 'border-transparent text-slate-500 hover:text-slate-900'
           }`}
         >
-          <History size={16} /> Complete Audit Log
+          <History size={16} /> {isStaff ? 'My Item Log' : 'Complete Audit Log'}
           <span className="px-2 py-0.5 bg-blue-100 text-blue-800 rounded-full text-[10px] font-black">
-            {product.auditLogs?.length || 0}
+            {filteredAuditLogs.length}
           </span>
         </button>
         <button
@@ -334,12 +348,21 @@ export default function ProductDetail() {
               <p className="text-[12px] text-slate-300 mb-5 leading-relaxed">
                 Update stock counts, re-label barcode prices, or modify product taxonomy parameters.
               </p>
-              <button 
-                onClick={() => navigate('/products')}
-                className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-sm font-black text-[11px] uppercase tracking-wider transition-colors shadow-2xs mb-2.5"
-              >
-                Edit Catalog Entry
-              </button>
+              {user?.role === 'admin' ? (
+                <button 
+                  onClick={() => navigate('/products')}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-sm font-black text-[11px] uppercase tracking-wider transition-colors shadow-2xs mb-2.5"
+                >
+                  Edit Catalog Entry
+                </button>
+              ) : (
+                <button 
+                  onClick={() => navigate('/sales')}
+                  className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-sm font-black text-[11px] uppercase tracking-wider transition-colors shadow-2xs mb-2.5 flex items-center justify-center gap-2"
+                >
+                  <ShoppingCart size={14} /> Open in POS Terminal
+                </button>
+              )}
               <button 
                 onClick={() => setShowLabelModal(true)}
                 className="w-full py-2.5 bg-blue-600 hover:bg-blue-500 text-white rounded-sm font-black text-[11px] uppercase tracking-wider transition-colors shadow-2xs mb-2.5 flex items-center justify-center gap-2"

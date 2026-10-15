@@ -81,7 +81,7 @@ export default function Sidebar({
     { to: '/', icon: <LayoutDashboard size={18} />, label: 'Dashboard' },
     { to: '/sales', icon: <ShoppingCart size={18} />, label: 'Sales Terminal', badge: 'POS' },
     { to: '/returns', icon: <RotateCcw size={18} />, label: 'Returns & Credits' },
-    { to: '/shifts', icon: <Clock size={18} />, label: 'Shift Register' },
+    { to: '/shifts', icon: <Clock size={18} />, label: user?.role === 'admin' ? 'Shift Register Tracker' : 'Shift Register' },
     { to: '/products', icon: <Package size={18} />, label: 'Products Catalog' },
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/customers', icon: <UserCheck size={18} />, label: 'Customers Directory' },

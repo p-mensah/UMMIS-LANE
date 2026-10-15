@@ -72,9 +72,9 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     if (!token) return;
 
     try {
-      const data = await fetchApi('/notifications');
-      const items: NotificationItem[] = data.notifications || [];
-      const unread = data.unread_count || 0;
+      const data = await fetchApi('/notifications', { silent: true, sourceHook: 'notifications' });
+      const items: NotificationItem[] = data?.notifications || [];
+      const unread = data?.unread_count || 0;
 
       setNotifications(items);
       setUnreadCount(unread);

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import { 
   History, 
   ShoppingCart, 
@@ -13,9 +14,12 @@ import {
   Layers,
   FileText,
   AlertCircle,
-  ExternalLink
+  ExternalLink,
+  Receipt,
+  Eye
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
+import RowActionMenu from './common/RowActionMenu';
 
 export interface RecentActivityItem {
   id: string | number;
@@ -50,6 +54,7 @@ export default function RecentActivityPanel({
   onRefresh,
   isLoading = false,
 }: RecentActivityPanelProps) {
+  const { user } = useAuth();
   const [filter, setFilter] = useState<'all' | 'sales' | 'inventory'>('all');
 
   // Format relative timestamp helper
@@ -75,9 +80,15 @@ export default function RecentActivityPanel({
 
   // Harmonize unified feed of transactions & inventory changes
   const combinedActivities: RecentActivityItem[] = [];
+  const isStaff = user?.role === 'staff';
 
   // 1. Transaction entries (Sales)
   sales.forEach((s) => {
+    if (isStaff) {
+      if (s.user_id && user?.id && s.user_id !== user.id) return;
+      const uLower = (s.user_name || '').toLowerCase();
+      if (uLower.includes('admin') || uLower.includes('owner') || uLower.includes('mensah') || uLower.includes('superadmin')) return;
+    }
     combinedActivities.push({
       id: `sale-${s.id}`,
       type: 'sale',
@@ -96,6 +107,11 @@ export default function RecentActivityPanel({
 
   // 2. Direct stock adjustments (if supplied)
   stockAdjustments.forEach((adj) => {
+    if (isStaff) {
+      if (adj.user_id && user?.id && adj.user_id !== user.id) return;
+      const uLower = (adj.user_name || '').toLowerCase();
+      if (uLower.includes('admin') || uLower.includes('owner') || uLower.includes('mensah') || uLower.includes('superadmin')) return;
+    }
     const isPositive = (adj.quantity_change || 0) > 0;
     combinedActivities.push({
       id: `adj-${adj.id}`,
@@ -115,6 +131,12 @@ export default function RecentActivityPanel({
 
   // 3. Audit logs related to sales or inventory
   auditLogs.forEach((log) => {
+    if (isStaff) {
+      if (log.user_id && user?.id && log.user_id !== user.id) return;
+      const uLower = (log.user_name || '').toLowerCase();
+      const roleLower = (log.actor_role || '').toLowerCase();
+      if (roleLower === 'admin' || roleLower === 'superadmin' || uLower.includes('admin') || uLower.includes('owner') || uLower.includes('mensah')) return;
+    }
     // Avoid double counting if already covered by sales
     const actionLower = (log.action || '').toLowerCase();
     const catLower = (log.category || '').toLowerCase();
@@ -159,8 +181,15 @@ export default function RecentActivityPanel({
   const sortedActivities = combinedActivities
     .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
-  // Filter based on toggle
+  // Filter based on toggle and user role (staff only sees their own logged items)
   const filteredActivities = sortedActivities.filter((item) => {
+    if (user?.role === 'staff') {
+      const selfName = (user.name || '').toLowerCase();
+      const itemUser = (item.user || '').toLowerCase();
+      if (!itemUser || (!itemUser.includes(selfName) && !selfName.includes(itemUser))) {
+        return false;
+      }
+    }
     if (filter === 'sales') return item.type === 'sale';
     if (filter === 'inventory') return item.type === 'inventory_adjustment';
     return true;
@@ -336,16 +365,28 @@ export default function RecentActivityPanel({
                     </div>
                   </div>
 
-                  {/* Receipt button if available */}
-                  {isSale && onViewSaleReceipt && typeof item.id === 'string' && item.id.startsWith('sale-') && (
-                    <button
-                      onClick={() => onViewSaleReceipt(parseInt(item.id.toString().replace('sale-', ''), 10))}
-                      className="hidden sm:inline-flex px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[10px] font-bold uppercase tracking-wider border border-slate-200 transition cursor-pointer"
-                      title="View Sale Receipt"
-                    >
-                      Receipt
-                    </button>
-                  )}
+                  {/* Kebab Action Menu */}
+                  <div className="shrink-0 flex items-center">
+                    <RowActionMenu
+                      triggerTitle={`Actions for ${item.title}`}
+                      actions={[
+                        isSale && onViewSaleReceipt && typeof item.id === 'string' && item.id.startsWith('sale-') ? {
+                          label: 'View Receipt',
+                          sublabel: 'View transaction invoice',
+                          icon: <Receipt size={14} className="text-blue-600" />,
+                          onClick: () => onViewSaleReceipt(parseInt(item.id.toString().replace('sale-', ''), 10)),
+                        } : null,
+                        {
+                          label: item.type === 'sale' ? 'Open in POS' : 'Open Adjustments',
+                          sublabel: 'View module details',
+                          icon: <Eye size={14} />,
+                          onClick: () => {
+                            window.location.href = item.link;
+                          },
+                        },
+                      ]}
+                    />
+                  </div>
                 </div>
               </div>
             );

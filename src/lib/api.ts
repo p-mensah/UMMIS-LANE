@@ -22,9 +22,12 @@ function extractHeaders(headers: Headers): Record<string, string> {
   return result;
 }
 
+// Global redirection guard to prevent multiple simultaneous redirects
+let isRedirectingToLogin = false;
+
 export const fetchApi = async <T = any>(
   endpoint: string, 
-  options: RequestInit & { _retryCount?: number; sourceHook?: string } = {}
+  options: RequestInit & { _retryCount?: number; sourceHook?: string; silent?: boolean } = {}
 ): Promise<T> => {
   const token = localStorage.getItem('token');
   
@@ -97,7 +100,7 @@ export const fetchApi = async <T = any>(
         if (response.status === 404) {
           errorMessage = `API endpoint not found (404) for ${url}. Please ensure the backend server is running.`;
         } else if (response.status === 401) {
-          errorMessage = 'Invalid email or password credentials (401).';
+          errorMessage = 'Session expired or invalid credentials (401).';
         } else if (response.status === 403) {
           errorMessage = 'Access forbidden (403). Administrator privileges are required to perform this action.';
         } else if (response.status >= 500) {
@@ -105,17 +108,43 @@ export const fetchApi = async <T = any>(
         }
       }
 
-      // Intercept and log response headers for failure diagnosis
-      logNetworkError({
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-        contentType,
-        bodySnippet: rawErrorBody || JSON.stringify(parsedErrorData),
-        sourceHook: options.sourceHook || 'fetchApi',
-        isHtml: contentType.includes('text/html') || rawErrorBody.startsWith('<')
-      });
+      // If server is returning 502/503 during restart/warmup, retry before erroring
+      const currentRetry = options._retryCount || 0;
+      if ((response.status === 502 || response.status === 503 || response.status === 504) && currentRetry < 4) {
+        await new Promise(res => setTimeout(res, 800 * (currentRetry + 1)));
+        return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
+      }
+
+      // GLOBAL 401 UNAUTHORIZED INTERCEPTOR:
+      // Clear expired auth session and redirect user to /login gracefully
+      if (response.status === 401) {
+        if (!url.includes('/auth/login') && typeof window !== 'undefined') {
+          localStorage.removeItem('token');
+          localStorage.removeItem('user');
+          if (!isRedirectingToLogin && !window.location.pathname.startsWith('/login')) {
+            isRedirectingToLogin = true;
+            setTimeout(() => {
+              window.location.href = '/login?expired=true';
+            }, 100);
+          }
+        }
+        // Do NOT log standard 401 unauthorized as a network failure diagnostic
+        throw new ApiError(errorMessage || 'Unauthorized', 401, parsedErrorData);
+      }
+
+      // Log network error for actual non-401 unexpected errors unless marked silent
+      if (!options.silent) {
+        logNetworkError({
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          contentType,
+          bodySnippet: rawErrorBody || JSON.stringify(parsedErrorData),
+          sourceHook: options.sourceHook || 'fetchApi',
+          isHtml: contentType.includes('text/html') || rawErrorBody.startsWith('<')
+        });
+      }
 
       throw new ApiError(errorMessage, response.status, parsedErrorData);
     }
@@ -131,26 +160,38 @@ export const fetchApi = async <T = any>(
     }
 
     if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
-      // Intercept and log response headers for HTML diagnosis
-      logNetworkError({
-        url,
-        status: response.status,
-        statusText: response.statusText,
-        headers: responseHeaders,
-        contentType,
-        bodySnippet: text,
-        sourceHook: options.sourceHook || 'fetchApi',
-        isHtml: true
-      });
-
-      // If we received an HTML page (e.g. during server startup/restart or warmup),
-      // retry once after a short delay before erroring out
+      const isStartingServer = text.includes('Starting Server...') || text.includes('Starting Server') || text.includes('Vite');
       const currentRetry = options._retryCount || 0;
-      if (currentRetry < 2) {
-        await new Promise(res => setTimeout(res, 500));
+      const maxRetries = isStartingServer ? 10 : 3;
+
+      // If we received an HTML page (e.g. during Cloud Run container startup/restart or warmup),
+      // retry with backoff before erroring out, without polluting the error console
+      if (currentRetry < maxRetries) {
+        const delay = isStartingServer ? 1000 : 500;
+        await new Promise(res => setTimeout(res, delay));
         return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
       }
-      throw new Error(`Received unexpected HTML page instead of API response for ${cleanEndpoint}. Check API configuration.`);
+
+      // For polling endpoints like notifications, return safe default rather than hard erroring
+      if (cleanEndpoint.includes('notifications')) {
+        return { notifications: [], unread_count: 0 } as unknown as T;
+      }
+
+      // Only log diagnostics error if retries are fully exhausted and not marked silent
+      if (!options.silent) {
+        logNetworkError({
+          url,
+          status: response.status,
+          statusText: response.statusText,
+          headers: responseHeaders,
+          contentType,
+          bodySnippet: text,
+          sourceHook: options.sourceHook || 'fetchApi',
+          isHtml: true
+        });
+      }
+
+      throw new Error(`The backend service is currently initializing. Please refresh in a moment.`);
     }
     
     try {
@@ -160,6 +201,11 @@ export const fetchApi = async <T = any>(
     }
   } catch (err: any) {
     if ((err.name === 'TypeError' && /fetch/i.test(err.message)) || err.message?.includes('Failed to fetch')) {
+      const currentRetry = options._retryCount || 0;
+      if (currentRetry < 3) {
+        await new Promise(res => setTimeout(res, 800));
+        return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
+      }
       throw new Error('Unable to connect to the server. Please check your network or server status.');
     }
     throw err;

@@ -50,6 +50,7 @@ export default function Sales() {
   const [paymentMethod, setPaymentMethod] = useState<'Cash' | 'Mobile Money'>('Cash');
   const [posSearchQuery, setPosSearchQuery] = useState('');
   const [posCategoryFilter, setPosCategoryFilter] = useState('');
+  const [posMobileTab, setPosMobileTab] = useState<'catalog' | 'cart'>('catalog');
 
   // Table Filters
   const [tableSearchQuery, setTableSearchQuery] = useState('');
@@ -966,8 +967,8 @@ export default function Sales() {
 
       {/* ================= COMPACT POINT OF SALE (POS MODAL) ================= */}
       {showPOSModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-3 z-50 overflow-hidden">
-          <div className="bg-white rounded-md max-w-4xl w-full h-[80vh] max-h-[660px] flex flex-col border border-slate-200 shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 bg-slate-900/60 sm:backdrop-blur-xs flex sm:items-center sm:justify-center p-0 sm:p-3 z-50 overflow-hidden">
+          <div className="bg-white sm:rounded-md max-w-5xl w-full h-full sm:h-[88vh] sm:max-h-[750px] flex flex-col border-0 sm:border border-slate-200 shadow-2xl overflow-hidden">
             {/* POS Header */}
             <div className="bg-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
               <div className="flex items-center gap-2.5">
@@ -1058,10 +1059,39 @@ export default function Sales() {
               </div>
             )}
 
-            {/* POS 2-Column Body */}
-            <div className="flex-1 grid grid-cols-1 lg:grid-cols-12 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 overflow-hidden">
-              {/* LEFT COLUMN: Product Catalog & Search (7 Cols) */}
-              <div className="lg:col-span-7 p-3 flex flex-col min-h-0 bg-slate-50/50 space-y-2">
+            {/* Mobile & Tablet Navigation Tabs for POS Modal (< 1024px) */}
+            <div className="flex lg:hidden bg-slate-100 p-1.5 border-b border-slate-200 shrink-0 gap-1.5">
+              <button
+                type="button"
+                onClick={() => setPosMobileTab('catalog')}
+                className={`flex-1 py-2 px-3 rounded text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition ${
+                  posMobileTab === 'catalog'
+                    ? 'bg-slate-900 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 bg-white border border-slate-200'
+                }`}
+              >
+                <Search size={14} />
+                <span>Catalog</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setPosMobileTab('cart')}
+                className={`flex-1 py-2 px-3 rounded text-xs font-black uppercase tracking-wider flex items-center justify-center gap-1.5 transition ${
+                  posMobileTab === 'cart'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'text-slate-700 hover:text-slate-900 bg-white border border-slate-200'
+                }`}
+              >
+                <ShoppingCart size={14} />
+                <span>Cart ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
+                <span className="font-mono font-black ml-1 text-emerald-400 bg-slate-900 px-1.5 py-0.5 rounded text-[10px]">{formatGHS(totalCart)}</span>
+              </button>
+            </div>
+
+            {/* POS Main View (Flex-column on Mobile & Tablets < 1024px, 2-Column Side-by-side on Desktops >= 1024px) */}
+            <div className="flex-1 flex flex-col lg:grid lg:grid-cols-12 min-h-0 divide-y lg:divide-y-0 lg:divide-x divide-slate-200 overflow-hidden">
+              {/* LEFT COLUMN: Product Catalog & Search (Flex-col with flex-grow on catalog, 7 Cols on Desktop) */}
+              <div className={`lg:col-span-7 p-3 flex flex-col flex-1 min-h-0 bg-slate-50/50 space-y-2 overflow-hidden ${posMobileTab === 'cart' ? 'hidden lg:flex' : 'flex'}`}>
                 {/* Search Bar & Category Chips */}
                 <div className="space-y-1.5 shrink-0">
                   <div className="relative">
@@ -1114,8 +1144,8 @@ export default function Sales() {
                   </div>
                 </div>
 
-                {/* Product Catalog Table List */}
-                <div className="flex-1 overflow-y-auto border border-slate-200 rounded bg-white shadow-2xs min-h-0">
+                {/* Product Catalog Table List (Flex grow on primary product grid) */}
+                <div className="flex-1 grow overflow-y-auto border border-slate-200 rounded bg-white shadow-2xs min-h-0">
                   {filteredPOSProducts.length > 0 ? (
                     <table className="min-w-full divide-y divide-slate-200 text-xs">
                       <thead className="bg-slate-50 sticky top-0 z-10 shadow-2xs">
@@ -1211,10 +1241,45 @@ export default function Sales() {
                     </div>
                   )}
                 </div>
+
+                {/* Mobile & Tablet Sticky Charge Amount Button on Catalog View (< 1024px) */}
+                <div className="lg:hidden shrink-0 sticky bottom-0 z-20 mt-auto pt-2 bg-slate-50/98 backdrop-blur-md border-t border-slate-200 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                  <div className={`p-2.5 rounded-xl border flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-lg transition-all ${
+                    cart.length > 0 ? 'bg-slate-900 border-slate-800 text-white' : 'bg-white border-slate-200 text-slate-600'
+                  }`}>
+                    <div className="flex items-center justify-between sm:flex-col sm:items-start min-w-0 flex-1">
+                      <span className="text-[10px] font-bold uppercase truncate tracking-wider text-slate-400">
+                        {cart.length > 0 ? `${cart.reduce((s, i) => s + i.quantity, 0)} Items Selected` : 'Cart is Empty'}
+                      </span>
+                      <span className={`text-base font-black truncate font-mono ${cart.length > 0 ? 'text-emerald-400' : 'text-slate-400'}`}>
+                        {formatGHS(totalCart)}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 w-full sm:w-auto">
+                      <button
+                        type="button"
+                        onClick={() => setPosMobileTab('cart')}
+                        className="flex-1 sm:flex-none px-3 py-2.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 rounded-lg font-bold text-xs uppercase tracking-wider border border-slate-700 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                      >
+                        <ShoppingCart size={13} />
+                        <span>Cart ({cart.reduce((s, i) => s + i.quantity, 0)})</span>
+                      </button>
+                      <button
+                        type="button"
+                        disabled={cart.length === 0}
+                        onClick={() => setShowConfirmModal(true)}
+                        className="flex-1 sm:flex-none min-h-[44px] px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white rounded-lg font-black text-xs uppercase tracking-wider flex items-center justify-center gap-2 shadow-md active:scale-98 transition-all cursor-pointer ring-2 ring-emerald-500/50"
+                      >
+                        <span>Charge {formatGHS(totalCart)}</span>
+                        <ArrowRight size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
-              {/* RIGHT COLUMN: Active Cart Ledger & Checkout (5 Cols) */}
-              <div className="lg:col-span-5 p-3 flex flex-col min-h-0 bg-white space-y-2.5">
+              {/* RIGHT COLUMN: Active Cart Ledger & Checkout (5 Cols on Desktops >= 1024px) */}
+              <div className={`lg:col-span-5 p-3 flex flex-col flex-1 min-h-0 bg-white space-y-2.5 overflow-hidden ${posMobileTab === 'catalog' ? 'hidden lg:flex' : 'flex'}`}>
                 {/* Customer & Payment Selectors */}
                 <div className="grid grid-cols-2 gap-2 shrink-0 bg-slate-50 p-2 rounded border border-slate-200 text-xs">
                   <div>
@@ -1247,7 +1312,7 @@ export default function Sales() {
                 </div>
 
                 {/* Cart Item Table */}
-                <div className="flex-1 flex flex-col min-h-0 border border-slate-200 rounded overflow-hidden">
+                <div className="flex-1 grow flex flex-col min-h-0 border border-slate-200 rounded overflow-hidden">
                   <div className="bg-slate-900 text-white px-2.5 py-1.5 text-[11px] font-black uppercase tracking-wider flex justify-between items-center shrink-0">
                     <span>Order Ledger</span>
                     <span className="bg-slate-800 text-blue-400 px-1.5 py-0.5 rounded text-[9px]">
@@ -1326,21 +1391,31 @@ export default function Sales() {
                   </div>
                 </div>
 
-                {/* Checkout Summary Footer */}
-                <div className="shrink-0 pt-2 border-t border-slate-200 space-y-2">
-                  <div className="flex justify-between items-baseline">
+                {/* Checkout Summary Footer (Always Pinned to Viewport Bottom) */}
+                <div className="shrink-0 pt-2 border-t border-slate-200 space-y-2 sticky bottom-0 bg-white z-20 mt-auto pb-[max(0.5rem,env(safe-area-inset-bottom))]">
+                  <div className="flex justify-between items-baseline px-1">
                     <span className="text-[11px] font-black text-slate-500 uppercase tracking-wider">Total Due:</span>
-                    <span className="text-xl font-black text-blue-600">{formatGHS(totalCart)}</span>
+                    <span className="text-xl font-black text-emerald-600 font-mono">{formatGHS(totalCart)}</span>
                   </div>
 
-                  <button 
-                    onClick={() => setShowConfirmModal(true)} 
-                    disabled={cart.length === 0} 
-                    className="w-full py-2 bg-slate-900 hover:bg-blue-600 text-white rounded font-black text-[11px] uppercase tracking-wider shadow-sm transition-all disabled:opacity-30 disabled:hover:bg-slate-900 flex items-center justify-center gap-1.5"
-                  >
-                    <span>Checkout & Print Invoice</span>
-                    <ArrowRight size={14} />
-                  </button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setPosMobileTab('catalog')}
+                      className="lg:hidden min-h-[46px] py-2.5 px-3.5 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-700 rounded-lg font-bold text-xs uppercase tracking-wider border border-slate-200 shrink-0 cursor-pointer flex items-center gap-1.5 transition"
+                    >
+                      <span>← Catalog</span>
+                    </button>
+                    <button 
+                      type="button"
+                      onClick={() => setShowConfirmModal(true)} 
+                      disabled={cart.length === 0} 
+                      className="flex-1 min-h-[46px] py-2.5 px-4 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white rounded-lg font-black text-xs uppercase tracking-wider shadow-sm transition-all disabled:opacity-40 disabled:hover:bg-slate-900 flex items-center justify-center gap-2 cursor-pointer ring-2 ring-emerald-500/50 active:scale-98"
+                    >
+                      <span>Charge {formatGHS(totalCart)}</span>
+                      <ArrowRight size={15} />
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

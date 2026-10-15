@@ -4,7 +4,7 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 
 // The verified secure websocket key specified for Ummis Lane Enterprise Communications
-export const WEBSOCKET_AUTH_KEY = 'fb60458aea288dbb2f7aec4db7004b32377159ef2f44b95af95a18b06d4f86cd';
+export const WEBSOCKET_AUTH_KEY = process.env.WEBSOCKET_AUTH_KEY || 'fb60458aea288dbb2f7aec4db7004b32377159ef2f44b95af95a18b06d4f86cd';
 
 export interface ChatUser {
   id: number;
@@ -308,13 +308,7 @@ export function setupChatSocket(httpServer: any, db: any, jwtSecret: string): So
       let user: ChatUser | null = null;
 
       if (typeof token === 'string' && token.startsWith('mock_')) {
-        if (token.includes('admin')) {
-          user = { id: 1, name: 'Ing. Mensah (Owner)', role: 'admin', email: 'ing.mensah@gmail.com', department: 'Executive Administration' };
-        } else if (token.includes('manager')) {
-          user = { id: 2, name: 'Kwame Mensah (Store Manager)', role: 'manager', email: 'manager@ummis.com', department: 'Store Operations' };
-        } else {
-          user = { id: 3, name: 'Store Staff', role: 'staff', email: 'staff@ummis.com', department: 'Sales & POS Operations' };
-        }
+        return next(new Error('Session expired. Please sign in with real credentials.'));
       } else {
         let decoded: any = null;
         let tokenExpired = false;

@@ -56,11 +56,18 @@ export default function Categories() {
         if (Array.isArray(data)) setCategories(data);
       })
       .catch((err) => {
-        addToast({
-          type: 'danger',
-          title: 'Error Loading Categories',
-          message: err.message || 'Could not load product categories.'
-        });
+        console.warn('[Categories] Load error:', err?.message || err);
+        if (err?.status === 401) {
+          navigate('/login');
+          return;
+        }
+        if (localStorage.getItem('token')) {
+          addToast({
+            type: 'danger',
+            title: 'Categories Notice',
+            message: err.message || 'Could not load product categories. Please check your connection.'
+          });
+        }
       })
       .finally(() => setLoading(false));
   };
