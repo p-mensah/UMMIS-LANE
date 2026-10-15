@@ -53,6 +53,8 @@ interface TabletPOSLayoutProps {
   onExitTabletMode?: () => void;
   onRefresh?: () => void;
   isLoading?: boolean;
+  onOpenRecentTransactions?: () => void;
+  recentTransactionsCount?: number;
 }
 
 export default function TabletPOSLayout({
@@ -63,7 +65,9 @@ export default function TabletPOSLayout({
   onCheckout,
   onExitTabletMode,
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  onOpenRecentTransactions,
+  recentTransactionsCount
 }: TabletPOSLayoutProps) {
   // Cart & Transaction States
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -512,6 +516,24 @@ export default function TabletPOSLayout({
             <Scan size={15} />
             <span className="hidden sm:inline">Scan</span>
           </button>
+
+          {/* Recent Session Transactions & Receipts Trigger */}
+          {onOpenRecentTransactions && (
+            <button
+              type="button"
+              onClick={onOpenRecentTransactions}
+              className="min-h-[42px] px-3 py-1.5 bg-slate-800 hover:bg-slate-700 active:bg-slate-900 text-slate-200 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shadow-xs cursor-pointer active:scale-95 border border-slate-700"
+              title="Recent Transactions & Receipt Reprints"
+            >
+              <Receipt size={15} className="text-blue-400" />
+              <span className="hidden sm:inline">Receipts</span>
+              {recentTransactionsCount !== undefined && recentTransactionsCount > 0 && (
+                <span className="bg-blue-600 text-white text-[10px] px-1.5 py-0.2 rounded-full font-black">
+                  {recentTransactionsCount}
+                </span>
+              )}
+            </button>
+          )}
 
           {/* On-Screen Keyboard Toggle Button for Tablet Mode */}
           <button

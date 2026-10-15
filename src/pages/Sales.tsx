@@ -5,7 +5,7 @@ import {
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
-  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet
+  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet, Receipt
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -20,6 +20,7 @@ import Pagination from '../components/common/Pagination';
 import { getDisplayCustomerPhone } from '../lib/privacy';
 import TabletPOSLayout from '../components/tablet/TabletPOSLayout';
 import PrintPreviewModal from '../components/PrintPreviewModal';
+import RecentTransactionsSidePanel from '../components/RecentTransactionsSidePanel';
 
 export default function Sales() {
   const { user } = useAuth();
@@ -43,6 +44,17 @@ export default function Sales() {
   const [showPOSModal, setShowPOSModal] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [invoiceSaleData, setInvoiceSaleData] = useState<any | null>(null);
+  const [showRecentPanel, setShowRecentPanel] = useState(false);
+  const [sessionSales, setSessionSales] = useState<any[]>(() => {
+    try {
+      const cached = sessionStorage.getItem('pharmacy_pos_session_sales');
+      if (cached) {
+        const parsed = JSON.parse(cached);
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch (e) {}
+    return [];
+  });
 
   // Cart & POS filters
   const [cart, setCart] = useState<{product_id: number, quantity: number, unit_price: number, notes?: string}[]>([]);
@@ -91,6 +103,17 @@ export default function Sales() {
         fetchApi('/reports/sales-trends?timeframe=weekly').catch(() => [])
       ]);
       setSales(salesRes);
+      if (Array.isArray(salesRes)) {
+        setSessionSales(prev => {
+          if (prev.length > 0) return prev;
+          const todayStr = new Date().toDateString();
+          const todaySales = salesRes.filter((s: any) => {
+            const sDate = new Date(s.created_at).toDateString();
+            return sDate === todayStr && (!user?.id || s.user_id === user?.id || user?.role === 'admin');
+          }).map((s: any) => ({ ...s, isCurrentSession: true }));
+          return todaySales;
+        });
+      }
       setProducts(prodRes);
       setUsers(usersRes);
       setCustomers(customersRes);
@@ -211,20 +234,44 @@ export default function Sales() {
       setShowConfirmModal(false);
       setShowPOSModal(false);
 
-      // Fetch full sale details for print invoice modal
+      // Fetch full sale details for print invoice modal and session tracking
+      let completedSaleObj: any = null;
       try {
         const fullSale = await fetchApi(`/sales/${res.saleId}`);
+        completedSaleObj = fullSale;
         setInvoiceSaleData(fullSale);
       } catch (e) {
         // Fallback invoice payload
-        setInvoiceSaleData({
+        completedSaleObj = {
           saleId: res.saleId,
+          id: res.saleId,
           items: [...cart],
           total: totalCart,
+          total_amount: totalCart,
           created_at: new Date().toISOString(),
           customer_name: customers.find(c => c.id.toString() === selectedCustomer)?.name || null,
+          customer_id: selectedCustomer ? parseInt(selectedCustomer, 10) : null,
           payment_method: paymentMethod,
-          user_name: user?.name || 'Cashier'
+          user_name: user?.name || 'Cashier',
+          user_id: user?.id,
+          status: 'completed'
+        };
+        setInvoiceSaleData(completedSaleObj);
+      }
+
+      if (completedSaleObj) {
+        const newSessionTx = {
+          ...completedSaleObj,
+          id: res.saleId || completedSaleObj.id,
+          total_amount: totalCart,
+          isCurrentSession: true
+        };
+        setSessionSales(prev => {
+          const updated = [newSessionTx, ...prev.filter(s => s.id !== newSessionTx.id)];
+          try {
+            sessionStorage.setItem('pharmacy_pos_session_sales', JSON.stringify(updated.slice(0, 100)));
+          } catch (err) {}
+          return updated;
         });
       }
 
@@ -420,28 +467,93 @@ export default function Sales() {
 
   if (isTabletMode) {
     return (
-      <TabletPOSLayout
-        products={products}
-        categories={categories}
-        customers={customers}
-        user={user}
-        onCheckout={async (items, customerId, paymentMethod) => {
-          const res = await fetchApi('/sales', {
-            method: 'POST',
-            body: JSON.stringify({ 
-              items, 
+      <>
+        <TabletPOSLayout
+          products={products}
+          categories={categories}
+          customers={customers}
+          user={user}
+          onCheckout={async (items, customerId, paymentMethod) => {
+            const res = await fetchApi('/sales', {
+              method: 'POST',
+              body: JSON.stringify({ 
+                items, 
+                customer_id: customerId ? parseInt(customerId, 10) : null,
+                payment_method: paymentMethod
+              })
+            });
+            addToast('Sale recorded successfully!', 'success');
+            
+            // Register in session transactions
+            const totalAmt = items.reduce((sum, it) => sum + (it.unit_price * it.quantity), 0);
+            const custObj = customers.find(c => c.id.toString() === customerId);
+            const newSessionTx = {
+              id: res?.saleId || Date.now(),
+              saleId: res?.saleId || Date.now(),
+              items: items.map(it => {
+                const prod = products.find(p => p.id === it.product_id);
+                return {
+                  product_id: it.product_id,
+                  product_name: prod?.name || 'Item',
+                  name: prod?.name || 'Item',
+                  quantity: it.quantity,
+                  unit_price: it.unit_price,
+                  sku: prod?.sku || ''
+                };
+              }),
+              total: totalAmt,
+              total_amount: totalAmt,
+              created_at: new Date().toISOString(),
+              customer_name: custObj?.name || 'Walk-in Customer',
               customer_id: customerId ? parseInt(customerId, 10) : null,
-              payment_method: paymentMethod
-            })
-          });
-          addToast('Sale recorded successfully!', 'success');
-          loadData();
-          return res;
-        }}
-        onExitTabletMode={() => setIsTabletMode(false)}
-        onRefresh={loadData}
-        isLoading={loading}
-      />
+              payment_method: paymentMethod,
+              user_name: user?.name || 'Cashier',
+              user_id: user?.id,
+              status: 'completed',
+              isCurrentSession: true
+            };
+            setSessionSales(prev => {
+              const updated = [newSessionTx, ...prev.filter(s => s.id !== newSessionTx.id)];
+              try {
+                sessionStorage.setItem('pharmacy_pos_session_sales', JSON.stringify(updated.slice(0, 100)));
+              } catch (e) {}
+              return updated;
+            });
+
+            loadData();
+            return res;
+          }}
+          onExitTabletMode={() => setIsTabletMode(false)}
+          onRefresh={loadData}
+          isLoading={loading}
+          onOpenRecentTransactions={() => setShowRecentPanel(true)}
+          recentTransactionsCount={sessionSales.length}
+        />
+
+        {/* Recent Transactions Side Panel accessible in Tablet Mode */}
+        <RecentTransactionsSidePanel
+          isOpen={showRecentPanel}
+          onClose={() => setShowRecentPanel(false)}
+          sessionSales={sessionSales}
+          allSales={sales}
+          onReprintReceipt={handleReprint}
+          onStartNewSale={() => setShowRecentPanel(false)}
+          onRefresh={loadData}
+          isLoading={loading}
+          currentUserId={user?.id}
+          currentUserName={user?.name}
+        />
+
+        {/* Invoice Modal for re-prints */}
+        {invoiceSaleData && (
+          <InvoiceModal 
+            saleData={invoiceSaleData} 
+            products={products}
+            initialFormat={invoiceInitialFormat}
+            onClose={() => setInvoiceSaleData(null)}
+          />
+        )}
+      </>
     );
   }
 
@@ -471,6 +583,23 @@ export default function Sales() {
           >
             <Tablet size={16} className="text-blue-400" />
             <span>Tablet POS Mode</span>
+          </button>
+
+          {/* Recent Transactions Side Panel Trigger */}
+          <button 
+            type="button"
+            id="open-recent-transactions-btn"
+            onClick={() => setShowRecentPanel(true)} 
+            className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-xl font-bold text-xs border border-slate-200 transition shadow-2xs flex items-center gap-2 cursor-pointer active:scale-95 hover:border-slate-300"
+            title="View recent transactions and reprint receipts from current session"
+          >
+            <Receipt size={16} className="text-blue-600" />
+            <span>Recent Transactions</span>
+            {sessionSales.length > 0 && (
+              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded-full">
+                {sessionSales.length}
+              </span>
+            )}
           </button>
 
           <button 
@@ -987,6 +1116,21 @@ export default function Sales() {
               <div className="flex items-center gap-2">
                 <button
                   type="button"
+                  onClick={() => setShowRecentPanel(true)}
+                  className="px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700 hover:text-white"
+                  title="View recent transactions & re-print receipts"
+                >
+                  <Receipt size={13} className="text-blue-400" />
+                  <span className="hidden sm:inline">Recent Receipts</span>
+                  {sessionSales.length > 0 && (
+                    <span className="bg-blue-600 text-white text-[9px] px-1.5 py-0.2 rounded-full font-black">
+                      {sessionSales.length}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setScannerDrawerOpen(!scannerDrawerOpen)}
                   className={`px-2.5 py-1 rounded text-[11px] font-bold transition-all flex items-center gap-1.5 border ${
                     scannerDrawerOpen 
@@ -1467,6 +1611,23 @@ export default function Sales() {
           </div>
         </div>
       )}
+
+      {/* Recent Transactions Side Panel */}
+      <RecentTransactionsSidePanel
+        isOpen={showRecentPanel}
+        onClose={() => setShowRecentPanel(false)}
+        sessionSales={sessionSales}
+        allSales={sales}
+        onReprintReceipt={handleReprint}
+        onStartNewSale={() => {
+          setShowRecentPanel(false);
+          setShowPOSModal(true);
+        }}
+        onRefresh={loadData}
+        isLoading={loading}
+        currentUserId={user?.id}
+        currentUserName={user?.name}
+      />
 
       {/* Invoice Print Viewer Modal */}
       {invoiceSaleData && (
