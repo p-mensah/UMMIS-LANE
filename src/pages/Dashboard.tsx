@@ -23,6 +23,8 @@ import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
 import RowActionMenu from '../components/common/RowActionMenu';
+import MiniPerformanceOverviewWidget from '../components/dashboard/MiniPerformanceOverviewWidget';
+import WeeklySalesTrendChart from '../components/dashboard/WeeklySalesTrendChart';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -573,6 +575,12 @@ export default function Dashboard() {
               </div>
             </div>
           </div>
+
+          {/* MINI-PERFORMANCE OVERVIEW WIDGET (SALES INFLOW VS PROCUREMENT OUTFLOW METRICS) */}
+          <MiniPerformanceOverviewWidget />
+
+          {/* WEEKLY SALES TREND (RECHARTS 7-DAY REVENUE VELOCITY LINE CHART) */}
+          <WeeklySalesTrendChart onRefreshParent={loadDashboardData} />
 
           {/* TOP SELLING PRODUCTS LEADERBOARD */}
           <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">

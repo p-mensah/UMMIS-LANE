@@ -199,19 +199,21 @@ export default function Sales() {
   };
 
   const addToCart = (productId: number, price: number) => {
+    const p = products.find(prod => prod.id === productId);
+    const existing = cart.find(i => i.product_id === productId);
+    if (existing && p && existing.quantity + 1 > p.stock_quantity) {
+      addToast(`Cannot exceed available stock of ${p.stock_quantity}`, 'warning');
+      return;
+    }
+    if (p && p.stock_quantity <= 0) {
+      addToast(`${p.name} is out of stock!`, 'warning');
+      return;
+    }
+
     setCart(prev => {
-      const existing = prev.find(i => i.product_id === productId);
-      const p = products.find(prod => prod.id === productId);
-      if (existing) {
-        if (p && existing.quantity + 1 > p.stock_quantity) {
-           addToast(`Cannot exceed available stock of ${p.stock_quantity}`, 'warning');
-           return prev;
-        }
+      const ex = prev.find(i => i.product_id === productId);
+      if (ex) {
         return prev.map(i => i.product_id === productId ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      if (p && p.stock_quantity <= 0) {
-        addToast(`${p.name} is out of stock!`, 'warning');
-        return prev;
       }
       return [...prev, { product_id: productId, quantity: 1, unit_price: price }];
     });
@@ -392,6 +394,14 @@ export default function Sales() {
     addToast(`Exported ${filteredSalesTable.length} sales records to CSV.`, 'success');
   };
 
+  const handlePrintReport = () => {
+    if (filteredSalesTable.length === 0) {
+      addToast('No sales records match current filters to print or export as PDF.', 'warning');
+      return;
+    }
+    window.print();
+  };
+
   // Calculate past week daily performance for Recharts line graph
   const weeklyChartData = useMemo(() => {
     const days: { 
@@ -560,7 +570,7 @@ export default function Sales() {
   return (
     <div className="space-y-6">
       {/* Sleek Breadcrumb & Action Controls Header */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs no-print">
         <div>
           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-400">
             <span>Sales Operations</span>
@@ -615,6 +625,17 @@ export default function Sales() {
 
           <button 
             type="button"
+            id="print-sales-header-report-btn"
+            onClick={handlePrintReport} 
+            disabled={filteredSalesTable.length === 0} 
+            className="min-h-[48px] px-3.5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl font-bold text-xs transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Print or export current sales report to PDF"
+          >
+            <Printer size={15} /> Print / Export PDF ({filteredSalesTable.length})
+          </button>
+
+          <button 
+            type="button"
             onClick={() => setShowPOSModal(true)} 
             className="min-h-[48px] px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center gap-2 active:scale-95 cursor-pointer"
             title="Launch standard POS Session"
@@ -625,7 +646,7 @@ export default function Sales() {
       </div>
 
       {/* Past Week Daily Sales Performance (Recharts Line Graph) */}
-      <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">
+      <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden no-print">
         {/* Graph Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
@@ -816,7 +837,7 @@ export default function Sales() {
       </div>
 
       {/* Filter Controls Bar */}
-      <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3">
+      <div className="bg-white p-4 rounded border border-slate-200 shadow-2xs space-y-3 no-print">
         <div className="flex flex-col lg:flex-row gap-3 justify-between">
           {/* Table Search */}
           <div className="relative flex-1 max-w-md">
@@ -924,12 +945,25 @@ export default function Sales() {
                 {filteredSalesTable.length}
               </span>
             </button>
+
+            {/* Print / PDF Export Current Table Button */}
+            <button
+              type="button"
+              id="print-sales-table-btn"
+              onClick={handlePrintReport}
+              disabled={filteredSalesTable.length === 0}
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded text-xs font-bold transition disabled:opacity-50 cursor-pointer shadow-2xs whitespace-nowrap"
+              title="Print or export filtered sales table as PDF"
+            >
+              <Printer size={14} />
+              <span>Print / PDF</span>
+            </button>
           </div>
         </div>
       </div>
 
       {/* Main Sales Table Card */}
-      <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-2xs">
+      <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-2xs no-print">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/50">
            <div className="p-4">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">
@@ -1094,9 +1128,185 @@ export default function Sales() {
         />
       </div>
 
+      {/* ================= FORMAL PRINT/PDF SALES AUDIT REPORT CONTAINER ================= */}
+      <div className="print-only p-4 sm:p-6 text-black bg-white">
+        {/* Official Header */}
+        <div className="border-b-2 border-slate-900 pb-4 mb-4 flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded bg-slate-900 text-white font-black text-sm flex items-center justify-center">
+                Rx
+              </div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">RxIMS Pharmacy Management</h1>
+            </div>
+            <p className="text-xs text-slate-600 font-medium">Official Sales, Revenue & Financial Audit Ledger</p>
+            <p className="text-[10px] text-slate-500">Accra, Ghana • Tel: +233 24 000 0000 • Email: info@rximspharmacy.com</p>
+          </div>
+          <div className="text-right">
+            <span className="inline-block px-2.5 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded">
+              Sales Audit Report
+            </span>
+            <div className="text-[11px] text-slate-600 font-bold mt-1.5">
+              Generated: {new Date().toLocaleString()}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Prepared by: <span className="font-bold text-slate-800">{user?.name}</span> ({user?.role})
+            </div>
+          </div>
+        </div>
+
+        {/* Filter Scope Metadata */}
+        <div className="bg-slate-50 border border-slate-200 rounded p-3 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Date Scope</span>
+            <span className="font-bold text-slate-800">
+              {startDate || endDate ? `${startDate || 'Start'} to ${endDate || 'Today'}` : 'All Recorded Dates'}
+            </span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Cashier Scope</span>
+            <span className="font-bold text-slate-800">
+              {cashierFilter ? (users.find(u => String(u.id) === String(cashierFilter))?.name || `User #${cashierFilter}`) : (user?.role === 'admin' ? 'All Cashiers / Store' : user?.name)}
+            </span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Payment Mode</span>
+            <span className="font-bold text-slate-800">{paymentFilter || 'All Methods'}</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Status Scope</span>
+            <span className="font-bold text-slate-800 capitalize">{statusFilter || 'All Statuses'}</span>
+          </div>
+        </div>
+
+        {/* Executive Summary Metrics */}
+        <div className="grid grid-cols-4 gap-3 mb-5">
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Total Transactions</div>
+            <div className="text-base font-black text-slate-900 mt-0.5">{filteredSalesTable.length} Orders</div>
+          </div>
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Gross Sales Revenue</div>
+            <div className="text-base font-black text-emerald-700 mt-0.5">
+              {formatGHS(filteredSalesTable.reduce((sum, s) => sum + s.total_amount, 0))}
+            </div>
+          </div>
+          {user?.role === 'admin' ? (
+            <div className="border border-slate-300 p-2.5 rounded bg-white">
+              <div className="text-[9px] font-bold uppercase text-slate-500">Gross Margin / Profit</div>
+              <div className="text-base font-black text-blue-700 mt-0.5">
+                {formatGHS(filteredSalesTable.reduce((sum, s) => sum + (s.profit || 0), 0))}
+              </div>
+            </div>
+          ) : (
+            <div className="border border-slate-300 p-2.5 rounded bg-white">
+              <div className="text-[9px] font-bold uppercase text-slate-500">Average Order Value</div>
+              <div className="text-base font-black text-blue-700 mt-0.5">
+                {filteredSalesTable.length > 0 
+                  ? formatGHS(filteredSalesTable.reduce((sum, s) => sum + s.total_amount, 0) / filteredSalesTable.length)
+                  : formatGHS(0)}
+              </div>
+            </div>
+          )}
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Payment Breakdown</div>
+            <div className="text-xs font-bold text-slate-800 mt-1">
+              Cash: {filteredSalesTable.filter(s => (s.payment_method || '').toLowerCase() === 'cash').length} | MoMo: {filteredSalesTable.filter(s => (s.payment_method || '').toLowerCase().includes('momo') || (s.payment_method || '').toLowerCase().includes('mobile')).length}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabular Transaction Ledger for Print */}
+        <table className="w-full text-left text-xs border border-slate-300 border-collapse mb-6">
+          <thead>
+            <tr className="bg-slate-100 border-b border-slate-300">
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Invoice ID</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Date & Time</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Cashier</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Customer</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Payment</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Status</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase text-right border-r border-slate-200">Amount</th>
+              {user?.role === 'admin' && (
+                <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase text-right">Profit</th>
+              )}
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {filteredSalesTable.map((s, idx) => (
+              <tr key={s.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
+                <td className="py-2 px-2.5 font-mono font-bold text-slate-900 border-r border-slate-200 whitespace-nowrap">
+                  #SALE-{s.id}
+                </td>
+                <td className="py-2 px-2.5 text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                  {new Date(s.created_at + 'Z').toLocaleString()}
+                </td>
+                <td className="py-2 px-2.5 text-slate-800 border-r border-slate-200 whitespace-nowrap">
+                  {s.user_name}
+                </td>
+                <td className="py-2 px-2.5 text-slate-800 border-r border-slate-200">
+                  {s.customer_name || 'Walk-in'}
+                  {s.customer_phone && <span className="block text-[10px] text-slate-400 font-mono">{s.customer_phone}</span>}
+                </td>
+                <td className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap">
+                  <span className="font-semibold text-[10px]">{s.payment_method}</span>
+                </td>
+                <td className="py-2 px-2.5 border-r border-slate-200 whitespace-nowrap">
+                  <span className="font-bold uppercase text-[10px]">
+                    {s.status}
+                  </span>
+                </td>
+                <td className="py-2 px-2.5 font-black text-slate-900 text-right border-r border-slate-200 whitespace-nowrap">
+                  {formatGHS(s.total_amount)}
+                </td>
+                {user?.role === 'admin' && (
+                  <td className="py-2 px-2.5 font-bold text-slate-900 text-right whitespace-nowrap">
+                    {formatGHS(s.profit || 0)}
+                  </td>
+                )}
+              </tr>
+            ))}
+            {/* Grand Total Row */}
+            <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold">
+              <td colSpan={6} className="py-2.5 px-3 text-right uppercase text-[11px] font-black text-slate-800">
+                Grand Total ({filteredSalesTable.length} Transactions):
+              </td>
+              <td className="py-2.5 px-2.5 text-right font-black text-emerald-800 text-xs border-r border-slate-300 whitespace-nowrap">
+                {formatGHS(filteredSalesTable.reduce((sum, s) => sum + s.total_amount, 0))}
+              </td>
+              {user?.role === 'admin' && (
+                <td className="py-2.5 px-2.5 text-right font-black text-blue-800 text-xs whitespace-nowrap">
+                  {formatGHS(filteredSalesTable.reduce((sum, s) => sum + (s.profit || 0), 0))}
+                </td>
+              )}
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Verification & Sign-off Block */}
+        <div className="border-t border-slate-300 pt-6 mt-6 grid grid-cols-2 gap-12 text-xs">
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-semibold text-slate-700">
+              Audited & Reconciled By (Cashier / Shift Lead):
+            </div>
+            <div className="text-[11px] text-slate-500">Name: {user?.name} | Date: {new Date().toLocaleDateString()}</div>
+          </div>
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-semibold text-slate-700">
+              Approved By (Supervising Pharmacist / Owner):
+            </div>
+            <div className="text-[11px] text-slate-500">Signature: __________________________ Date: _______________</div>
+          </div>
+        </div>
+
+        <div className="text-center text-[10px] text-slate-400 mt-6">
+          RxIMS Automated POS & Inventory Management • Confidential Financial Document • End of Report
+        </div>
+      </div>
+
       {/* ================= COMPACT POINT OF SALE (POS MODAL) ================= */}
       {showPOSModal && (
-        <div className="fixed inset-0 bg-slate-900/60 sm:backdrop-blur-xs flex sm:items-center sm:justify-center p-0 sm:p-3 z-50 overflow-hidden">
+        <div className="fixed inset-0 bg-slate-900/60 sm:backdrop-blur-xs flex sm:items-center sm:justify-center p-0 sm:p-3 z-50 overflow-hidden no-print">
           <div className="bg-white sm:rounded-md max-w-5xl w-full h-full sm:h-[88vh] sm:max-h-[750px] flex flex-col border-0 sm:border border-slate-200 shadow-2xl overflow-hidden">
             {/* POS Header */}
             <div className="bg-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between border-b border-slate-800 shrink-0">
@@ -1569,7 +1779,7 @@ export default function Sales() {
 
       {/* Confirmation Modal */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[60] no-print">
           <div className="bg-white rounded max-w-sm w-full border border-slate-200 overflow-hidden shadow-2xl">
             <div className="p-6 text-center bg-slate-50 border-b border-slate-100">
                <div className="w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center mx-auto mb-3">

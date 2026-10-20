@@ -369,7 +369,7 @@ export default function RecentTransactionsSidePanel({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 overflow-hidden">
+    <div className="fixed inset-0 z-50 overflow-hidden no-print">
       {/* Backdrop overlay */}
       <div 
         className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs transition-opacity duration-200 animate-fadeIn cursor-pointer"

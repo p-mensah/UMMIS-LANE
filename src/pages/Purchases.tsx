@@ -4,7 +4,7 @@ import { fetchApi } from '../lib/api';
 import { 
   Truck, Plus, Search, Filter, Calendar, Clock, CheckCircle2, 
   AlertCircle, ChevronRight, FileText, Download, X, Eye, ArrowUpRight,
-  PackageCheck, RefreshCw, AlertTriangle
+  PackageCheck, RefreshCw, AlertTriangle, Printer
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useAuth } from '../context/AuthContext';
@@ -315,6 +315,15 @@ export default function Purchases() {
     link.download = `purchase_orders_${new Date().toISOString().split('T')[0]}.csv`;
     link.click();
     URL.revokeObjectURL(url);
+    addToast(`Exported ${purchases.length} purchase orders to CSV.`, 'success');
+  };
+
+  const handlePrintReport = () => {
+    if (filteredPurchases.length === 0) {
+      addToast('No purchase orders match current filters to print or export as PDF.', 'warning');
+      return;
+    }
+    window.print();
   };
 
   const filteredPurchases = purchases.filter(p => {
@@ -388,7 +397,7 @@ export default function Purchases() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 no-print">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-slate-900 text-white rounded shrink-0">
             <Truck size={22} />
@@ -402,6 +411,7 @@ export default function Purchases() {
         <div className="flex items-center gap-2">
           {user?.role === 'admin' && (
             <button 
+              type="button"
               onClick={() => setShowModal(true)} 
               className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded font-bold text-xs shadow-2xs transition flex items-center gap-1.5 cursor-pointer"
             >
@@ -409,17 +419,30 @@ export default function Purchases() {
             </button>
           )}
           <button 
+            type="button"
+            id="export-purchases-csv-btn"
             onClick={handleExportCSV} 
             disabled={purchases.length === 0} 
             className="px-4 py-2 bg-slate-800 text-white rounded font-bold text-xs hover:bg-slate-900 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
+            title="Export purchase records to CSV"
           >
             <Download size={14} /> Export CSV
+          </button>
+          <button 
+            type="button"
+            id="print-purchases-report-btn"
+            onClick={handlePrintReport} 
+            disabled={filteredPurchases.length === 0} 
+            className="px-4 py-2 bg-slate-900 text-white rounded font-bold text-xs hover:bg-slate-800 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+            title="Print or export current purchase report to PDF"
+          >
+            <Printer size={14} /> Print / Export PDF ({filteredPurchases.length})
           </button>
         </div>
       </div>
 
       {/* Stats Overview */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 no-print">
         <div className="bg-white border border-slate-200 p-4 rounded-sm shadow-2xs flex items-center justify-between">
           <div>
             <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Total PO Volume</span>
@@ -454,7 +477,7 @@ export default function Purchases() {
       </div>
 
       {/* Filter Toolbar */}
-      <div className="bg-white border border-slate-200 p-4 rounded-sm shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3">
+      <div className="bg-white border border-slate-200 p-4 rounded-sm shadow-2xs flex flex-col sm:flex-row items-center justify-between gap-3 no-print">
         <div className="flex items-center gap-1.5 overflow-x-auto w-full sm:w-auto">
           {['all', 'pending', 'received', 'draft', 'cancelled'].map(st => (
             <button
@@ -480,7 +503,7 @@ export default function Purchases() {
       </div>
 
       {/* PO Table */}
-      <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden">
+      <div className="bg-white border border-slate-200 rounded-sm shadow-2xs overflow-hidden no-print">
         {loading ? (
           <div className="p-12 text-center text-slate-500 flex flex-col items-center justify-center gap-2">
             <RefreshCw size={24} className="animate-spin text-blue-600" />
@@ -577,10 +600,159 @@ export default function Purchases() {
         />
       </div>
 
+      {/* ================= FORMAL PRINT/PDF PROCUREMENT REPORT ================= */}
+      <div className="print-only p-4 sm:p-6 text-black bg-white">
+        {/* Official Header */}
+        <div className="border-b-2 border-slate-900 pb-4 mb-4 flex items-start justify-between">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-8 h-8 rounded bg-slate-900 text-white font-black text-sm flex items-center justify-center">
+                Rx
+              </div>
+              <h1 className="text-xl font-black text-slate-900 tracking-tight">RxIMS Pharmacy Management</h1>
+            </div>
+            <p className="text-xs text-slate-600 font-medium">Procurement, Supplier Orders & Restocking Audit</p>
+            <p className="text-[10px] text-slate-500">Accra, Ghana • Tel: +233 24 000 0000 • Email: procurement@rximspharmacy.com</p>
+          </div>
+          <div className="text-right">
+            <span className="inline-block px-2.5 py-1 bg-slate-900 text-white text-[10px] font-black uppercase tracking-wider rounded">
+              Procurement Audit
+            </span>
+            <div className="text-[11px] text-slate-600 font-bold mt-1.5">
+              Generated: {new Date().toLocaleString()}
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Prepared by: <span className="font-bold text-slate-800">{user?.name}</span> ({user?.role})
+            </div>
+          </div>
+        </div>
+
+        {/* Report Scope & Filter Metadata */}
+        <div className="bg-slate-50 border border-slate-200 rounded p-3 mb-4 text-xs grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Status Filter</span>
+            <span className="font-bold text-slate-800 capitalize">{statusFilter}</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Search Criteria</span>
+            <span className="font-bold text-slate-800">{searchQuery || 'All Suppliers / POs'}</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Purchase Orders Count</span>
+            <span className="font-black text-blue-700">{filteredPurchases.length} record(s)</span>
+          </div>
+          <div>
+            <span className="text-[10px] font-bold text-slate-400 uppercase block">Total Expenditure</span>
+            <span className="font-black text-red-600">
+              {formatGHS(filteredPurchases.reduce((s, p) => s + p.total_amount, 0))}
+            </span>
+          </div>
+        </div>
+
+        {/* Executive Summary Metrics Grid */}
+        <div className="grid grid-cols-4 gap-3 mb-5">
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Total Purchase Orders</div>
+            <div className="text-base font-black text-slate-900 mt-0.5">{filteredPurchases.length} Orders</div>
+          </div>
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Pending Deliveries</div>
+            <div className="text-base font-black text-amber-700 mt-0.5">
+              {filteredPurchases.filter(p => p.status === 'ordered' || p.status === 'submitted' || p.status === 'pending').length}
+            </div>
+          </div>
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Received & Stocked</div>
+            <div className="text-base font-black text-emerald-700 mt-0.5">
+              {filteredPurchases.filter(p => p.status === 'received').length}
+            </div>
+          </div>
+          <div className="border border-slate-300 p-2.5 rounded bg-white">
+            <div className="text-[9px] font-bold uppercase text-slate-500">Total Investment</div>
+            <div className="text-base font-black text-red-700 mt-0.5">
+              {formatGHS(filteredPurchases.reduce((s, p) => s + p.total_amount, 0))}
+            </div>
+          </div>
+        </div>
+
+        {/* Tabular Procurement Ledger */}
+        <table className="w-full text-left text-xs border border-slate-300 border-collapse mb-6">
+          <thead>
+            <tr className="bg-slate-100 border-b border-slate-300">
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">PO Number</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Date</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Supplier Name</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Contact</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200">Status</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase border-r border-slate-200 text-center">Items</th>
+              <th className="py-2 px-2.5 font-black text-slate-800 text-[10px] uppercase text-right">Total Cost</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-200">
+            {filteredPurchases.map((p, idx) => (
+              <tr key={p.id} className={idx % 2 === 1 ? 'bg-slate-50/60' : 'bg-white'}>
+                <td className="py-2 px-2.5 font-mono font-bold text-slate-900 border-r border-slate-200">
+                  #PO-{p.id}
+                </td>
+                <td className="py-2 px-2.5 text-slate-600 border-r border-slate-200 whitespace-nowrap">
+                  {new Date(p.created_at).toLocaleDateString()}
+                </td>
+                <td className="py-2 px-2.5 font-bold text-slate-900 border-r border-slate-200">
+                  {p.supplier_name}
+                </td>
+                <td className="py-2 px-2.5 text-slate-500 border-r border-slate-200">
+                  {p.supplier_contact || '—'}
+                </td>
+                <td className="py-2 px-2.5 border-r border-slate-200">
+                  <span className="font-bold uppercase text-[10px]">
+                    {p.status}
+                  </span>
+                </td>
+                <td className="py-2 px-2.5 text-center text-slate-700 border-r border-slate-200">
+                  {p.item_count || 1}
+                </td>
+                <td className="py-2 px-2.5 font-black text-slate-900 text-right whitespace-nowrap">
+                  {formatGHS(p.total_amount)}
+                </td>
+              </tr>
+            ))}
+            {/* Grand Total Row */}
+            <tr className="bg-slate-100 border-t-2 border-slate-400 font-bold">
+              <td colSpan={6} className="py-2.5 px-3 text-right uppercase text-[11px] font-black text-slate-800">
+                Grand Total ({filteredPurchases.length} Purchase Orders):
+              </td>
+              <td className="py-2.5 px-2.5 text-right font-black text-red-700 text-xs whitespace-nowrap">
+                {formatGHS(filteredPurchases.reduce((s, p) => s + p.total_amount, 0))}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        {/* Verification & Sign-off Block */}
+        <div className="border-t border-slate-300 pt-6 mt-6 grid grid-cols-2 gap-12 text-xs">
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-semibold text-slate-700">
+              Prepared By (Procurement Officer):
+            </div>
+            <div className="text-[11px] text-slate-500">Name: {user?.name} | Date: {new Date().toLocaleDateString()}</div>
+          </div>
+          <div>
+            <div className="border-b border-slate-400 pb-1 mb-1 font-semibold text-slate-700">
+              Approved By (Supervising Pharmacist / Auditor):
+            </div>
+            <div className="text-[11px] text-slate-500">Signature: __________________________ Date: _______________</div>
+          </div>
+        </div>
+
+        <div className="text-center text-[10px] text-slate-400 mt-6">
+          RxIMS Automated Procurement System • Report Generated Securely • Page End
+        </div>
+      </div>
+
       {/* New Purchase Order Modal */}
       {showModal && (
         <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 no-print"
           onClick={(e) => {
             if (e.target === e.currentTarget) setShowModal(false);
           }}
@@ -717,7 +889,7 @@ export default function Purchases() {
       {/* PO Detail Modal */}
       {selectedPO && (
         <div 
-          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150"
+          className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150 no-print"
           onClick={(e) => {
             if (e.target === e.currentTarget) setSelectedPO(null);
           }}
@@ -776,6 +948,15 @@ export default function Purchases() {
               </div>
 
               <div className="flex items-center gap-2">
+                <button 
+                  type="button"
+                  onClick={() => window.print()} 
+                  className="px-3.5 py-2 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded transition flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  title="Print this purchase order"
+                >
+                  <Printer size={14} /> Print Order
+                </button>
+
                 {selectedPO.status !== 'received' && selectedPO.status !== 'cancelled' ? (
                   <button
                     onClick={() => handleConfirmReceipt(selectedPO.id)}

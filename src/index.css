@@ -64,6 +64,10 @@ body {
   background: rgba(100, 116, 139, 0.6);
 }
 
+.print-only {
+  display: none !important;
+}
+
 /* ================= PRINT MEDIA STYLES ================= */
 @media print {
   /* Strictly hide all application navigation, headers, and UI chrome */
@@ -77,6 +81,12 @@ body {
   [data-print-hide="true"] {
     display: none !important;
     visibility: hidden !important;
+  }
+
+  /* Make print-only formal report containers visible */
+  .print-only {
+    display: block !important;
+    visibility: visible !important;
   }
 
   /* Reset layout constraints for full printer page flow and multi-page pagination */
