@@ -4174,6 +4174,30 @@ app.post('/api/supplier/products/:id/approve', authenticate, (req: any, res) => 
   }
 });
 
+app.delete('/api/supplier/products/:id', authenticate, (req: any, res) => {
+  try {
+    const clientIp = getClientIp(req);
+    const { id } = req.params;
+    const existing: any = db.prepare('SELECT * FROM supplier_products WHERE id = ?').get(id);
+    if (!existing) return res.status(404).json({ error: 'Product not found' });
+
+    db.prepare('DELETE FROM supplier_products WHERE id = ?').run(id);
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Deleted Supplier Product',
+      'product',
+      `Deleted supplier product #${id} "${existing.title}".`,
+      clientIp
+    );
+
+    res.json({ success: true, message: 'Product removed successfully' });
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
+  }
+});
+
 // 2. Restock Shipments (Lifecycle: preparing -> in_transit -> delivered -> verified)
 app.get('/api/supplier/shipments', authenticate, (req: any, res) => {
   try {

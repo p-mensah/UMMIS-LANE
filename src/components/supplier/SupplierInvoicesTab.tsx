@@ -24,6 +24,7 @@ import {
   Trash2,
   Download
 } from 'lucide-react';
+import RowActionMenu from '../common/RowActionMenu';
 
 interface SupplierInvoicesTabProps {
   invoices: SupplierInvoice[];
@@ -208,6 +209,23 @@ export default function SupplierInvoicesTab({
     }
   };
 
+  const handleQuickMarkPaid = async (inv: SupplierInvoice) => {
+    try {
+      await fetchApi(`/supplier/invoices-ledger/${inv.id}/status`, {
+        method: 'PUT',
+        body: JSON.stringify({
+          status: 'paid',
+          payment_method: 'Direct Bank Transfer',
+          notes: `Settled as paid by ${user?.name || 'Admin'}`
+        })
+      });
+      addToast(`Invoice ${inv.invoice_number} marked as paid.`, 'success');
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update invoice status', 'error');
+    }
+  };
+
   const handleUpdateInvoiceDoc = async (invoiceId: number, docUrl: string, fileName: string) => {
     try {
       await fetchApi(`/supplier/invoices-ledger/${invoiceId}`, {
@@ -389,69 +407,63 @@ export default function SupplierInvoicesTab({
                     </td>
 
                     <td className="py-3 px-4 text-right">
-                      <div className="flex items-center justify-end gap-1.5 flex-wrap">
-                        {/* View Details Action */}
-                        <button
-                          type="button"
-                          onClick={() => setViewingInvoice(inv)}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-bold rounded-lg text-xs transition-colors cursor-pointer"
-                          title="View complete invoice details"
-                        >
-                          <Eye size={13} />
-                        </button>
-
-                        {/* Print Invoice Action */}
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setViewingInvoice(inv);
-                            setTimeout(() => window.print(), 300);
-                          }}
-                          className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 hover:text-slate-900 font-bold rounded-lg text-xs transition-colors cursor-pointer"
-                          title="Print or export invoice"
-                        >
-                          <Printer size={13} />
-                        </button>
-
-                        {/* Attach Document if missing */}
-                        {!inv.document_url && (
-                          <button
-                            type="button"
-                            onClick={() => setAttachingDocInvoice(inv)}
-                            className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold rounded-lg text-[11px] transition-colors cursor-pointer flex items-center gap-1"
-                            title="Attach PDF or image to this invoice"
-                          >
-                            <Upload size={11} />
-                            <span>Attach</span>
-                          </button>
-                        )}
-
-                        {/* Admin Settlement Action */}
-                        {isAdmin && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setSettlingInvoice(inv);
-                              setTargetStatus(inv.status === 'unpaid' ? 'scheduled' : 'paid');
-                            }}
-                            className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded-lg text-[11px] transition-colors cursor-pointer flex items-center gap-1"
-                          >
-                            <ShieldCheck size={12} />
-                            <span>Settle</span>
-                          </button>
-                        )}
-
-                        {/* Delete / Cancel Action (Unpaid only) */}
-                        {inv.status !== 'paid' && (
-                          <button
-                            type="button"
-                            onClick={() => setDeletingInvoice(inv)}
-                            className="p-1.5 hover:bg-rose-50 text-slate-400 hover:text-rose-600 rounded-lg transition-colors cursor-pointer"
-                            title="Delete this invoice"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        )}
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for Invoice #${inv.invoice_number}`}
+                          actions={[
+                            {
+                              label: 'View Invoice Details',
+                              sublabel: 'Consignment items & breakdown',
+                              icon: <Eye size={14} className="text-blue-600" />,
+                              onClick: () => setViewingInvoice(inv),
+                            },
+                            {
+                              label: 'Print Invoice / PDF',
+                              sublabel: 'Official invoice document',
+                              icon: <Printer size={14} className="text-slate-600" />,
+                              onClick: () => {
+                                setViewingInvoice(inv);
+                                setTimeout(() => window.print(), 300);
+                              },
+                            },
+                            inv.document_url ? {
+                              label: 'View Attached File',
+                              sublabel: 'Open external document vault',
+                              icon: <ExternalLink size={14} className="text-indigo-600" />,
+                              onClick: () => {
+                                window.open(inv.document_url, '_blank');
+                              },
+                            } : null,
+                            {
+                              label: inv.document_url ? 'Replace Attached File' : 'Attach Invoice Document',
+                              sublabel: 'Upload digital PDF or photo',
+                              icon: <Upload size={14} className="text-blue-600" />,
+                              onClick: () => setAttachingDocInvoice(inv),
+                            },
+                            isAdmin ? {
+                              label: 'Update Settlement Status',
+                              sublabel: `Current: ${inv.status.toUpperCase()}`,
+                              icon: <ShieldCheck size={14} className="text-emerald-600" />,
+                              onClick: () => {
+                                setSettlingInvoice(inv);
+                                setTargetStatus(inv.status === 'unpaid' ? 'scheduled' : 'paid');
+                              },
+                            } : null,
+                            isAdmin && inv.status !== 'paid' ? {
+                              label: 'Quick Mark as Paid',
+                              sublabel: 'Direct bank settlement reconciliation',
+                              icon: <CheckCircle2 size={14} className="text-emerald-600" />,
+                              onClick: () => handleQuickMarkPaid(inv),
+                            } : null,
+                            inv.status !== 'paid' ? {
+                              label: 'Delete Invoice',
+                              sublabel: 'Remove this invoice record',
+                              icon: <Trash2 size={14} className="text-rose-600" />,
+                              destructive: true,
+                              onClick: () => setDeletingInvoice(inv),
+                            } : null,
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>

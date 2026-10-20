@@ -17,8 +17,13 @@ import {
   Check,
   X,
   Building2,
-  Barcode
+  Barcode,
+  SlidersHorizontal,
+  Copy,
+  Eye,
+  RefreshCw
 } from 'lucide-react';
+import RowActionMenu from '../common/RowActionMenu';
 
 interface SupplierProductsTabProps {
   products: SupplierProduct[];
@@ -41,6 +46,10 @@ export default function SupplierProductsTab({
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending_approval' | 'out_of_stock' | 'draft'>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [editingProduct, setEditingProduct] = useState<SupplierProduct | null>(null);
+  const [deletingProduct, setDeletingProduct] = useState<SupplierProduct | null>(null);
+  const [quickStockProduct, setQuickStockProduct] = useState<SupplierProduct | null>(null);
+  const [quickStockValue, setQuickStockValue] = useState<number | ''>(0);
+  const [isUpdatingStock, setIsUpdatingStock] = useState(false);
 
   // Form State
   const [title, setTitle] = useState('');
@@ -166,6 +175,50 @@ export default function SupplierProductsTab({
       onRefresh();
     } catch (err: any) {
       addToast(err.message || 'Failed to approve product', 'error');
+    }
+  };
+
+  const handleDeleteProduct = async (productId: number) => {
+    try {
+      await fetchApi(`/supplier/products/${productId}`, { method: 'DELETE' });
+      addToast('Product removed from catalog', 'success');
+      setDeletingProduct(null);
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete product', 'error');
+    }
+  };
+
+  const handleToggleStatus = async (p: SupplierProduct) => {
+    const nextStatus = p.status === 'out_of_stock' ? 'active' : 'out_of_stock';
+    try {
+      await fetchApi(`/supplier/products/${p.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ status: nextStatus })
+      });
+      addToast(`Product status updated to ${nextStatus.replace('_', ' ')}`, 'success');
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update status', 'error');
+    }
+  };
+
+  const handleSaveQuickStock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickStockProduct || quickStockValue === '') return;
+    setIsUpdatingStock(true);
+    try {
+      await fetchApi(`/supplier/products/${quickStockProduct.id}`, {
+        method: 'PUT',
+        body: JSON.stringify({ current_stock: Number(quickStockValue) })
+      });
+      addToast(`Stock for "${quickStockProduct.title}" updated to ${quickStockValue}`, 'success');
+      setQuickStockProduct(null);
+      onRefresh();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update stock', 'error');
+    } finally {
+      setIsUpdatingStock(false);
     }
   };
 
@@ -340,20 +393,69 @@ export default function SupplierProductsTab({
                           <button
                             type="button"
                             onClick={() => handleApprove(p)}
-                            className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1"
+                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer flex items-center gap-1 shadow-2xs"
                             title="Approve and sync product to store catalog"
                           >
                             <Check size={12} /> Approve
                           </button>
                         )}
-                        <button
-                          type="button"
-                          onClick={() => handleOpenEdit(p)}
-                          className="p-1.5 text-slate-500 hover:text-blue-600 hover:bg-slate-100 rounded transition cursor-pointer"
-                          title="Edit Product"
-                        >
-                          <FileEdit size={14} />
-                        </button>
+                        <RowActionMenu
+                          triggerTitle={`Actions for ${p.title}`}
+                          actions={[
+                            {
+                              label: 'Edit Product Details',
+                              sublabel: 'Update prices, description & SKU',
+                              icon: <FileEdit size={14} className="text-blue-600" />,
+                              onClick: () => handleOpenEdit(p),
+                            },
+                            isAdmin && (p.status === 'pending_approval' || !p.admin_approved) ? {
+                              label: 'Approve & Sync to Catalog',
+                              sublabel: 'Publish to active store inventory',
+                              icon: <Check size={14} className="text-emerald-600" />,
+                              onClick: () => handleApprove(p),
+                            } : null,
+                            {
+                              label: p.status === 'out_of_stock' ? 'Mark as Active / In Stock' : 'Mark as Out of Stock',
+                              sublabel: `Current status: ${p.status.replace('_', ' ')}`,
+                              icon: p.status === 'out_of_stock' ? <CheckCircle2 size={14} className="text-emerald-600" /> : <AlertTriangle size={14} className="text-amber-500" />,
+                              onClick: () => handleToggleStatus(p),
+                            },
+                            {
+                              label: 'Adjust Stock Level',
+                              sublabel: `Current on-hand: ${p.current_stock}`,
+                              icon: <SlidersHorizontal size={14} className="text-purple-600" />,
+                              onClick: () => {
+                                setQuickStockProduct(p);
+                                setQuickStockValue(p.current_stock);
+                              },
+                            },
+                            p.supplier_sku ? {
+                              label: 'Copy Supplier SKU',
+                              sublabel: p.supplier_sku,
+                              icon: <Copy size={14} className="text-slate-600" />,
+                              onClick: () => {
+                                navigator.clipboard.writeText(p.supplier_sku);
+                                addToast(`Copied SKU ${p.supplier_sku} to clipboard`, 'success');
+                              },
+                            } : null,
+                            p.barcode ? {
+                              label: 'Copy Barcode',
+                              sublabel: p.barcode,
+                              icon: <Barcode size={14} className="text-indigo-600" />,
+                              onClick: () => {
+                                navigator.clipboard.writeText(p.barcode!);
+                                addToast(`Copied barcode ${p.barcode} to clipboard`, 'success');
+                              },
+                            } : null,
+                            {
+                              label: 'Delete Product',
+                              sublabel: 'Remove from catalog listing',
+                              icon: <Trash2 size={14} className="text-rose-600" />,
+                              destructive: true,
+                              onClick: () => setDeletingProduct(p),
+                            },
+                          ]}
+                        />
                       </div>
                     </td>
                   </tr>
@@ -547,6 +649,107 @@ export default function SupplierProductsTab({
                   className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg transition disabled:opacity-50 cursor-pointer flex items-center gap-1.5"
                 >
                   {isSubmitting ? 'Saving...' : editingProduct ? 'Update Product' : 'Add Product'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Delete Confirmation */}
+      {deletingProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center gap-3">
+              <div className="p-2.5 bg-rose-50 text-rose-600 rounded-lg shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-900">Delete Product?</h3>
+                <p className="text-xs text-slate-500">Remove from catalog listing</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Are you sure you want to delete <span className="font-bold text-slate-900">"{deletingProduct.title}"</span> ({deletingProduct.supplier_sku})? This action cannot be undone.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeletingProduct(null)}
+                className="px-3 py-1.5 border border-slate-200 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-50 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteProduct(deletingProduct.id)}
+                className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-bold text-xs rounded-lg shadow-2xs cursor-pointer"
+              >
+                Confirm Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Quick Stock Adjustment */}
+      {quickStockProduct && (
+        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-in fade-in duration-150">
+          <div className="bg-white rounded-xl shadow-2xl border border-slate-200 max-w-sm w-full p-5 space-y-4 animate-in zoom-in-95 duration-150">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="p-2 bg-purple-50 text-purple-600 rounded-lg shrink-0">
+                  <SlidersHorizontal size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Adjust Stock Level</h3>
+                  <p className="text-[11px] text-slate-500 truncate max-w-[200px]">{quickStockProduct.title}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setQuickStockProduct(null)}
+                className="text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveQuickStock} className="space-y-3">
+              <div>
+                <label className="text-xs font-bold text-slate-700 block mb-1">
+                  On-Hand Stock Quantity
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  step="1"
+                  required
+                  value={quickStockValue}
+                  onChange={(e) => setQuickStockValue(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  autoFocus
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Reorder trigger threshold: {quickStockProduct.reorder_point || 10} units
+                </span>
+              </div>
+
+              <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setQuickStockProduct(null)}
+                  className="px-3 py-1.5 border border-slate-200 text-slate-700 font-bold text-xs rounded-lg hover:bg-slate-50 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isUpdatingStock || quickStockValue === ''}
+                  className="px-4 py-1.5 bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white font-bold text-xs rounded-lg disabled:opacity-50 flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                >
+                  {isUpdatingStock && <RefreshCw size={12} className="animate-spin" />}
+                  {isUpdatingStock ? 'Saving...' : 'Save Stock'}
                 </button>
               </div>
             </form>
