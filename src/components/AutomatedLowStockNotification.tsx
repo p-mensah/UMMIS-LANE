@@ -5,7 +5,8 @@ import {
   ShoppingBag, Search, X, ArrowUpRight,
   AlertTriangle, Settings, Download, Plus,
   CheckCircle2, ShieldAlert, Package, RefreshCw,
-  SlidersHorizontal, Boxes, Eye, Truck, ShoppingCart
+  SlidersHorizontal, Boxes, Eye, Truck, ShoppingCart,
+  TrendingUp, Zap
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import RowActionMenu from './common/RowActionMenu';
@@ -24,6 +25,14 @@ export interface ProductStockAlert {
   proximity_status?: 'out_of_stock' | 'breached' | 'nearing' | 'healthy';
   buffer_to_threshold?: number;
   recommended_reorder?: number;
+  daily_velocity?: number;
+  dynamic_threshold?: number;
+  runway_days?: number | null;
+  is_velocity_breached?: boolean;
+  velocity_status?: 'velocity_critical' | 'velocity_warning' | 'normal';
+  effective_threshold?: number;
+  lead_days?: number;
+  total_qty_sold?: number;
 }
 
 interface AutomatedLowStockNotificationProps {
@@ -36,15 +45,20 @@ interface AutomatedLowStockNotificationProps {
       breached: number;
       nearing: number;
       healthy: number;
+      velocity_breached?: number;
       action_required: number;
     };
     products?: ProductStockAlert[];
+    leadDays?: number;
+    lookbackDays?: number;
+    velocityAlertsEnabled?: boolean;
   } | null;
   onQuickRestock?: (product: ProductStockAlert) => void;
   onCreatePO?: (product: ProductStockAlert) => void;
   onOpenThresholdModal?: () => void;
   onExportCSV?: () => void;
   onRefresh?: () => void;
+  onTriggerVelocityAudit?: () => void;
   isLoading?: boolean;
   userRole?: string;
 }
@@ -58,6 +72,7 @@ export default function AutomatedLowStockNotification({
   onOpenThresholdModal,
   onExportCSV,
   onRefresh,
+  onTriggerVelocityAudit,
   isLoading = false,
   userRole = 'admin'
 }: AutomatedLowStockNotificationProps) {
@@ -65,7 +80,7 @@ export default function AutomatedLowStockNotification({
   const [isExpanded, setIsExpanded] = useState(true);
   const [isDismissed, setIsDismissed] = useState(false);
   const [filterQuery, setFilterQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'nearing' | 'breached' | 'out_of_stock'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'velocity' | 'nearing' | 'breached' | 'out_of_stock'>('all');
 
   // Process products to determine proximity status and buffer values
   const analyzedProducts = useMemo(() => {
@@ -75,7 +90,6 @@ export default function AutomatedLowStockNotification({
 
     return products.map(p => {
       const thresh = p.min_stock_level ?? p.threshold ?? globalThreshold;
-      // Nearing threshold: stock is above threshold but within 1.5x of threshold or within 5 units
       const nearThreshold = thresh <= 10 ? thresh + 5 : Math.floor(thresh * 1.5);
       
       let proximity_status: 'out_of_stock' | 'breached' | 'nearing' | 'healthy' = 'healthy';
@@ -88,26 +102,42 @@ export default function AutomatedLowStockNotification({
       }
 
       const buffer_to_threshold = p.stock_quantity - thresh;
-      const recommended_reorder = Math.max(10, (thresh * 2) - Math.max(0, p.stock_quantity));
+      const dailyVelocity = p.daily_velocity || 0;
+      const dynamicThreshold = p.dynamic_threshold || Math.ceil(dailyVelocity * (p.lead_days || 7));
+      const is_velocity_breached = p.is_velocity_breached || (dailyVelocity > 0 && p.stock_quantity <= dynamicThreshold);
+      const runway_days = dailyVelocity > 0 ? parseFloat((p.stock_quantity / dailyVelocity).toFixed(1)) : null;
+
+      const effectiveThreshold = Math.max(thresh, dynamicThreshold);
+      const recommended_reorder = Math.max(10, (effectiveThreshold * 2) - Math.max(0, p.stock_quantity));
 
       return {
         ...p,
         threshold: thresh,
         proximity_status,
         buffer_to_threshold,
+        daily_velocity: dailyVelocity,
+        dynamic_threshold: dynamicThreshold,
+        runway_days,
+        is_velocity_breached,
+        effective_threshold: effectiveThreshold,
         recommended_reorder
       };
     });
   }, [products, proximityData, globalThreshold]);
 
-  // Warning list includes out_of_stock, breached, AND products nearing their threshold
+  // Warning list includes out_of_stock, breached, products nearing threshold, AND products breaching velocity runway
   const alertList = useMemo(() => {
     return analyzedProducts.filter(p => 
       p.proximity_status === 'out_of_stock' || 
       p.proximity_status === 'breached' || 
-      p.proximity_status === 'nearing'
+      p.proximity_status === 'nearing' ||
+      p.is_velocity_breached
     );
   }, [analyzedProducts]);
+
+  const velocityItems = useMemo(() => {
+    return alertList.filter(p => p.is_velocity_breached);
+  }, [alertList]);
 
   const outOfStockItems = useMemo(() => {
     return alertList.filter(p => p.proximity_status === 'out_of_stock');
@@ -123,6 +153,7 @@ export default function AutomatedLowStockNotification({
 
   const filteredAlertList = useMemo(() => {
     return alertList.filter(p => {
+      if (statusFilter === 'velocity' && !p.is_velocity_breached) return false;
       if (statusFilter === 'out_of_stock' && p.proximity_status !== 'out_of_stock') return false;
       if (statusFilter === 'breached' && p.proximity_status !== 'breached') return false;
       if (statusFilter === 'nearing' && p.proximity_status !== 'nearing') return false;
@@ -245,7 +276,13 @@ export default function AutomatedLowStockNotification({
 
         {/* Real-time counters & Collapse controls */}
         <div className="flex flex-wrap items-center gap-2 self-start lg:self-center">
-          <div className="flex items-center gap-1.5 text-[11px] font-bold">
+          <div className="flex flex-wrap items-center gap-1.5 text-[11px] font-bold">
+            {velocityItems.length > 0 && (
+              <span className="px-2.5 py-1 bg-amber-500/25 text-amber-200 border border-amber-400/50 rounded-lg flex items-center gap-1 shadow-2xs font-black animate-pulse">
+                <Zap size={12} className="text-amber-300" />
+                <span>{velocityItems.length} Dynamic Velocity Alerts</span>
+              </span>
+            )}
             {nearingItems.length > 0 && (
               <span className="px-2.5 py-1 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded-lg flex items-center gap-1 shadow-2xs">
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
@@ -265,6 +302,19 @@ export default function AutomatedLowStockNotification({
           </div>
 
           <div className="flex items-center gap-1.5 ml-auto sm:ml-0">
+            {onTriggerVelocityAudit && userRole === 'admin' && (
+              <button
+                type="button"
+                onClick={onTriggerVelocityAudit}
+                disabled={isLoading}
+                className="px-2.5 py-1 bg-amber-600/30 hover:bg-amber-600/50 text-amber-200 rounded-lg text-xs font-bold transition flex items-center gap-1 border border-amber-500/40 cursor-pointer"
+                title="Run dynamic sales velocity evaluation"
+              >
+                <Zap size={12} className="text-amber-400" />
+                <span className="hidden sm:inline">Velocity Audit</span>
+              </button>
+            )}
+
             {onOpenThresholdModal && userRole === 'admin' && (
               <button
                 type="button"
@@ -327,6 +377,20 @@ export default function AutomatedLowStockNotification({
                 >
                   All Flagged ({alertList.length})
                 </button>
+                {velocityItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setStatusFilter('velocity')}
+                    className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                      statusFilter === 'velocity' 
+                        ? 'bg-amber-500 text-slate-950 font-black shadow-2xs' 
+                        : 'text-amber-800 hover:text-amber-950 hover:bg-amber-50'
+                    }`}
+                  >
+                    <Zap size={12} className="text-amber-600" />
+                    Dynamic Velocity Alerts ({velocityItems.length})
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setStatusFilter('nearing')}
@@ -402,8 +466,8 @@ export default function AutomatedLowStockNotification({
                   <th className="px-4 py-3">Product Name & SKU</th>
                   <th className="px-4 py-3">Category</th>
                   <th className="px-4 py-3 text-center">Current Stock</th>
-                  <th className="px-4 py-3 text-center">Reorder Point</th>
-                  <th className="px-4 py-3 text-center">Proximity / Buffer</th>
+                  <th className="px-4 py-3 text-center">Baseline & Dynamic Reorder Point</th>
+                  <th className="px-4 py-3 text-center">Buffer & Velocity Runway</th>
                   <th className="px-4 py-3 text-center">Alert Classification</th>
                   <th className="px-4 py-3 text-right">Replenishment Action</th>
                 </tr>
@@ -425,8 +489,9 @@ export default function AutomatedLowStockNotification({
                     const buffer = product.buffer_to_threshold ?? (product.stock_quantity - thresh);
                     const recommendedQty = product.recommended_reorder || Math.max(10, (thresh * 2) - Math.max(0, product.stock_quantity));
 
-                    // Ratio of current stock to reorder point
-                    const stockRatio = thresh > 0 ? Math.min(100, Math.round((product.stock_quantity / thresh) * 100)) : 100;
+                    // Ratio of current stock to effective reorder point
+                    const compThreshold = Math.max(thresh, product.dynamic_threshold || 0);
+                    const stockRatio = compThreshold > 0 ? Math.min(100, Math.round((product.stock_quantity / compThreshold) * 100)) : 100;
 
                     return (
                       <tr key={product.id} className="hover:bg-slate-50/80 transition-colors">
@@ -453,7 +518,7 @@ export default function AutomatedLowStockNotification({
                             <span className={`px-2.5 py-0.5 rounded-lg text-xs font-mono font-bold ${
                               isOut
                                 ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                                : isBreached
+                                : isBreached || product.is_velocity_breached
                                 ? 'bg-orange-100 text-orange-800 border border-orange-200'
                                 : 'bg-amber-100 text-amber-900 border border-amber-200'
                             }`}>
@@ -463,7 +528,7 @@ export default function AutomatedLowStockNotification({
                             <div className="w-16 bg-slate-100 h-1.5 rounded-full overflow-hidden">
                               <div
                                 className={`h-full rounded-full ${
-                                  isOut ? 'bg-rose-500' : isBreached ? 'bg-orange-500' : 'bg-amber-500'
+                                  isOut ? 'bg-rose-500' : (isBreached || product.is_velocity_breached) ? 'bg-orange-500' : 'bg-amber-500'
                                 }`}
                                 style={{ width: `${stockRatio}%` }}
                               />
@@ -471,46 +536,87 @@ export default function AutomatedLowStockNotification({
                           </div>
                         </td>
 
-                        <td className="px-4 py-3 text-center font-mono text-slate-700 font-bold text-xs">
-                          {thresh} units
+                        {/* Baseline & Dynamic Reorder Point */}
+                        <td className="px-4 py-3 text-center">
+                          <div className="flex flex-col items-center gap-1">
+                            <span className="font-mono text-slate-700 font-bold text-xs">{thresh} units</span>
+                            {product.daily_velocity !== undefined && product.daily_velocity > 0 && (
+                              <span 
+                                className="inline-flex items-center gap-1 text-[10px] text-amber-900 bg-amber-50 px-2 py-0.5 rounded-md border border-amber-200 font-bold"
+                                title={`Dynamic threshold based on ${product.lead_days || 7}-day lead buffer at ${product.daily_velocity} units/day`}
+                              >
+                                <Zap size={10} className="text-amber-600" />
+                                <span>Dynamic: {product.dynamic_threshold} units</span>
+                              </span>
+                            )}
+                          </div>
                         </td>
 
-                        {/* Proximity / Buffer Visual Indicator */}
+                        {/* Proximity / Buffer Visual Indicator & Velocity Runway */}
                         <td className="px-4 py-3 text-center">
-                          {isOut ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[11px]">
-                              0 units left (depleted)
-                            </span>
-                          ) : isBreached ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-800 font-bold text-[11px]">
-                              {Math.abs(buffer)} units deficit
-                            </span>
-                          ) : isNearing ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[11px]">
-                              +{buffer} units safety buffer
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">Healthy</span>
-                          )}
+                          <div className="flex flex-col items-center gap-1">
+                            {isOut ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-rose-50 border border-rose-200 text-rose-700 font-bold text-[11px]">
+                                0 units left (depleted)
+                              </span>
+                            ) : isBreached ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-orange-50 border border-orange-200 text-orange-800 font-bold text-[11px]">
+                                {Math.abs(buffer)} units deficit
+                              </span>
+                            ) : isNearing ? (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded bg-amber-50 border border-amber-200 text-amber-900 font-bold text-[11px]">
+                                +{buffer} units buffer
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xs">Healthy</span>
+                            )}
+
+                            {product.daily_velocity !== undefined && product.daily_velocity > 0 ? (
+                              <div className="flex items-center gap-1.5 text-[10px]">
+                                <span className="text-slate-500 font-medium">⚡ {product.daily_velocity}/day</span>
+                                {product.runway_days !== null && product.runway_days !== undefined && (
+                                  <span className={`px-1.5 py-0.2 rounded font-mono font-bold ${
+                                    product.runway_days <= 2 
+                                      ? 'bg-rose-100 text-rose-800 border border-rose-200' 
+                                      : product.runway_days <= (product.lead_days || 7) 
+                                      ? 'bg-amber-100 text-amber-900 border border-amber-200' 
+                                      : 'bg-slate-100 text-slate-700'
+                                  }`}>
+                                    ~{product.runway_days}d runway
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic">No recent sales</span>
+                            )}
+                          </div>
                         </td>
 
                         {/* Alert Status Pill */}
                         <td className="px-4 py-3 text-center">
-                          {isOut ? (
-                            <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                              Out of Stock
-                            </span>
-                          ) : isBreached ? (
-                            <span className="px-2.5 py-0.5 bg-orange-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                              Below Reorder Point
-                            </span>
-                          ) : isNearing ? (
-                            <span className="px-2.5 py-0.5 bg-amber-500 text-slate-950 rounded font-black uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                              Nearing Reorder Point
-                            </span>
-                          ) : (
-                            <span className="text-slate-400 text-xs">Safe</span>
-                          )}
+                          <div className="flex flex-col items-center gap-1">
+                            {product.is_velocity_breached && (
+                              <span className="px-2 py-0.5 bg-amber-500 text-slate-950 rounded font-black uppercase text-[10px] tracking-wider inline-flex items-center gap-1 shadow-2xs">
+                                <Zap size={10} className="fill-slate-950" />
+                                Velocity Alert
+                              </span>
+                            )}
+                            {isOut ? (
+                              <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
+                                Out of Stock
+                              </span>
+                            ) : isBreached ? (
+                              <span className="px-2.5 py-0.5 bg-orange-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
+                                Below Reorder Point
+                              </span>
+                            ) : isNearing ? (
+                              <span className="px-2.5 py-0.5 bg-amber-500 text-slate-950 rounded font-black uppercase text-[10px] tracking-wider inline-block shadow-2xs">
+                                Nearing Reorder Point
+                              </span>
+                            ) : !product.is_velocity_breached ? (
+                              <span className="text-slate-400 text-xs">Safe</span>
+                            ) : null}
+                          </div>
                         </td>
 
                         {/* Kebab Action Menu */}
@@ -524,6 +630,14 @@ export default function AutomatedLowStockNotification({
                                   sublabel: `Add stock buffer (+${recommendedQty} units)`,
                                   icon: <RefreshCw size={14} className="text-amber-600" />,
                                   onClick: () => onQuickRestock(product),
+                                } : null,
+                                userRole === 'admin' && product.is_velocity_breached ? {
+                                  label: `Reorder Velocity Buffer (+${product.recommended_reorder || product.dynamic_threshold} units)`,
+                                  sublabel: `Cover ${product.lead_days || 7}-day sales runway`,
+                                  icon: <Zap size={14} className="text-amber-500" />,
+                                  onClick: () => {
+                                    navigate(`/purchases?reorder_product_id=${product.id}&reorder_qty=${product.recommended_reorder || product.dynamic_threshold}&product_name=${encodeURIComponent(product.name)}&reason=velocity`);
+                                  },
                                 } : null,
                                 userRole === 'admin' ? {
                                   label: `Create Purchase Order (${recommendedQty} units)`,

@@ -8,7 +8,15 @@ import Database from 'better-sqlite3';
 import path from 'path';
 import fs from 'fs';
 import { v2 as cloudinary } from 'cloudinary';
-import { initChatDb, setupChatRoutes, setupChatSocket, WEBSOCKET_AUTH_KEY } from './chatService';
+import { initChatDb, setupChatRoutes, setupChatSocket, WEBSOCKET_AUTH_KEY } from './chatService.ts';
+
+// Global Process Crash Prevention
+process.on('uncaughtException', (err) => {
+  console.error('[Process] Uncaught exception prevented from crashing server:', err);
+});
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('[Process] Unhandled promise rejection handled:', reason);
+});
 
 // Cloudinary Configuration
 cloudinary.config({
@@ -37,6 +45,12 @@ if (isServerless) {
 }
 
 const db = new Database(dbPath);
+try {
+  db.pragma('journal_mode = WAL');
+  db.pragma('synchronous = NORMAL');
+} catch (pragmaErr) {
+  console.warn('Notice: SQLite WAL pragma initialization:', pragmaErr);
+}
 
 function addColumnOrIgnore(tableName: string, columnName: string, columnDef: string) {
   try {
@@ -681,6 +695,9 @@ function initDb() {
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('auto_clear_audit_logs', 'true')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('allow_staff_stock_adjustments', 'false')").run();
   db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('show_staff_stock_alerts', 'true')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('velocity_alerts_enabled', 'true')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('velocity_threshold_lead_days', '7')").run();
+  db.prepare("INSERT OR IGNORE INTO settings (key, value) VALUES ('velocity_lookback_days', '14')").run();
 
   // Seed default admin and staff
   const adminEmail = 'rabbi@ummis.com';
@@ -1653,8 +1670,113 @@ function checkStockAlerts() {
         `/purchases?reorder=${prod.id}`
       );
     }
+
+    // Dynamic sales-velocity threshold stock alerts
+    checkDynamicVelocityStockAlerts();
   } catch (err) {
     console.error('Error checking stock alerts:', err);
+  }
+}
+
+function createDynamicVelocityNotification(title: string, message: string, type: 'info' | 'warning' | 'danger' | 'success' = 'warning', link: string | null = null) {
+  try {
+    const existing: any = db.prepare(`
+      SELECT id FROM notifications 
+      WHERE title = ? AND is_read = 0 AND created_at >= datetime('now', '-3 hours')
+    `).get(title);
+
+    if (!existing) {
+      db.prepare(`
+        INSERT INTO notifications (title, message, type, link)
+        VALUES (?, ?, ?, ?)
+      `).run(title, message, type, link);
+    }
+  } catch (err) {
+    console.error('Failed to create velocity notification:', err);
+  }
+}
+
+function checkDynamicVelocityStockAlerts(): any[] {
+  try {
+    const velocitySetting: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_alerts_enabled'").get();
+    const velocityEnabled = velocitySetting ? velocitySetting.value === 'true' : true;
+    if (!velocityEnabled) return [];
+
+    const leadDaysSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_threshold_lead_days'").get();
+    const leadDays = leadDaysSetting ? parseInt(leadDaysSetting.value, 10) || 7 : 7;
+
+    const lookbackSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_lookback_days'").get();
+    const lookbackDays = lookbackSetting ? parseInt(lookbackSetting.value, 10) || 14 : 14;
+
+    const thresholdSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
+    const globalThreshold = thresholdSetting ? parseInt(thresholdSetting.value, 10) : 10;
+
+    const products = db.prepare(`
+      SELECT 
+        p.id, 
+        p.name, 
+        p.sku, 
+        p.category, 
+        p.stock_quantity, 
+        p.cost_price, 
+        p.selling_price, 
+        COALESCE(p.min_stock_level, ?) as static_threshold,
+        COALESCE(s_agg.total_qty_sold, 0) as total_qty_sold,
+        COALESCE(s_agg.distinct_sales, 0) as distinct_sales
+      FROM products p
+      LEFT JOIN (
+        SELECT 
+          si.product_id, 
+          SUM(si.quantity) as total_qty_sold,
+          COUNT(DISTINCT s.id) as distinct_sales
+        FROM sale_items si
+        JOIN sales s ON si.sale_id = s.id
+        WHERE s.created_at >= datetime('now', '-' || ? || ' days')
+        GROUP BY si.product_id
+      ) s_agg ON p.id = s_agg.product_id
+    `).all(globalThreshold, lookbackDays) as any[];
+
+    const breachedProducts: any[] = [];
+
+    for (const prod of products) {
+      const dailyVelocity = parseFloat((prod.total_qty_sold / lookbackDays).toFixed(2));
+      // Dynamic threshold: units needed to cover sales velocity during lead buffer
+      const dynamicThreshold = Math.ceil(dailyVelocity * leadDays);
+      const runwayDays = dailyVelocity > 0 ? parseFloat((prod.stock_quantity / dailyVelocity).toFixed(1)) : 999;
+      
+      // Breached if product is selling and current stock cannot cover the dynamic lead-time buffer
+      const isBreached = dailyVelocity > 0 && prod.stock_quantity <= dynamicThreshold;
+
+      if (isBreached) {
+        const reorderQty = Math.max(10, (dynamicThreshold * 2) - Math.max(0, prod.stock_quantity));
+        const isCritical = runwayDays <= 2 || prod.stock_quantity <= 0;
+        const alertType: 'warning' | 'danger' = isCritical ? 'danger' : 'warning';
+        const alertTitle = `Dynamic Velocity Stock Alert: ${prod.name}`;
+        const alertMessage = `Recent sales velocity is ${dailyVelocity} units/day. Current stock (${prod.stock_quantity} units) has only ${runwayDays} days of runway left, breaching the dynamic threshold of ${dynamicThreshold} units (${leadDays}-day lead buffer). Reorder recommended: ${reorderQty} units.`;
+
+        createDynamicVelocityNotification(
+          alertTitle,
+          alertMessage,
+          alertType,
+          `/purchases?reorder_product_id=${prod.id}&reorder_qty=${reorderQty}&product_name=${encodeURIComponent(prod.name)}`
+        );
+
+        breachedProducts.push({
+          ...prod,
+          daily_velocity: dailyVelocity,
+          dynamic_threshold: dynamicThreshold,
+          runway_days: runwayDays,
+          recommended_reorder: reorderQty,
+          lead_days: leadDays,
+          alert_type: alertType
+        });
+      }
+    }
+
+    return breachedProducts;
+  } catch (err) {
+    console.error('Error in checkDynamicVelocityStockAlerts:', err);
+    return [];
   }
 }
 
@@ -1716,10 +1838,14 @@ app.use(['/rest/v1', '/auth/v1', '/functions/v1', '/storage/v1'], async (req: an
 });
 
 // Normalize incoming API requests (e.g. from Vercel rewrites or direct serverless routing)
-// Only normalize when the request is intended as an API call, not an HTML page load navigation
+// Only normalize when the request is explicitly intended as an API call, not an HTML page load navigation
 app.use((req, res, next) => {
-  const isHtmlNavigation = req.method === 'GET' && req.headers.accept?.includes('text/html') && !req.headers['x-requested-with'];
-  if (!isHtmlNavigation && !req.url.startsWith('/api') && (
+  const acceptsHtml = req.headers.accept?.includes('text/html');
+  const secFetchMode = req.headers['sec-fetch-mode'];
+  const isHtmlNavigation = req.method === 'GET' && (acceptsHtml || secFetchMode === 'navigate' || !req.headers.accept) && !req.headers['x-requested-with'];
+  const isExplicitApiCall = req.headers['x-requested-with'] || req.headers.accept?.includes('application/json') || req.headers.authorization;
+
+  if (!isHtmlNavigation && isExplicitApiCall && !req.url.startsWith('/api') && (
     req.url.startsWith('/auth') ||
     req.url.startsWith('/products') ||
     req.url.startsWith('/sales') ||
@@ -1804,6 +1930,14 @@ const authenticate = (req: any, res: any, next: any) => {
 const requireAdmin = (req: any, res: any, next: any) => {
   if (req.user?.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
+  }
+  next();
+};
+
+const requireManagerOrAdmin = (req: any, res: any, next: any) => {
+  const role = req.user?.role;
+  if (role !== 'admin' && role !== 'manager') {
+    return res.status(403).json({ error: 'Store Manager or Admin clearance required.' });
   }
   next();
 };
@@ -2032,7 +2166,7 @@ app.get('/api/products/generate-sku', authenticate, (req: any, res) => {
   }
 });
 
-app.post('/api/products', authenticate, requireAdmin, (req, res) => {
+app.post('/api/products', authenticate, requireManagerOrAdmin, (req, res) => {
   let { name, sku, category, sub_category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
   
   if (!sku || sku.trim() === '') {
@@ -2050,7 +2184,7 @@ app.post('/api/products', authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.put('/api/products/:id', authenticate, requireAdmin, (req, res) => {
+app.put('/api/products/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   const { id } = req.params;
   const { name, sku, category, sub_category, cost_price, selling_price, barcode, brand, unit_of_measure, image_url, min_stock_level } = req.body;
   const oldProduct: any = db.prepare('SELECT selling_price FROM products WHERE id = ?').get(id);
@@ -2080,13 +2214,13 @@ app.get('/api/products/:id/price-history', authenticate, (req, res) => {
   }
 });
 
-app.delete('/api/products/:id', authenticate, requireAdmin, (req, res) => {
+app.delete('/api/products/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   db.prepare('DELETE FROM products WHERE id = ?').run(req.params.id);
   res.json({ success: true });
 });
 
 // Bulk Product Updates & Imports
-app.post('/api/products/bulk-update', authenticate, requireAdmin, (req: any, res) => {
+app.post('/api/products/bulk-update', authenticate, requireManagerOrAdmin, (req: any, res) => {
   const { updates } = req.body; // Array of product updates from CSV
   if (!updates || !Array.isArray(updates) || updates.length === 0) {
     return res.status(400).json({ error: 'No product update records provided.' });
@@ -2197,7 +2331,7 @@ app.post('/api/products/bulk-update', authenticate, requireAdmin, (req: any, res
   }
 });
 
-app.post('/api/products/bulk-import', authenticate, requireAdmin, (req: any, res) => {
+app.post('/api/products/bulk-import', authenticate, requireManagerOrAdmin, (req: any, res) => {
   const { products } = req.body;
   if (!products || !Array.isArray(products) || products.length === 0) {
     return res.status(400).json({ error: 'No product records provided for import.' });
@@ -2294,8 +2428,8 @@ app.post('/api/inventory/adjust', authenticate, (req: any, res) => {
     return res.status(400).json({ error: 'Reason must be at least 3 characters long' });
   }
 
-  // Permission check: if not admin, check if staff stock adjustments are allowed by admin
-  if (req.user.role !== 'admin') {
+  // Permission check: if not admin or manager, check if staff stock adjustments are allowed by admin
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
     const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
     if (allowSetting?.value !== 'true') {
       return res.status(403).json({ error: 'Permission denied: Manual stock adjustments by staff are disabled by administrator.' });
@@ -2323,8 +2457,8 @@ app.post('/api/inventory/adjust-bulk', authenticate, (req: any, res) => {
     return res.status(400).json({ error: 'Reason must be at least 3 characters long' });
   }
 
-  // Permission check: if not admin, check if staff stock adjustments are allowed by admin
-  if (req.user.role !== 'admin') {
+  // Permission check: if not admin or manager, check if staff stock adjustments are allowed by admin
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
     const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
     if (allowSetting?.value !== 'true') {
       return res.status(403).json({ error: 'Permission denied: Manual stock adjustments by staff are disabled by administrator.' });
@@ -2349,8 +2483,8 @@ app.post('/api/inventory/adjust-bulk', authenticate, (req: any, res) => {
 });
 
 app.get('/api/inventory/adjustments', authenticate, (req: any, res) => {
-  // Allow admin or staff (if staff adjustments are enabled)
-  if (req.user.role !== 'admin') {
+  // Allow admin, manager, or staff (if staff adjustments are enabled)
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
     const allowSetting: any = db.prepare("SELECT value FROM settings WHERE key = 'allow_staff_stock_adjustments'").get();
     if (allowSetting?.value !== 'true') {
       return res.status(403).json({ error: 'Permission denied: Stock adjustments log is restricted to administrators.' });
@@ -2369,18 +2503,21 @@ app.get('/api/inventory/adjustments', authenticate, (req: any, res) => {
 
 // Sales
 app.post('/api/sales', authenticate, (req: any, res) => {
-  const { items, customer_id, payment_method } = req.body; // items: { product_id, quantity, unit_price }[]
+  const { items, customer_id, payment_method, shift_id } = req.body; // items: { product_id, quantity, unit_price }[]
   if (!items || items.length === 0) return res.status(400).json({ error: 'No items' });
 
   const total_amount = items.reduce((sum: number, item: any) => sum + (item.quantity * item.unit_price), 0);
   
   const setupSale = db.transaction((saleItems) => {
-    // Check for active shift
-    const activeShift = db.prepare("SELECT id FROM shifts WHERE user_id = ? AND status = 'open'").get(req.user.id) as any;
-    const shiftId = activeShift ? activeShift.id : null;
+    // Check for active shift (use provided shift_id or query open shift for current user)
+    let finalShiftId = shift_id ? Number(shift_id) : null;
+    if (!finalShiftId) {
+      const activeShift = db.prepare("SELECT id FROM shifts WHERE user_id = ? AND status = 'open'").get(req.user.id) as any;
+      finalShiftId = activeShift ? activeShift.id : null;
+    }
 
     const saleResult = db.prepare('INSERT INTO sales (user_id, total_amount, customer_id, shift_id, payment_method) VALUES (?, ?, ?, ?, ?)').run(
-      req.user.id, total_amount, customer_id || null, shiftId, payment_method || 'Cash'
+      req.user.id, total_amount, customer_id || null, finalShiftId, payment_method || 'Cash'
     );
     const saleId = saleResult.lastInsertRowid;
 
@@ -2440,9 +2577,9 @@ app.get('/api/sales', authenticate, (req: any, res) => {
   const params: any[] = [];
   const conditions: string[] = [];
 
-  // Enforce role-based security: Non-admin staff ONLY see their own sales transactions.
-  // Admins can see all sales or filter by a specific staff member (userId).
-  if (req.user.role !== 'admin') {
+  // Enforce role-based security: Non-admin & Non-manager staff ONLY see their own sales transactions.
+  // Admins & Managers can see all store sales or filter by a specific staff member (userId).
+  if (req.user.role !== 'admin' && req.user.role !== 'manager') {
     conditions.push('sales.user_id = ?');
     params.push(req.user.id);
   } else if (userId) {
@@ -2503,7 +2640,7 @@ app.get('/api/sales/:id', authenticate, (req: any, res) => {
 
     if (!sale) return res.status(404).json({ error: 'Sale not found' });
 
-    if (req.user.role !== 'admin' && sale.user_id !== req.user.id) {
+    if (req.user.role !== 'admin' && req.user.role !== 'manager' && sale.user_id !== req.user.id) {
       return res.status(403).json({ error: 'Access denied. Staff members can only view their own sales.' });
     }
 
@@ -2834,6 +2971,13 @@ app.put('/api/purchases/:id/status', authenticate, (req: any, res) => {
         for (const item of items) {
           db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
         }
+        // Auto-sync shipments & invoices associated with this PO
+        try {
+          db.prepare(`UPDATE supplier_shipments SET status = 'verified', delivered_date = COALESCE(delivered_date, datetime('now')) WHERE po_id = ? AND status != 'verified'`).run(req.params.id);
+        } catch (e) {}
+        try {
+          db.prepare(`UPDATE supplier_invoices_ledger SET match_status = 'matched' WHERE po_id = ? AND match_status != 'matched'`).run(req.params.id);
+        } catch (e) {}
       } 
       // Handle reverting inventory if received PO is cancelled
       else if (oldStatus === 'received' && status === 'cancelled') {
@@ -2907,6 +3051,14 @@ app.post('/api/purchases/:id/confirm-receipt', authenticate, (req: any, res) => 
       for (const item of items) {
         db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(item.quantity, item.product_id);
       }
+
+      // Auto-sync shipments & invoices associated with this PO
+      try {
+        db.prepare(`UPDATE supplier_shipments SET status = 'verified', delivered_date = COALESCE(delivered_date, datetime('now')) WHERE po_id = ? AND status != 'verified'`).run(req.params.id);
+      } catch (e) {}
+      try {
+        db.prepare(`UPDATE supplier_invoices_ledger SET match_status = 'matched' WHERE po_id = ? AND match_status != 'matched'`).run(req.params.id);
+      } catch (e) {}
     })();
 
     // Real-time Notification
@@ -5448,13 +5600,22 @@ app.get('/api/reports/low-stock', authenticate, (req, res) => {
   }
 });
 
-// Visual Stock Proximity & Early Threshold Alert System
+// Visual Stock Proximity & Dynamic Sales Velocity Threshold Alert System
 app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
   try {
     const thresholdRow: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
     const globalThreshold = parseInt(thresholdRow?.value || '10', 10);
 
-    // Trigger notification check
+    const leadDaysRow: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_threshold_lead_days'").get();
+    const leadDays = parseInt(leadDaysRow?.value || '7', 10) || 7;
+
+    const lookbackRow: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_lookback_days'").get();
+    const lookbackDays = parseInt(lookbackRow?.value || '14', 10) || 14;
+
+    const velocityEnabledRow: any = db.prepare("SELECT value FROM settings WHERE key = 'velocity_alerts_enabled'").get();
+    const velocityAlertsEnabled = velocityEnabledRow ? velocityEnabledRow.value === 'true' : true;
+
+    // Trigger notification check for both static and dynamic thresholds
     checkStockAlerts();
 
     const items = db.prepare(`
@@ -5471,8 +5632,20 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
           p.brand, 
           p.image_url, 
           p.min_stock_level,
-          COALESCE(p.min_stock_level, ?) as threshold
+          COALESCE(p.min_stock_level, ?) as threshold,
+          COALESCE(s_agg.total_qty_sold, 0) as total_qty_sold,
+          COALESCE(s_agg.distinct_sales, 0) as distinct_sales
         FROM products p
+        LEFT JOIN (
+          SELECT 
+            si.product_id, 
+            SUM(si.quantity) as total_qty_sold,
+            COUNT(DISTINCT s.id) as distinct_sales
+          FROM sale_items si
+          JOIN sales s ON si.sale_id = s.id
+          WHERE s.created_at >= datetime('now', '-' || ? || ' days')
+          GROUP BY si.product_id
+        ) s_agg ON p.id = s_agg.product_id
       )
       SELECT 
         id, 
@@ -5487,6 +5660,8 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
         image_url, 
         min_stock_level,
         threshold,
+        total_qty_sold,
+        distinct_sales,
         CASE 
           WHEN stock_quantity <= 0 THEN 'out_of_stock'
           WHEN stock_quantity <= threshold THEN 'breached'
@@ -5509,14 +5684,33 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
           ELSE 4
         END ASC,
         stock_quantity ASC
-    `).all(globalThreshold);
+    `).all(globalThreshold, lookbackDays);
 
     const productsWithReorder = items.map((p: any) => {
-      const targetStock = p.threshold * 2;
+      const dailyVelocity = parseFloat((p.total_qty_sold / lookbackDays).toFixed(2));
+      const dynamicThreshold = Math.ceil(dailyVelocity * leadDays);
+      const runwayDays = dailyVelocity > 0 ? parseFloat((p.stock_quantity / dailyVelocity).toFixed(1)) : null;
+      const isVelocityBreached = dailyVelocity > 0 && p.stock_quantity <= dynamicThreshold;
+      const effectiveThreshold = Math.max(p.threshold, dynamicThreshold);
+
+      let velocityStatus: 'velocity_critical' | 'velocity_warning' | 'normal' = 'normal';
+      if (isVelocityBreached) {
+        velocityStatus = (runwayDays !== null && runwayDays <= 2) || p.stock_quantity <= 0 ? 'velocity_critical' : 'velocity_warning';
+      }
+
+      const targetStock = effectiveThreshold * 2;
       const recommendedReorder = Math.max(0, targetStock - p.stock_quantity);
+
       return {
         ...p,
-        recommended_reorder: recommendedReorder > 0 ? recommendedReorder : (p.threshold || 10)
+        daily_velocity: dailyVelocity,
+        dynamic_threshold: dynamicThreshold,
+        runway_days: runwayDays,
+        is_velocity_breached: isVelocityBreached,
+        velocity_status: velocityStatus,
+        effective_threshold: effectiveThreshold,
+        lead_days: leadDays,
+        recommended_reorder: recommendedReorder > 0 ? recommendedReorder : (effectiveThreshold || 10)
       };
     });
 
@@ -5524,9 +5718,13 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
     const breachedCount = productsWithReorder.filter((p: any) => p.proximity_status === 'breached').length;
     const nearingCount = productsWithReorder.filter((p: any) => p.proximity_status === 'nearing').length;
     const healthyCount = productsWithReorder.filter((p: any) => p.proximity_status === 'healthy').length;
+    const velocityBreachedCount = productsWithReorder.filter((p: any) => p.is_velocity_breached).length;
 
     res.json({
       globalThreshold,
+      leadDays,
+      lookbackDays,
+      velocityAlertsEnabled,
       products: productsWithReorder,
       counts: {
         total: productsWithReorder.length,
@@ -5534,11 +5732,103 @@ app.get('/api/reports/stock-threshold-proximity', authenticate, (req, res) => {
         breached: breachedCount,
         nearing: nearingCount,
         healthy: healthyCount,
-        action_required: outOfStockCount + breachedCount + nearingCount
+        velocity_breached: velocityBreachedCount,
+        action_required: outOfStockCount + breachedCount + nearingCount + velocityBreachedCount
       }
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Dedicated dynamic velocity stock alert trigger endpoint for Admins & Managers
+app.post('/api/reports/check-velocity-alerts', authenticate, requireManagerOrAdmin, (req: any, res) => {
+  try {
+    const breached = checkDynamicVelocityStockAlerts();
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Dynamic Velocity Stock Audit Triggered',
+      'stock',
+      `Manual velocity audit run: ${breached.length} products breached dynamic threshold.`
+    );
+    res.json({
+      success: true,
+      breachedCount: breached.length,
+      breachedProducts: breached,
+      message: breached.length > 0
+        ? `Sales velocity audit complete: ${breached.length} products fall below dynamic velocity threshold. Alert notifications dispatched to admins.`
+        : 'Sales velocity audit complete: All products comfortably satisfy dynamic velocity thresholds.'
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Global Search API: Search across products, sales/receipts, and customers from anywhere in the app
+app.get('/api/search', authenticate, (req: any, res) => {
+  try {
+    const q = ((req.query.q as string) || '').trim();
+    if (!q || q.length < 2) {
+      return res.json({ query: q, products: [], sales: [], customers: [], totalCount: 0 });
+    }
+
+    const wildcard = `%${q}%`;
+    const limit = Math.min(20, parseInt(req.query.limit as string, 10) || 8);
+
+    // 1. Search Products by name, SKU, barcode, category, or brand
+    const products = db.prepare(`
+      SELECT id, name, sku, barcode, category, brand, cost_price, selling_price, stock_quantity, min_stock_level, image_url
+      FROM products
+      WHERE name LIKE ? OR sku LIKE ? OR barcode LIKE ? OR category LIKE ? OR brand LIKE ?
+      ORDER BY 
+        CASE 
+          WHEN sku LIKE ? THEN 1
+          WHEN name LIKE ? THEN 2
+          ELSE 3
+        END,
+        name ASC
+      LIMIT ?
+    `).all(wildcard, wildcard, wildcard, wildcard, wildcard, `${q}%`, `${q}%`, limit);
+
+    // 2. Search Sales / Transactions
+    const sales = db.prepare(`
+      SELECT 
+        s.id, s.total_amount, s.payment_method, s.created_at,
+        u.name as user_name,
+        c.name as customer_name,
+        c.phone as customer_phone
+      FROM sales s
+      LEFT JOIN users u ON s.user_id = u.id
+      LEFT JOIN customers c ON s.customer_id = c.id
+      WHERE CAST(s.id AS TEXT) LIKE ? 
+         OR s.payment_method LIKE ?
+         OR u.name LIKE ?
+         OR c.name LIKE ?
+         OR c.phone LIKE ?
+      ORDER BY s.id DESC
+      LIMIT ?
+    `).all(wildcard, wildcard, wildcard, wildcard, wildcard, limit);
+
+    // 3. Search Customers
+    const customers = db.prepare(`
+      SELECT id, name, phone, email, balance, address, created_at
+      FROM customers
+      WHERE name LIKE ? OR phone LIKE ? OR email LIKE ?
+      ORDER BY name ASC
+      LIMIT ?
+    `).all(wildcard, wildcard, wildcard, limit);
+
+    res.json({
+      query: q,
+      products,
+      sales,
+      customers,
+      totalCount: products.length + sales.length + customers.length
+    });
+  } catch (err: any) {
+    console.error('Error executing global search:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
@@ -6817,7 +7107,7 @@ app.post('/api/categories', authenticate, (req: any, res) => {
   }
 });
 
-app.put('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
+app.put('/api/categories/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   try {
     const { name, parent_id } = req.body;
     db.prepare('UPDATE categories SET name = ?, parent_id = ? WHERE id = ?').run(name, parent_id || null, req.params.id);
@@ -6827,7 +7117,7 @@ app.put('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.delete('/api/categories/:id', authenticate, requireAdmin, (req, res) => {
+app.delete('/api/categories/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   try {
     const used = db.prepare('SELECT count(*) as count FROM products WHERE category = (SELECT name FROM categories WHERE id = ?)').get(req.params.id) as any;
     if (used && used.count > 0) {
@@ -6868,7 +7158,7 @@ app.get('/api/suppliers', authenticate, (req, res) => {
   }
 });
 
-app.post('/api/suppliers', authenticate, requireAdmin, (req, res) => {
+app.post('/api/suppliers', authenticate, requireManagerOrAdmin, (req, res) => {
   const { name, contact_person, email, phone, address } = req.body;
   try {
     const result = db.prepare('INSERT INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(name, contact_person || null, email || null, phone || null, address || null);
@@ -6878,7 +7168,7 @@ app.post('/api/suppliers', authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.put('/api/suppliers/:id', authenticate, requireAdmin, (req, res) => {
+app.put('/api/suppliers/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   const { name, contact_person, email, phone, address } = req.body;
   try {
     db.prepare('UPDATE suppliers_list SET name = ?, contact_person = ?, email = ?, phone = ?, address = ? WHERE id = ?')
@@ -6889,7 +7179,7 @@ app.put('/api/suppliers/:id', authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.delete('/api/suppliers/:id', authenticate, requireAdmin, (req, res) => {
+app.delete('/api/suppliers/:id', authenticate, requireManagerOrAdmin, (req, res) => {
   try {
     const supplier = db.prepare('SELECT name FROM suppliers_list WHERE id = ?').get(req.params.id) as any;
     if (!supplier) {
@@ -6960,7 +7250,7 @@ app.post('/api/customers', authenticate, (req: any, res) => {
 });
 
 // Expenses
-app.get('/api/expenses', authenticate, requireAdmin, (req, res) => {
+app.get('/api/expenses', authenticate, requireManagerOrAdmin, (req, res) => {
   try {
     const expenses = db.prepare('SELECT expenses.*, users.name as user_name FROM expenses LEFT JOIN users ON expenses.user_id = users.id ORDER BY expense_date DESC').all();
     res.json(expenses);
@@ -6969,7 +7259,7 @@ app.get('/api/expenses', authenticate, requireAdmin, (req, res) => {
   }
 });
 
-app.post('/api/expenses', authenticate, requireAdmin, (req: any, res) => {
+app.post('/api/expenses', authenticate, requireManagerOrAdmin, (req: any, res) => {
   const { description, amount } = req.body;
   try {
     const result = db.prepare('INSERT INTO expenses (description, amount, user_id) VALUES (?, ?, ?)').run(description, amount, req.user.id);
@@ -6987,7 +7277,7 @@ app.post('/api/expenses', authenticate, requireAdmin, (req: any, res) => {
   }
 });
 
-app.delete('/api/expenses/:id', authenticate, requireAdmin, (req: any, res) => {
+app.delete('/api/expenses/:id', authenticate, requireManagerOrAdmin, (req: any, res) => {
   try {
     const expense: any = db.prepare('SELECT * FROM expenses WHERE id = ?').get(req.params.id);
     if (!expense) return res.status(404).json({ error: 'Expense record not found' });
@@ -7289,7 +7579,7 @@ app.get('/api/shifts', authenticate, (req: any, res) => {
   }
 });
 
-app.put('/api/shifts/:id', authenticate, requireAdmin, (req: any, res) => {
+app.put('/api/shifts/:id', authenticate, requireManagerOrAdmin, (req: any, res) => {
   const shiftId = req.params.id;
   const { starting_cash, ending_cash, status, notes } = req.body;
   try {
@@ -8012,7 +8302,10 @@ app.put('/api/settings', authenticate, requireAdmin, (req: any, res) => {
     'audit_log_retention_days',
     'auto_clear_audit_logs',
     'allow_staff_stock_adjustments',
-    'show_staff_stock_alerts'
+    'show_staff_stock_alerts',
+    'velocity_threshold_lead_days',
+    'velocity_alerts_enabled',
+    'velocity_lookback_days'
   ];
 
   const updatedEntries: string[] = [];
@@ -8079,6 +8372,147 @@ app.get('/api/settings/backup', authenticate, requireAdmin, (req: any, res) => {
     });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Disaster Recovery: Database JSON Restore
+app.post('/api/settings/restore', authenticate, requireAdmin, (req: any, res) => {
+  const { settings, categories, suppliers, products } = req.body;
+  if (!settings && !categories && !suppliers && !products) {
+    return res.status(400).json({ error: 'Invalid backup file: Missing database tables payload.' });
+  }
+
+  let restoredSettings = 0;
+  let restoredCategories = 0;
+  let restoredSuppliers = 0;
+  let restoredProducts = 0;
+
+  try {
+    const restoreTx = db.transaction(() => {
+      // 1. Settings
+      if (Array.isArray(settings)) {
+        const stmt = db.prepare('INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = ?');
+        for (const s of settings) {
+          if (s.key && s.value !== undefined) {
+            stmt.run(s.key, String(s.value), String(s.value));
+            restoredSettings++;
+          }
+        }
+      }
+
+      // 2. Categories
+      if (Array.isArray(categories)) {
+        const insertCat = db.prepare('INSERT OR IGNORE INTO categories (name, parent_id) VALUES (?, ?)');
+        for (const c of categories) {
+          if (c.name) {
+            insertCat.run(c.name.trim(), c.parent_id || null);
+            restoredCategories++;
+          }
+        }
+      }
+
+      // 3. Suppliers
+      if (Array.isArray(suppliers)) {
+        for (const s of suppliers) {
+          if (s.name) {
+            try {
+              const existingSupp: any = db.prepare('SELECT id FROM suppliers_list WHERE LOWER(name) = LOWER(?)').get(s.name.trim());
+              if (existingSupp) {
+                db.prepare(`
+                  UPDATE suppliers_list SET
+                    contact_person = COALESCE(?, contact_person),
+                    email = COALESCE(?, email),
+                    phone = COALESCE(?, phone),
+                    address = COALESCE(?, address)
+                  WHERE id = ?
+                `).run(s.contact_person || null, s.email || null, s.phone || null, s.address || null, existingSupp.id);
+              } else {
+                db.prepare('INSERT INTO suppliers_list (name, contact_person, email, phone, address) VALUES (?, ?, ?, ?, ?)').run(
+                  s.name.trim(), s.contact_person || null, s.email || null, s.phone || null, s.address || null
+                );
+              }
+              restoredSuppliers++;
+            } catch (err) {}
+          }
+        }
+      }
+
+      // 4. Products
+      if (Array.isArray(products)) {
+        for (const p of products) {
+          if (!p.name) continue;
+          let sku = p.sku || `SKU-${Math.random().toString(36).substring(2, 7).toUpperCase()}`;
+          const existing: any = db.prepare('SELECT id, selling_price, stock_quantity FROM products WHERE sku = ?').get(sku);
+          if (existing) {
+            db.prepare(`
+              UPDATE products SET
+                name = COALESCE(?, name),
+                category = COALESCE(?, category),
+                cost_price = COALESCE(?, cost_price),
+                selling_price = COALESCE(?, selling_price),
+                stock_quantity = COALESCE(?, stock_quantity),
+                barcode = COALESCE(?, barcode),
+                brand = COALESCE(?, brand),
+                unit_of_measure = COALESCE(?, unit_of_measure),
+                min_stock_level = COALESCE(?, min_stock_level)
+              WHERE id = ?
+            `).run(
+              p.name, p.category || null, p.cost_price !== undefined ? Number(p.cost_price) : null,
+              p.selling_price !== undefined ? Number(p.selling_price) : null,
+              p.stock_quantity !== undefined ? Number(p.stock_quantity) : null,
+              p.barcode || null, p.brand || null, p.unit_of_measure || null,
+              p.min_stock_level !== undefined ? Number(p.min_stock_level) : null,
+              existing.id
+            );
+          } else {
+            db.prepare(`
+              INSERT INTO products (name, sku, category, cost_price, selling_price, stock_quantity, barcode, brand, unit_of_measure, min_stock_level)
+              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            `).run(
+              p.name, sku, p.category || 'General', Number(p.cost_price) || 0,
+              Number(p.selling_price) || 0, Number(p.stock_quantity) || 0,
+              p.barcode || null, p.brand || null, p.unit_of_measure || 'pcs',
+              p.min_stock_level !== undefined ? Number(p.min_stock_level) : 10
+            );
+          }
+          restoredProducts++;
+        }
+      }
+    });
+
+    restoreTx();
+
+    logAuditEvent(
+      req.user.id,
+      req.user.name,
+      'Restored System from JSON Backup',
+      'system',
+      `Restored snapshot: ${restoredProducts} products, ${restoredCategories} categories, ${restoredSuppliers} suppliers, ${restoredSettings} settings entries.`,
+      getClientIp(req)
+    );
+
+    createNotification(
+      'System Database Restored',
+      `Administrator ${req.user.name} restored database snapshot (${restoredProducts} products restored).`,
+      'success',
+      '/settings'
+    );
+
+    checkStockAlerts();
+
+    res.json({
+      success: true,
+      message: 'Database snapshot successfully restored.',
+      restored: {
+        settings: restoredSettings,
+        categories: restoredCategories,
+        suppliers: restoredSuppliers,
+        products: restoredProducts
+      }
+    });
+  } catch (err: any) {
+    console.error('Error restoring database backup:', err);
+    res.status(500).json({ error: 'Failed to restore database: ' + err.message });
   }
 });
 
@@ -8241,14 +8675,14 @@ async function startServer() {
     console.error('Startup automated maintenance error:', e);
   }
 
-  // Background service: Continuously monitor product stock levels every 15s
+  // Background service: Continuously monitor product stock levels every 5 minutes
   setInterval(() => {
     try {
       checkStockAlerts();
     } catch (e) {
       console.error('Background low stock check error:', e);
     }
-  }, 15000);
+  }, 300000);
 
   // Guarantee that unhandled /api/* and Supabase proxy endpoints NEVER fall through to Vite SPA index.html
   app.all(['/api', '/api/*', '/rest/v1', '/rest/v1/*', '/auth/v1', '/auth/v1/*', '/functions/v1/*', '/storage/v1/*'], (req, res) => {
@@ -8273,7 +8707,7 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true, hmr: { server: httpServer } },
+      server: { middlewareMode: true, hmr: false },
       appType: "spa",
     });
     app.use(vite.middlewares);

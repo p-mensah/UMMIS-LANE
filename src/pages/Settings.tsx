@@ -1,10 +1,11 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { fetchApi } from '../lib/api';
 import { useNotifications } from '../context/NotificationContext';
 import { 
   Store, ShieldCheck, Database, Receipt, CheckCircle2, 
   Trash2, RefreshCw, SlidersHorizontal, Eye, Lock,
-  Save, Download, Building2, Phone, Mail, FileText
+  Save, Download, Upload, Building2, Phone, Mail, FileText,
+  TrendingUp, Zap, AlertTriangle
 } from 'lucide-react';
 import { CediSign } from '../components/common/CediSign';
 
@@ -31,6 +32,10 @@ export default function Settings() {
   const [threshold, setThreshold] = useState<number>(10);
   const [allowStaffAdjustments, setAllowStaffAdjustments] = useState<boolean>(false);
   const [showStaffStockAlerts, setShowStaffStockAlerts] = useState<boolean>(true);
+  const [velocityAlertsEnabled, setVelocityAlertsEnabled] = useState<boolean>(true);
+  const [velocityLeadDays, setVelocityLeadDays] = useState<number>(7);
+  const [velocityLookbackDays, setVelocityLookbackDays] = useState<number>(14);
+  const [isAuditingVelocity, setIsAuditingVelocity] = useState<boolean>(false);
 
   // Audit Logs & Retention
   const [retentionDays, setRetentionDays] = useState<number>(90);
@@ -44,8 +49,12 @@ export default function Settings() {
   const [cleaning, setCleaning] = useState(false);
   const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
 
-  // Backup State
+  // Backup & Restore State
   const [downloadingBackup, setDownloadingBackup] = useState(false);
+  const [restoringBackup, setRestoringBackup] = useState(false);
+  const [showRestoreModal, setShowRestoreModal] = useState(false);
+  const [stagedRestoreData, setStagedRestoreData] = useState<any | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const { addToast, confirmModal } = useNotifications();
 
@@ -68,6 +77,9 @@ export default function Settings() {
         if (data.receipt_footer) setReceiptFooter(data.receipt_footer);
 
         if (data.low_stock_threshold) setThreshold(parseInt(data.low_stock_threshold, 10));
+        if (data.velocity_threshold_lead_days) setVelocityLeadDays(parseInt(data.velocity_threshold_lead_days, 10));
+        if (data.velocity_lookback_days) setVelocityLookbackDays(parseInt(data.velocity_lookback_days, 10));
+        if (data.velocity_alerts_enabled !== undefined) setVelocityAlertsEnabled(data.velocity_alerts_enabled === 'true');
         if (data.audit_log_retention_days) setRetentionDays(parseInt(data.audit_log_retention_days, 10));
         if (data.auto_clear_audit_logs !== undefined) setAutoClear(data.auto_clear_audit_logs === 'true');
         if (data.allow_staff_stock_adjustments !== undefined) setAllowStaffAdjustments(data.allow_staff_stock_adjustments === 'true');
@@ -98,19 +110,46 @@ export default function Settings() {
           receipt_header: receiptHeader,
           receipt_footer: receiptFooter,
           low_stock_threshold: threshold,
+          velocity_threshold_lead_days: velocityLeadDays,
+          velocity_lookback_days: velocityLookbackDays,
+          velocity_alerts_enabled: velocityAlertsEnabled,
           audit_log_retention_days: retentionDays,
           auto_clear_audit_logs: autoClear,
           allow_staff_stock_adjustments: allowStaffAdjustments,
           show_staff_stock_alerts: showStaffStockAlerts
         })
       });
-      setMessage('Store profile, financial parameters, and security settings saved successfully.');
-      addToast('Store profile, financial parameters, and security settings saved successfully.', 'success');
+      setMessage('Store profile, dynamic velocity thresholds, and security settings saved successfully.');
+      addToast('Store profile, dynamic velocity thresholds, and security settings saved successfully.', 'success');
       setTimeout(() => setMessage(''), 4000);
     } catch (err: any) {
       addToast(err.message || 'Failed to save settings', 'error');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleTriggerVelocityAudit = async () => {
+    setIsAuditingVelocity(true);
+    try {
+      const res = await fetchApi('/reports/check-velocity-alerts', { method: 'POST' });
+      if (res?.breachedCount > 0) {
+        addToast({
+          title: 'Dynamic Velocity Stock Alert',
+          message: `${res.breachedCount} product(s) fell below dynamic sales-velocity thresholds. Notifications generated for administration.`,
+          type: 'warning'
+        });
+      } else {
+        addToast({
+          title: 'Stock Velocity Optimal',
+          message: 'All inventory items have sufficient stock runway covering dynamic sales velocity buffers.',
+          type: 'success'
+        });
+      }
+    } catch (err: any) {
+      addToast('Failed to execute velocity audit: ' + (err.message || 'Error'), 'error');
+    } finally {
+      setIsAuditingVelocity(false);
     }
   };
 
@@ -177,6 +216,61 @@ export default function Settings() {
     }
   };
 
+  const handleFileSelected = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const parsed = JSON.parse(event.target?.result as string);
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Invalid JSON format.');
+        }
+        if (!parsed.products && !parsed.settings && !parsed.categories && !parsed.suppliers) {
+          throw new Error('File does not contain valid Retail OS backup tables (products, categories, suppliers, or settings).');
+        }
+        setStagedRestoreData(parsed);
+        setShowRestoreModal(true);
+      } catch (err: any) {
+        addToast(err.message || 'Failed to parse backup JSON file.', 'error');
+      } finally {
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
+  };
+
+  const handleConfirmRestore = async () => {
+    if (!stagedRestoreData) return;
+    setRestoringBackup(true);
+    try {
+      const res = await fetchApi('/settings/restore', {
+        method: 'POST',
+        body: JSON.stringify(stagedRestoreData)
+      });
+      addToast(
+        `Database restored successfully! Restored ${res.restored.products} products, ${res.restored.categories} categories, ${res.restored.suppliers} suppliers.`,
+        'success'
+      );
+      setShowRestoreModal(false);
+      setStagedRestoreData(null);
+
+      // Refresh store settings
+      const data = await fetchApi('/settings');
+      if (data.store_name) setStoreName(data.store_name);
+      if (data.store_tagline) setStoreTagline(data.store_tagline);
+      if (data.store_address) setStoreAddress(data.store_address);
+      if (data.store_phone) setStorePhone(data.store_phone);
+      if (data.store_email) setStoreEmail(data.store_email);
+      if (data.store_tin) setStoreTin(data.store_tin);
+    } catch (err: any) {
+      addToast(err.message || 'Failed to restore database.', 'error');
+    } finally {
+      setRestoringBackup(false);
+    }
+  };
+
   if (loading) return (
     <div className="flex items-center justify-center min-h-[300px]">
       <RefreshCw className="animate-spin text-blue-600 mr-2" size={20} />
@@ -186,6 +280,15 @@ export default function Settings() {
 
   return (
     <div className="space-y-6 max-w-4xl pb-12">
+      {/* Hidden File Input for JSON Database Restore */}
+      <input 
+        type="file" 
+        ref={fileInputRef} 
+        onChange={handleFileSelected} 
+        accept=".json,application/json" 
+        className="hidden" 
+      />
+
       {/* Page Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -194,19 +297,35 @@ export default function Settings() {
           </div>
           <div>
             <h1 className="text-[20px] font-bold text-slate-900 tracking-tight">Store Settings & Configuration</h1>
-            <p className="text-[12px] text-slate-500 font-medium">Manage store profile, tax/currency, POS receipt customization, and system backups</p>
+            <p className="text-[12px] text-slate-500 font-medium">Manage store profile, tax/currency, POS receipt customization, and disaster recovery</p>
           </div>
         </div>
 
-        <button
-          type="button"
-          onClick={handleDownloadBackup}
-          disabled={downloadingBackup}
-          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center gap-2 border border-slate-300 self-start sm:self-auto"
-        >
-          {downloadingBackup ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
-          <span>{downloadingBackup ? 'Exporting...' : 'Export Database Backup'}</span>
-        </button>
+        <div className="flex items-center gap-2 flex-wrap self-start sm:self-auto">
+          {/* Restore Database from JSON */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={restoringBackup}
+            className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-amber-300 shadow-2xs cursor-pointer active:scale-95"
+            title="Restore store catalog, suppliers, and settings from a JSON backup file"
+          >
+            {restoringBackup ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+            <span>Restore JSON Backup</span>
+          </button>
+
+          {/* Export Database Backup */}
+          <button
+            type="button"
+            onClick={handleDownloadBackup}
+            disabled={downloadingBackup}
+            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border border-slate-300 shadow-2xs cursor-pointer active:scale-95"
+            title="Download full JSON database snapshot"
+          >
+            {downloadingBackup ? <RefreshCw size={14} className="animate-spin" /> : <Download size={14} />}
+            <span>{downloadingBackup ? 'Exporting...' : 'Export Backup'}</span>
+          </button>
+        </div>
       </div>
 
       <form onSubmit={handleSave} className="space-y-6">
@@ -444,15 +563,21 @@ export default function Settings() {
 
         {/* Inventory Thresholds Card */}
         <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
-          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2">
-            <Database size={16} className="text-blue-600" />
-            <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Inventory & Alert Thresholds</h2>
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Database size={16} className="text-blue-600" />
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Inventory & Dynamic Velocity Thresholds</h2>
+            </div>
+            <span className="px-2 py-0.5 bg-blue-50 text-blue-700 text-[10px] font-extrabold uppercase rounded border border-blue-200">
+              Smart Stock Governance
+            </span>
           </div>
 
-          <div className="p-6 space-y-4">
+          <div className="p-6 space-y-6">
+            {/* Standard Static Threshold */}
             <div>
               <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
-                Low Stock Threshold (Global Standard)
+                Static Low Stock Threshold (Global Baseline Units)
               </label>
               <div className="max-w-xs">
                 <input 
@@ -461,12 +586,99 @@ export default function Settings() {
                   required 
                   value={threshold} 
                   onChange={e => setThreshold(parseInt(e.target.value, 10) || 0)}
-                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
                 />
               </div>
               <p className="text-[11px] text-slate-400 mt-1.5 leading-relaxed">
-                Products with stock quantities equal to or below this threshold trigger automated visual alerts on the dashboard and system notifications.
+                Products with stock quantities equal to or below this static value trigger standard visual warnings across the store.
               </p>
+            </div>
+
+            <hr className="border-slate-100" />
+
+            {/* Dynamic Sales Velocity Threshold Configuration */}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <TrendingUp size={15} className="text-emerald-600" />
+                    <span className="text-xs font-bold text-slate-900">Dynamic Velocity-Based Thresholds</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-0.5">
+                    Calculates daily sales velocity (units sold / lookback days) and alerts administrators when stock is insufficient to cover lead-time replenishment runway.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleTriggerVelocityAudit}
+                  disabled={isAuditingVelocity}
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-1.5 cursor-pointer shrink-0 disabled:opacity-50 shadow-2xs"
+                  title="Run sales velocity evaluation and generate notifications"
+                >
+                  <RefreshCw size={12} className={isAuditingVelocity ? 'animate-spin' : ''} />
+                  <span>{isAuditingVelocity ? 'Evaluating...' : 'Run Velocity Audit'}</span>
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                    Lead-Time Safety Cover (Buffer Days)
+                  </label>
+                  <input 
+                    type="number" 
+                    min={1}
+                    max={60}
+                    value={velocityLeadDays} 
+                    onChange={e => setVelocityLeadDays(parseInt(e.target.value, 10) || 7)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Dynamic threshold = Daily sales velocity × Buffer days (default: 7 days cover).
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                    Velocity Lookback Period
+                  </label>
+                  <select
+                    value={velocityLookbackDays}
+                    onChange={e => setVelocityLookbackDays(parseInt(e.target.value, 10) || 14)}
+                    className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-blue-500 shadow-2xs bg-white"
+                  >
+                    <option value={7}>Last 7 Days (Fast response to sudden spikes)</option>
+                    <option value={14}>Last 14 Days (Balanced smoothing - Recommended)</option>
+                    <option value={30}>Last 30 Days (Monthly stable average)</option>
+                  </select>
+                  <p className="text-[10px] text-slate-400 mt-1">
+                    Historical window used to compute average daily sales velocity per SKU.
+                  </p>
+                </div>
+              </div>
+
+              {/* Dynamic Velocity Alert Toggle */}
+              <div className="flex items-start justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/50 hover:bg-slate-50 transition-colors">
+                <div className="pr-4">
+                  <div className="flex items-center gap-2">
+                    <Zap size={15} className={velocityAlertsEnabled ? 'text-amber-500' : 'text-slate-400'} />
+                    <span className="text-xs font-bold text-slate-900">Alert Admins When Stock Falls Below Dynamic Velocity Threshold</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Automatically dispatches real-time alerts and dashboard notifications to administrators whenever an active product's sales velocity outpaces its inventory runway.
+                  </p>
+                </div>
+
+                <label className="relative inline-flex items-center cursor-pointer shrink-0 mt-0.5">
+                  <input
+                    type="checkbox"
+                    checked={velocityAlertsEnabled}
+                    onChange={e => setVelocityAlertsEnabled(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-amber-500"></div>
+                </label>
+              </div>
             </div>
           </div>
         </div>
@@ -627,6 +839,81 @@ export default function Settings() {
           </button>
         </div>
       </form>
+
+      {/* Restore Database Confirmation Modal */}
+      {showRestoreModal && stagedRestoreData && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden">
+            <div className="p-6 text-center bg-amber-50/70 border-b border-amber-200">
+              <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={24} />
+              </div>
+              <h2 className="text-base font-black text-slate-900 tracking-tight">Restore Database Snapshot</h2>
+              <p className="text-xs text-slate-600 mt-1">
+                Verify snapshot contents before merging into database
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div className="grid grid-cols-2 gap-3 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Products</span>
+                  <div className="text-sm font-black text-slate-800">
+                    {Array.isArray(stagedRestoreData.products) ? `${stagedRestoreData.products.length} Items` : 'None'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Categories</span>
+                  <div className="text-sm font-black text-slate-800">
+                    {Array.isArray(stagedRestoreData.categories) ? `${stagedRestoreData.categories.length} Categories` : 'None'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Suppliers</span>
+                  <div className="text-sm font-black text-slate-800">
+                    {Array.isArray(stagedRestoreData.suppliers) ? `${stagedRestoreData.suppliers.length} Suppliers` : 'None'}
+                  </div>
+                </div>
+                <div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase">Store Settings</span>
+                  <div className="text-sm font-black text-slate-800">
+                    {stagedRestoreData.settings ? `${Object.keys(stagedRestoreData.settings).length} Config Keys` : 'None'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="p-3 bg-red-50/60 border border-red-200 rounded-xl text-red-800 text-[11px] leading-relaxed">
+                <strong>Disaster Recovery Warning:</strong> Restoring this backup will merge or update existing product stock, prices, category records, and store settings with the values in this snapshot file.
+              </div>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmRestore}
+                  disabled={restoringBackup}
+                  className="w-full sm:flex-1 py-2.5 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {restoringBackup ? <RefreshCw size={14} className="animate-spin" /> : <Upload size={14} />}
+                  <span>{restoringBackup ? 'Restoring Snapshot...' : 'Confirm & Restore'}</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowRestoreModal(false);
+                    setStagedRestoreData(null);
+                  }}
+                  disabled={restoringBackup}
+                  className="w-full sm:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
     </div>
   );
 }

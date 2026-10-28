@@ -1,10 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
+import { useNotifications } from '../context/NotificationContext';
 import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert } from 'lucide-react';
 
 export default function Adjustments() {
   const { user } = useAuth();
+  const { addToast } = useNotifications();
   const [adjustments, setAdjustments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,8 +26,8 @@ export default function Adjustments() {
   // Toast feedback
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
 
-  // Strictly restrict adjustments to admin role
-  const canAdjustStock = user?.role === 'admin';
+  // Allow admin, manager, or authorized staff to adjust stock
+  const canAdjustStock = user?.role === 'admin' || user?.role === 'manager' || allowStaffAdjustments;
 
   useEffect(() => {
     loadData();
@@ -54,12 +56,12 @@ export default function Adjustments() {
   const handleSubmitAdjustment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!canAdjustStock) {
-      alert('Permission Denied: Staff stock adjustments are disabled by administrator.');
+      addToast('Permission Denied: Staff stock adjustments are disabled by administrator.', 'error');
       return;
     }
 
     if (!selectedProductId) {
-      alert('Please select a product to adjust.');
+      addToast('Please select a product to adjust.', 'warning');
       return;
     }
 
@@ -67,12 +69,6 @@ export default function Adjustments() {
     if (!prod) return;
 
     const qtyChange = adjustmentType === 'add' ? Math.abs(quantity) : -Math.abs(quantity);
-
-    if (adjustmentType === 'deduct' && Math.abs(quantity) > prod.stock_quantity) {
-      if (!confirm(`Warning: Deducting ${quantity} items will result in negative stock (Current: ${prod.stock_quantity}). Do you want to proceed?`)) {
-        return;
-      }
-    }
 
     setIsSubmitting(true);
     try {
@@ -85,10 +81,12 @@ export default function Adjustments() {
         })
       });
 
+      const successMsg = `Successfully adjusted stock for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units)`;
       setFeedback({ 
         type: 'success', 
-        message: `Successfully adjusted stock for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units)` 
+        message: successMsg
       });
+      addToast(successMsg, 'success');
 
       setShowModal(false);
       setSelectedProductId('');
@@ -96,7 +94,7 @@ export default function Adjustments() {
       setNotes('');
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to submit stock adjustment');
+      addToast(err.message || 'Failed to submit stock adjustment', 'error');
     } finally {
       setIsSubmitting(false);
     }

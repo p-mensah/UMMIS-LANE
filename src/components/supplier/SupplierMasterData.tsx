@@ -18,6 +18,7 @@ import {
   CheckCircle2
 } from 'lucide-react';
 import { useFormValidation, validators } from '../../lib/validation';
+import { useNotifications } from '../../context/NotificationContext';
 import { FormField, ValidatedInput, ValidatedSelect } from '../common/FormField';
 
 interface SupplierRecord {
@@ -54,6 +55,7 @@ export default function SupplierMasterData({
   onSaveMasterData,
   userRole = 'admin'
 }: SupplierMasterDataProps) {
+  const { addToast } = useNotifications();
   const [isEditing, setIsEditing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
@@ -125,9 +127,10 @@ export default function SupplierMasterData({
     setIsSaving(true);
     try {
       await onSaveMasterData(formValues);
+      addToast('Supplier master profile updated successfully.', 'success');
       setIsEditing(false);
     } catch (err: any) {
-      alert('Error updating master data: ' + err.message);
+      addToast('Error updating master data: ' + err.message, 'error');
     } finally {
       setIsSaving(false);
     }

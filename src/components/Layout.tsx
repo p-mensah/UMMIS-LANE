@@ -13,6 +13,7 @@ import { useChat } from '../context/ChatContext';
 import NotificationBell from './NotificationBell';
 import ProfileModal from './ProfileModal';
 import Sidebar from './Sidebar';
+import GlobalSearchModal from './GlobalSearchModal';
 import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
@@ -67,13 +68,27 @@ export default function Layout({ children }: { children: React.ReactNode }) {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isNavCollapsed, setIsNavCollapsed] = useState(false);
   const [showProfileModal, setShowProfileModal] = useState(false);
+  const [showGlobalSearchModal, setShowGlobalSearchModal] = useState(false);
 
-  // Global search state
-  const [searchQuery, setSearchQuery] = useState('');
-  const [searchResults, setSearchResults] = useState<{ products: any[]; customers: any[]; transactions: any[] }>({ products: [], customers: [], transactions: [] });
-  const [isSearching, setIsSearching] = useState(false);
-  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
-  const searchRef = useRef<HTMLDivElement>(null);
+  // Global keyboard shortcut for search (Cmd+K / Ctrl+K / forward-slash)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && (e.key === 'k' || e.key === 'K')) {
+        e.preventDefault();
+        setShowGlobalSearchModal(prev => !prev);
+      } else if (
+        e.key === '/' && 
+        document.activeElement?.tagName !== 'INPUT' && 
+        document.activeElement?.tagName !== 'TEXTAREA' &&
+        document.activeElement?.getAttribute('contenteditable') !== 'true'
+      ) {
+        e.preventDefault();
+        setShowGlobalSearchModal(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Auto-collapse sidebar on tablet viewports (768px – 1024px) to maximize screen real estate
   useEffect(() => {
@@ -99,57 +114,6 @@ export default function Layout({ children }: { children: React.ReactNode }) {
     window.addEventListener('toggle-nav-slider', handleSliderToggle);
     return () => window.removeEventListener('toggle-nav-slider', handleSliderToggle);
   }, []);
-
-  useEffect(() => {
-    const handleClickOutside = (e: MouseEvent) => {
-      if (searchRef.current && !searchRef.current.contains(e.target as Node)) {
-        setShowSearchDropdown(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  useEffect(() => {
-    if (!searchQuery.trim() || searchQuery.length < 2) {
-      setSearchResults({ products: [], customers: [], transactions: [] });
-      setIsSearching(false);
-      return;
-    }
-
-    const timer = setTimeout(async () => {
-      setIsSearching(true);
-      try {
-        const [prods, custs, trans] = await Promise.all([
-          fetchApi('/products').catch(() => []),
-          fetchApi('/customers').catch(() => []),
-          fetchApi('/reports/transactions').catch(() => [])
-        ]);
-
-        const q = searchQuery.toLowerCase();
-        const matchedProds = (Array.isArray(prods) ? prods : []).filter((p: any) => 
-          p.name?.toLowerCase().includes(q) || p.sku?.toLowerCase().includes(q) || p.category?.toLowerCase().includes(q)
-        ).slice(0, 5);
-
-        const matchedCusts = (Array.isArray(custs) ? custs : []).filter((c: any) => 
-          c.name?.toLowerCase().includes(q) || c.phone?.toLowerCase().includes(q) || c.email?.toLowerCase().includes(q)
-        ).slice(0, 5);
-
-        const matchedTrans = (Array.isArray(trans) ? trans : []).filter((t: any) => 
-          t.id?.toString().includes(q) || t.customer_name?.toLowerCase().includes(q) || t.payment_method?.toLowerCase().includes(q)
-        ).slice(0, 5);
-
-        setSearchResults({ products: matchedProds, customers: matchedCusts, transactions: matchedTrans });
-        setShowSearchDropdown(true);
-      } catch (err) {
-        console.error(err);
-      } finally {
-        setIsSearching(false);
-      }
-    }, 250);
-
-    return () => clearTimeout(timer);
-  }, [searchQuery]);
 
   const handleLogout = () => {
     logout();
@@ -242,101 +206,31 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </div>
           </div>
 
-          {/* Global Search Bar */}
-          <div className="relative flex-1 max-w-xs mx-3 hidden lg:block" ref={searchRef}>
-            <div className="relative">
-              <Search size={15} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
-              <input
-                type="text"
-                placeholder="Search products, customers, transactions..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                onFocus={() => { if (searchQuery.length >= 2) setShowSearchDropdown(true); }}
-                className="w-full pl-9 pr-8 py-1.5 bg-slate-100 focus:bg-white border border-slate-200 rounded-lg text-xs font-medium text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500 transition"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => { setSearchQuery(''); setShowSearchDropdown(false); }}
-                  className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600"
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
+          {/* Responsive Global Search Trigger (Desktop, Tablet, Mobile) */}
+          <div className="flex items-center mx-2 sm:mx-3">
+            {/* Desktop & Tablet Search Trigger Bar */}
+            <button
+              type="button"
+              onClick={() => setShowGlobalSearchModal(true)}
+              className="hidden sm:flex items-center gap-2.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-200/80 active:bg-slate-200 border border-slate-200 hover:border-slate-300 rounded-lg text-xs text-slate-500 transition-all cursor-pointer w-44 md:w-56 lg:w-72 shadow-2xs group"
+              title="Global search across products, sales, and customers (Cmd+K)"
+            >
+              <Search size={14} className="text-slate-400 group-hover:text-blue-600 transition-colors shrink-0" />
+              <span className="truncate font-medium text-slate-500 group-hover:text-slate-800 text-left">Search products, sales, customers...</span>
+              <kbd className="hidden lg:inline-flex items-center gap-0.5 ml-auto text-[10px] font-mono font-bold bg-white px-1.5 py-0.5 rounded border border-slate-200 text-slate-500 shadow-2xs shrink-0">
+                ⌘K
+              </kbd>
+            </button>
 
-            {/* Search Results Dropdown */}
-            {showSearchDropdown && (
-              <div className="absolute left-0 right-0 mt-2 bg-white rounded-xl shadow-2xl border border-slate-200 max-h-96 overflow-y-auto z-50 divide-y divide-slate-100">
-                {isSearching ? (
-                  <div className="p-4 text-center text-xs text-slate-400 font-medium">Searching records...</div>
-                ) : searchResults.products.length === 0 && searchResults.customers.length === 0 && searchResults.transactions.length === 0 ? (
-                  <div className="p-4 text-center text-xs text-slate-400 font-medium">No results found for "{searchQuery}"</div>
-                ) : (
-                  <div className="py-2">
-                    {/* Products */}
-                    {searchResults.products.length > 0 && (
-                      <div>
-                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Products ({searchResults.products.length})</div>
-                        {searchResults.products.map((p: any) => (
-                          <div 
-                            key={`prod-${p.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/products/${p.id}`); }}
-                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <Package size={14} className="text-blue-600 shrink-0" />
-                              <span className="font-bold text-slate-900 truncate">{p.name}</span>
-                              <span className="text-[10px] font-mono text-slate-400">SKU: {p.sku}</span>
-                            </div>
-                            <span className="font-black text-blue-600">₵{p.selling_price?.toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Customers */}
-                    {searchResults.customers.length > 0 && (
-                      <div>
-                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Customers ({searchResults.customers.length})</div>
-                        {searchResults.customers.map((c: any) => (
-                          <div 
-                            key={`cust-${c.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/customers?search=${encodeURIComponent(c.name)}`); }}
-                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <UserCheck size={14} className="text-emerald-600 shrink-0" />
-                              <span className="font-bold text-slate-900">{c.name}</span>
-                              <span className="text-[10px] text-slate-500">{c.phone || c.email}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Transactions */}
-                    {searchResults.transactions.length > 0 && (
-                      <div>
-                        <div className="px-3 py-1 bg-slate-50 text-[10px] font-black uppercase tracking-wider text-slate-500">Transactions ({searchResults.transactions.length})</div>
-                        {searchResults.transactions.map((t: any) => (
-                          <div 
-                            key={`trans-${t.id}`}
-                            onClick={() => { setShowSearchDropdown(false); setSearchQuery(''); navigate(`/transactions?id=${t.id}`); }}
-                            className="px-3 py-2 hover:bg-slate-50 cursor-pointer flex items-center justify-between text-xs"
-                          >
-                            <div className="flex items-center gap-2">
-                              <ArrowLeftRight size={14} className="text-indigo-600 shrink-0" />
-                              <span className="font-bold text-slate-900">Sale #{t.id} - {t.customer_name || 'Walk-in'}</span>
-                            </div>
-                            <span className="font-black text-slate-900">₵{t.total?.toFixed(2)}</span>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
-            )}
+            {/* Mobile Search Icon Button */}
+            <button
+              type="button"
+              onClick={() => setShowGlobalSearchModal(true)}
+              className="sm:hidden p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 active:bg-slate-200 rounded-lg transition-colors cursor-pointer"
+              title="Search products, sales, customers"
+            >
+              <Search size={19} />
+            </button>
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
@@ -405,6 +299,12 @@ export default function Layout({ children }: { children: React.ReactNode }) {
       <ProfileModal
         isOpen={showProfileModal}
         onClose={() => setShowProfileModal(false)}
+      />
+
+      {/* Global Command Palette / Search Modal (Products, Sales, Customers) */}
+      <GlobalSearchModal
+        isOpen={showGlobalSearchModal}
+        onClose={() => setShowGlobalSearchModal(false)}
       />
     </div>
   );

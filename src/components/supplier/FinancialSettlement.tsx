@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Percent
 } from 'lucide-react';
+import { useNotifications } from '../../context/NotificationContext';
 
 interface FinancialRecord {
   id: number;
@@ -39,6 +40,7 @@ export default function FinancialSettlement({
   onUpdateInvoiceStatus,
   userRole = 'admin'
 }: FinancialSettlementProps) {
+  const { addToast } = useNotifications();
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [editingPoId, setEditingPoId] = useState<number | null>(null);
   const [statusVal, setStatusVal] = useState<'unpaid' | 'partially_paid' | 'approved' | 'paid'>('unpaid');
@@ -69,9 +71,10 @@ export default function FinancialSettlement({
     setIsUpdating(true);
     try {
       await onUpdateInvoiceStatus(poId, statusVal, invoiceNoVal);
+      addToast('Invoice settlement status updated successfully.', 'success');
       setEditingPoId(null);
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to update invoice status', 'error');
     } finally {
       setIsUpdating(false);
     }

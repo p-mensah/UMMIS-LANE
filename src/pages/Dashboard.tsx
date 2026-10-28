@@ -9,7 +9,8 @@ import {
   ArrowUpRight, ArrowDownRight, Clock, Plus, ShieldAlert, Award,
   CheckCircle2, AlertCircle, Eye, Download, X, Search, RotateCcw,
   CreditCard, Truck, Layers, Filter, Check, ShieldCheck, Wallet, Store,
-  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare, Scale, Printer
+  Monitor, Globe, Trash2, Minus, Receipt, MessageSquare, Scale, Printer,
+  Upload, FileSpreadsheet
 } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import { useChat } from '../context/ChatContext';
@@ -22,6 +23,7 @@ import AutomatedLowStockNotification from '../components/AutomatedLowStockNotifi
 import RecentActivityPanel from '../components/RecentActivityPanel';
 import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
+import ProductImportModal from '../components/ProductImportModal';
 import RowActionMenu from '../components/common/RowActionMenu';
 import MiniPerformanceOverviewWidget from '../components/dashboard/MiniPerformanceOverviewWidget';
 import WeeklySalesTrendChart from '../components/dashboard/WeeklySalesTrendChart';
@@ -32,7 +34,7 @@ export default function Dashboard() {
   const { channels, totalUnread, onlineUsers, teamMembers, setActiveChannelId } = useChat();
 
   // Mode Selection
-  const [viewMode, setViewMode] = useState<'admin' | 'staff'>(user?.role === 'admin' ? 'admin' : 'staff');
+  const [viewMode, setViewMode] = useState<'admin' | 'staff'>(user?.role === 'admin' || user?.role === 'manager' ? 'admin' : 'staff');
 
   // Loading States
   const [loading, setLoading] = useState(true);
@@ -120,10 +122,15 @@ export default function Dashboard() {
   const [showCreatePoModal, setShowCreatePoModal] = useState(false);
   const [poPreselectedProduct, setPoPreselectedProduct] = useState<any>(null);
 
+  // Automated Bulk CSV Import Modal
+  const [showImportModal, setShowImportModal] = useState(false);
+  const [categories, setCategories] = useState<any[]>([]);
+
   useModalDismiss(showAdminReportsModal, () => setShowAdminReportsModal(false));
   useModalDismiss(showRestockModal, () => setShowRestockModal(false));
   useModalDismiss(showThresholdModal, () => setShowThresholdModal(false));
   useModalDismiss(showDailySummaryModal, () => setShowDailySummaryModal(false));
+  useModalDismiss(showImportModal, () => setShowImportModal(false));
   useModalDismiss(showCreatePoModal, () => {
     setShowCreatePoModal(false);
     setPoPreselectedProduct(null);
@@ -165,9 +172,10 @@ export default function Dashboard() {
       fetchApi('/settings').catch(() => ({})),
       fetchApi('/products').catch(() => []),
       fetchApi('/audit-logs?limit=5').catch(() => []),
-      isAdmin ? fetchApi('/inventory/adjustments').catch(() => []) : Promise.resolve([])
+      isAdmin ? fetchApi('/inventory/adjustments').catch(() => []) : Promise.resolve([]),
+      fetchApi('/categories').catch(() => [])
     ])
-      .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs]) => {
+      .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs, cats]) => {
          setSummary(summaryData);
          setLowStockProducts(lowStockData);
          setBestSellers(top);
@@ -185,6 +193,9 @@ export default function Dashboard() {
          }
          if (Array.isArray(adjs)) {
            setRecentAdjustments(adjs.slice(0, 6));
+         }
+         if (Array.isArray(cats)) {
+           setCategories(cats);
          }
          if (settingsData) {
            if (settingsData.low_stock_threshold) {
@@ -289,7 +300,7 @@ export default function Dashboard() {
   const handleQuickRestockSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedProductForRestock || restockQty <= 0) return;
-    if (user?.role !== 'admin' && !allowStaffAdjustments) {
+    if (user?.role !== 'admin' && user?.role !== 'manager' && !allowStaffAdjustments) {
       addToast('Permission Denied: Staff stock adjustments are disabled by administrator.', 'warning');
       return;
     }
@@ -329,6 +340,28 @@ export default function Dashboard() {
       addToast(err.message || 'Failed to update settings', 'error');
     } finally {
       setIsSavingThreshold(false);
+    }
+  };
+
+  const handleTriggerVelocityAudit = async () => {
+    try {
+      const res = await fetchApi('/reports/check-velocity-alerts', { method: 'POST' });
+      if (res?.breachedCount > 0) {
+        addToast({
+          title: 'Dynamic Velocity Stock Alert',
+          message: `${res.breachedCount} product(s) fell below dynamic sales velocity threshold. Alert notifications generated for administration.`,
+          type: 'warning'
+        });
+      } else {
+        addToast({
+          title: 'Sales Velocity Normal',
+          message: 'All inventory items have adequate stock runway covering dynamic sales velocity buffers.',
+          type: 'success'
+        });
+      }
+      loadDashboardData();
+    } catch (err: any) {
+      addToast('Failed to evaluate velocity: ' + (err.message || 'Error'), 'error');
     }
   };
 
@@ -378,6 +411,7 @@ export default function Dashboard() {
     showRestockModal || 
     showThresholdModal || 
     showDailySummaryModal || 
+    showImportModal ||
     selectedInvoiceSale
   );
 
@@ -398,30 +432,35 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 pb-12">
-      {/* Executive Header */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-200 pb-4">
-        <div>
-          <h1 className="text-2xl font-black text-slate-900 tracking-tight flex items-center gap-2">
-            Retail OS Overview
-          </h1>
+      {/* Executive Header - Mobile & Tablet Responsive */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+              Retail OS Overview
+            </h1>
+            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+              {(user?.role === 'admin' || user?.role === 'manager') ? (viewMode === 'admin' ? 'Executive Mode' : 'Cashier Mode') : `${user?.role || 'Staff'} Mode`}
+            </span>
+          </div>
           <p className="text-xs text-slate-500 font-medium">Real-time revenue monitoring, POS sales trends, stock alerts, and financial ledgers.</p>
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Admin vs Staff View Toggle */}
-          {user?.role === 'admin' && (
-            <div className="flex items-center bg-slate-100 p-1 rounded border border-slate-200">
+        <div className="flex flex-wrap items-center gap-2 sm:gap-2.5">
+          {/* Admin / Manager vs Staff View Toggle */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <div className="flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-lg border border-slate-200 text-xs">
               <button
                 onClick={() => setViewMode('admin')}
-                className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all ${
+                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 ${
                   viewMode === 'admin' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
-                Executive Admin
+                Executive View
               </button>
               <button
                 onClick={() => setViewMode('staff')}
-                className={`px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all ${
+                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 ${
                   viewMode === 'staff' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -430,44 +469,54 @@ export default function Dashboard() {
             </div>
           )}
 
-          {user?.role === 'admin' && (
+          {/* Automated Bulk CSV Product & Inventory Import */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
             <button
-              onClick={() => setShowCreatePoModal(true)}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
-              title="Create and issue a Purchase Order to supplier"
+              onClick={() => setShowImportModal(true)}
+              className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 border border-indigo-200 rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
+              title="Bulk upload and automated CSV parser for inventory & products"
             >
-              <Plus size={15} /> Create Purchase Order
+              <Upload size={14} className="text-indigo-600" />
+              <span>Import CSV</span>
             </button>
           )}
 
-          {user?.role === 'admin' && (
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <button
+              onClick={() => setShowCreatePoModal(true)}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
+              title="Create and issue a Purchase Order to supplier"
+            >
+              <Plus size={15} /> <span>Create PO</span>
+            </button>
+          )}
+
+          {(user?.role === 'admin' || user?.role === 'manager') && (
             <button
               onClick={() => setShowAdminReportsModal(true)}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
             >
-              <FileText size={15} /> Reports & Audits
+              <FileText size={15} /> <span className="hidden sm:inline">Reports & Audits</span><span className="sm:hidden">Reports</span>
             </button>
           )}
 
           <button
             onClick={handleOpenDailySummary}
-            className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs uppercase tracking-wider transition border border-slate-200 flex items-center gap-1.5"
+            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs uppercase tracking-wider transition border border-slate-200 flex items-center gap-1.5 min-h-[38px]"
           >
-            <FileText size={15} /> EOD Summary
+            <Receipt size={14} /> <span>EOD Summary</span>
           </button>
 
           <button
             onClick={loadDashboardData}
             disabled={loading}
-            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition border border-slate-200"
+            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition border border-slate-200 min-h-[38px] min-w-[38px] flex items-center justify-center cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
           </button>
         </div>
       </div>
-
-
 
       {/* ADMIN OVERVIEW VIEW */}
       {viewMode === 'admin' ? (
@@ -478,7 +527,7 @@ export default function Dashboard() {
             globalThreshold={globalThreshold}
             proximityData={stockProximityData}
             userRole={user?.role}
-            onQuickRestock={user?.role === 'admin' || allowStaffAdjustments ? (prod) => {
+            onQuickRestock={user?.role === 'admin' || user?.role === 'manager' || allowStaffAdjustments ? (prod) => {
               setSelectedProductForRestock(prod);
               setRestockQty(Math.max(10, ((prod.min_stock_level || globalThreshold) * 2) - prod.stock_quantity));
               setShowRestockModal(true);
@@ -490,90 +539,142 @@ export default function Dashboard() {
             onOpenThresholdModal={() => setShowThresholdModal(true)}
             onExportCSV={handleExportLowStockCSV}
             onRefresh={loadDashboardData}
+            onTriggerVelocityAudit={handleTriggerVelocityAudit}
             isLoading={loading}
           />
-          {/* PRIMARY BUSINESS KPI CARDS (Mobile snap-slider, desktop auto-fit grid) */}
-          <div className="space-y-1">
-            <div className="flex items-center justify-between sm:hidden px-1 text-[11px] font-bold text-slate-500">
-              <span>Performance Snapshot</span>
-              <span className="text-[10px] text-blue-600">Swipe Cards ↔</span>
-            </div>
-            <div className="flex sm:grid sm:grid-cols-[repeat(auto-fit,minmax(min(100%,230px),1fr))] overflow-x-auto snap-x snap-mandatory gap-3 sm:gap-4 pb-2 sm:pb-0 custom-scrollbar">
-              {/* Card 1: Today's Gross Sales */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-2 shrink-0 w-[84vw] max-w-[310px] sm:w-auto snap-start">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
-                  <span>Today's Gross Sales</span>
-                </div>
-                <div className="text-2xl font-black text-slate-900">
-                  {formatGHS(summary?.todaySales || 0)}
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
-                  <span>{summary?.todayCount || 0} order(s) completed</span>
-                  {summary?.percentChange !== undefined && (
-                    <span className={`flex items-center font-bold text-[11px] ${summary.percentChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
-                      {summary.percentChange >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-                      {Math.abs(summary.percentChange)}% vs Ytd
-                    </span>
-                  )}
-                </div>
-              </div>
 
-              {/* Card 2: Month Net Profit */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-2 shrink-0 w-[84vw] max-w-[310px] sm:w-auto snap-start">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
-                  <span>Monthly Net Profit</span>
-                  <TrendingUp size={18} className="text-emerald-600" />
-                </div>
-                <div className="text-2xl font-black text-emerald-700">
-                  {formatGHS(summary?.monthProfit || 0)}
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
-                  <span>Revenue: {formatGHS(summary?.monthSales || 0)}</span>
-                  <span className="font-bold text-slate-900">
-                    {summary?.monthSales > 0 ? ((summary.monthProfit / summary.monthSales) * 100).toFixed(1) : 0}% Margin
+          {/* PRIMARY BUSINESS KPI CARDS (2-col mobile, 2-col tablet, 4-col desktop) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+            {/* Card 1: Today's Gross Sales */}
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1 sm:space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
+                <span className="truncate">Today's Gross Sales</span>
+                <ShoppingCart size={15} className="text-blue-600 hidden sm:block shrink-0" />
+              </div>
+              <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">
+                {formatGHS(summary?.todaySales || 0)}
+              </div>
+              <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span className="truncate">{summary?.todayCount || 0} order(s)</span>
+                {summary?.percentChange !== undefined && (
+                  <span className={`flex items-center font-bold text-[10px] sm:text-[11px] shrink-0 ${summary.percentChange >= 0 ? 'text-emerald-600' : 'text-rose-600'}`}>
+                    {summary.percentChange >= 0 ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
+                    {Math.abs(summary.percentChange)}%
                   </span>
-                </div>
-              </div>
-
-              {/* Card 3: Active Shift Drawer Status */}
-              <div className="bg-white p-5 rounded-lg border border-slate-200 shadow-2xs space-y-2 shrink-0 w-[84vw] max-w-[310px] sm:w-auto snap-start">
-                <div className="flex items-center justify-between text-slate-500 text-[11px] font-black uppercase tracking-wider">
-                  <span>Shift Cash Status</span>
-                  <Clock size={18} className="text-indigo-600" />
-                </div>
-                <div className="text-2xl font-black text-slate-900">
-                  {summary?.activeShiftCount || 0} Open Shift(s)
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
-                  <span>Expected Cash: {formatGHS(summary?.openShiftsCashTotal || 0)}</span>
-                  <span className="font-bold text-indigo-600">Live Counter</span>
-                </div>
-              </div>
-
-              {/* Card 4: Low Stock Alert */}
-              <div className="bg-white p-5 rounded-lg border border-amber-200 bg-amber-50/30 shadow-2xs space-y-2 shrink-0 w-[84vw] max-w-[310px] sm:w-auto snap-start">
-                <div className="flex items-center justify-between text-amber-800 text-[11px] font-black uppercase tracking-wider">
-                  <span>Low Stock Urgency</span>
-                  <AlertTriangle size={18} className="text-amber-600" />
-                </div>
-                <div className="text-2xl font-black text-amber-900">
-                  {lowStockProducts.length} Product(s)
-                </div>
-                <div className="flex items-center justify-between text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
-                  <span>{lowStockProducts.filter(p => p.stock_quantity === 0).length} completely out of stock</span>
-                  <a 
-                    href="#low-stock-notification-system" 
-                    onClick={(e) => {
-                      e.preventDefault();
-                      document.getElementById('low-stock-notification-system')?.scrollIntoView({ behavior: 'smooth' });
-                    }}
-                    className="font-bold underline hover:text-amber-900 cursor-pointer"
-                  >
-                    Restock
-                  </a>
-                </div>
+                )}
               </div>
             </div>
+
+            {/* Card 2: Month Net Profit */}
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1 sm:space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
+                <span className="truncate">Monthly Net Profit</span>
+                <TrendingUp size={15} className="text-emerald-600 hidden sm:block shrink-0" />
+              </div>
+              <div className="text-lg sm:text-2xl font-black text-emerald-700 truncate">
+                {formatGHS(summary?.monthProfit || 0)}
+              </div>
+              <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span className="truncate">{formatGHS(summary?.monthSales || 0)}</span>
+                <span className="font-bold text-slate-900 shrink-0 text-[10px] sm:text-xs">
+                  {summary?.monthSales > 0 ? ((summary.monthProfit / summary.monthSales) * 100).toFixed(1) : 0}% Margin
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: Active Shift Drawer Status */}
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1 sm:space-y-2">
+              <div className="flex items-center justify-between text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
+                <span className="truncate">Shift Cash Status</span>
+                <Clock size={15} className="text-indigo-600 hidden sm:block shrink-0" />
+              </div>
+              <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">
+                {summary?.activeShiftCount || 0} Open Shift(s)
+              </div>
+              <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
+                <span className="truncate">Expected: {formatGHS(summary?.openShiftsCashTotal || 0)}</span>
+                <span className="font-bold text-indigo-600 shrink-0 text-[10px]">Live</span>
+              </div>
+            </div>
+
+            {/* Card 4: Low Stock Alert */}
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-amber-200 bg-amber-50/30 shadow-2xs space-y-1 sm:space-y-2">
+              <div className="flex items-center justify-between text-amber-800 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
+                <span className="truncate">Low Stock Urgency</span>
+                <AlertTriangle size={15} className="text-amber-600 hidden sm:block shrink-0" />
+              </div>
+              <div className="text-lg sm:text-2xl font-black text-amber-900 truncate">
+                {lowStockProducts.length} Product(s)
+              </div>
+              <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
+                <span className="truncate">{lowStockProducts.filter(p => p.stock_quantity === 0).length} out of stock</span>
+                <a 
+                  href="#low-stock-notification-system" 
+                  onClick={(e) => {
+                    e.preventDefault();
+                    document.getElementById('low-stock-notification-system')?.scrollIntoView({ behavior: 'smooth' });
+                  }}
+                  className="font-bold underline hover:text-amber-900 cursor-pointer shrink-0 text-[10px] sm:text-xs"
+                >
+                  Restock
+                </a>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Action Hub for Tablet & Mobile (Fast Navigation) */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <button
+              onClick={() => navigate('/sales')}
+              className="p-3 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-2.5 transition text-left cursor-pointer shadow-2xs"
+            >
+              <div className="p-2 bg-blue-100 text-blue-700 rounded-lg shrink-0">
+                <ShoppingCart size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-900 truncate">POS Checkout</div>
+                <div className="text-[10px] text-slate-500 truncate">Open Cash Register</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => setShowImportModal(true)}
+              className="p-3 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-2.5 transition text-left cursor-pointer shadow-2xs"
+            >
+              <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
+                <Upload size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-900 truncate">Bulk CSV Import</div>
+                <div className="text-[10px] text-slate-500 truncate">Upload Items / Stock</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/shifts')}
+              className="p-3 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-2.5 transition text-left cursor-pointer shadow-2xs"
+            >
+              <div className="p-2 bg-emerald-100 text-emerald-700 rounded-lg shrink-0">
+                <Clock size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-900 truncate">Shift Register</div>
+                <div className="text-[10px] text-slate-500 truncate">Cash Till Reconciliation</div>
+              </div>
+            </button>
+
+            <button
+              onClick={() => navigate('/customers')}
+              className="p-3 bg-white hover:bg-slate-50 active:bg-slate-100 border border-slate-200 rounded-xl flex items-center gap-2.5 transition text-left cursor-pointer shadow-2xs"
+            >
+              <div className="p-2 bg-purple-100 text-purple-700 rounded-lg shrink-0">
+                <Users size={16} />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-slate-900 truncate">Customer Accounts</div>
+                <div className="text-[10px] text-slate-500 truncate">Debtors & Loyalty</div>
+              </div>
+            </button>
           </div>
 
           {/* MINI-PERFORMANCE OVERVIEW WIDGET (SALES INFLOW VS PROCUREMENT OUTFLOW METRICS) */}
@@ -661,7 +762,66 @@ export default function Dashboard() {
               </Link>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Card List View (< 640px) */}
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {recentSalesList.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">
+                  No recent sales recorded today.
+                </div>
+              ) : (
+                recentSalesList.map((sale: any) => (
+                  <div key={`m-sale-${sale.id}`} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-blue-600">#SALE-{sale.id}</span>
+                        <span className="px-1.5 py-0.2 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
+                          {sale.payment_method || 'Cash'}
+                        </span>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
+                        {sale.customer_name || 'Walk-in Customer'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        {new Date(sale.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })} • Cashier: {sale.user_name || 'Staff'}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        <div className="font-black text-slate-900 text-xs sm:text-sm">
+                          {formatGHS(sale.total_amount)}
+                        </div>
+                      </div>
+                      <RowActionMenu
+                        triggerTitle={`Actions for #SALE-${sale.id}`}
+                        actions={[
+                          {
+                            label: 'View Receipt',
+                            sublabel: 'Print or review ticket',
+                            icon: <Receipt size={14} className="text-blue-600" />,
+                            onClick: () => handleViewInvoice(sale.id),
+                          },
+                          {
+                            label: 'Inspect in Ledger',
+                            sublabel: 'View in Cash Transactions',
+                            icon: <Eye size={14} />,
+                            onClick: () => navigate(user?.role === 'admin' ? '/transactions' : '/sales'),
+                          },
+                          {
+                            label: 'Process Return',
+                            sublabel: 'Refund customer items',
+                            icon: <RotateCcw size={14} className="text-rose-600" />,
+                            onClick: () => navigate('/returns'),
+                          },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop & Tablet Table View (>= 640px) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
                   <tr>
@@ -938,40 +1098,40 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
-          {/* Staff Counter KPI Strip */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
-              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">My Counter Sales Today</div>
-              <div className="text-2xl font-black text-blue-700">{formatGHS(staffSummary?.myTodaySales || 0)}</div>
-              <div className="text-xs text-slate-500 mt-1">{staffSummary?.myTodayCount || 0} transactions processed</div>
+          {/* Staff Counter KPI Strip (2-col mobile, 4-col desktop) */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-1">My Sales Today</div>
+              <div className="text-lg sm:text-2xl font-black text-blue-700 truncate">{formatGHS(staffSummary?.myTodaySales || 0)}</div>
+              <div className="text-[11px] sm:text-xs text-slate-500 truncate">{staffSummary?.myTodayCount || 0} transaction(s)</div>
             </div>
 
-            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
-              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">My Month Volume</div>
-              <div className="text-2xl font-black text-slate-900">{formatGHS(staffSummary?.myMonthSales || 0)}</div>
-              <div className="text-xs text-slate-500 mt-1">{staffSummary?.myMonthCount || 0} total sales order(s)</div>
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-1">My Month Volume</div>
+              <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">{formatGHS(staffSummary?.myMonthSales || 0)}</div>
+              <div className="text-[11px] sm:text-xs text-slate-500 truncate">{staffSummary?.myMonthCount || 0} order(s)</div>
             </div>
 
-            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
-              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">Sales Goal Progress</div>
-              <div className="text-2xl font-black text-emerald-700">{staffSummary?.targetPercent || 0}%</div>
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-1">Goal Progress</div>
+              <div className="text-lg sm:text-2xl font-black text-emerald-700">{staffSummary?.targetPercent || 0}%</div>
               <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-2">
                 <div className="bg-emerald-600 h-full rounded-full" style={{ width: `${Math.min(100, staffSummary?.targetPercent || 0)}%` }} />
               </div>
             </div>
 
-            <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs">
-              <div className="text-slate-500 text-[11px] font-black uppercase tracking-wider mb-1">Estimated Sales Commission</div>
-              <div className="text-2xl font-black text-indigo-700">{formatGHS(staffSummary?.myCommission || 0)}</div>
-              <div className="text-xs text-slate-500 mt-1">Based on monthly performance</div>
+            <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
+              <div className="text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-1">Estimated Commission</div>
+              <div className="text-lg sm:text-2xl font-black text-indigo-700 truncate">{formatGHS(staffSummary?.myCommission || 0)}</div>
+              <div className="text-[11px] sm:text-xs text-slate-500 truncate">Performance bonus</div>
             </div>
           </div>
 
           {/* Staff Sales Ledger */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4 sm:p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
-                <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                <h2 className="text-xs sm:text-sm font-black text-slate-900 uppercase tracking-wider">
                   My Counter Transactions Ledger
                 </h2>
                 <p className="text-[11px] text-slate-500 font-medium">Reconcile cash and digital payments processed during your shift.</p>
@@ -990,7 +1150,60 @@ export default function Dashboard() {
               </div>
             </div>
 
-            <div className="overflow-x-auto">
+            {/* Mobile Card List View for Staff (< 640px) */}
+            <div className="block sm:hidden divide-y divide-slate-100">
+              {staffReportLoading ? (
+                <div className="p-6 text-center text-xs text-slate-400 font-medium">Loading staff ledger...</div>
+              ) : !staffReportData?.transactions || staffReportData.transactions.length === 0 ? (
+                <div className="p-6 text-center text-xs text-slate-400">No sales recorded for selected timeframe.</div>
+              ) : (
+                staffReportData.transactions.map((st: any) => (
+                  <div key={`m-staff-${st.id}`} className="p-3.5 hover:bg-slate-50 flex items-center justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono font-bold text-xs text-blue-600">#SALE-{st.id}</span>
+                        <span className="px-1.5 py-0.2 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
+                          {st.payment_method}
+                        </span>
+                      </div>
+                      <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
+                        {st.customer_name || 'Walk-in Customer'}
+                      </div>
+                      <div className="text-[10px] text-slate-500 font-mono">
+                        {new Date(st.created_at).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0">
+                      <div className="text-right">
+                        <div className="font-black text-slate-900 text-xs sm:text-sm">
+                          {formatGHS(st.total_amount)}
+                        </div>
+                      </div>
+                      <RowActionMenu
+                        triggerTitle={`Actions for #SALE-${st.id}`}
+                        actions={[
+                          {
+                            label: 'View Receipt',
+                            sublabel: 'Print or export invoice',
+                            icon: <Receipt size={14} className="text-blue-600" />,
+                            onClick: () => handleViewInvoice(st.id),
+                          },
+                          {
+                            label: 'Re-issue to Customer',
+                            sublabel: 'Print thermal receipt',
+                            icon: <Printer size={14} />,
+                            onClick: () => handleViewInvoice(st.id),
+                          },
+                        ]}
+                      />
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+
+            {/* Desktop & Tablet Table View for Staff (>= 640px) */}
+            <div className="hidden sm:block overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead className="bg-slate-50 text-slate-500 font-black uppercase tracking-wider border-b border-slate-200 text-[10px]">
                   <tr>
@@ -1377,6 +1590,20 @@ export default function Dashboard() {
         }}
         preselectedProduct={poPreselectedProduct}
       />
+
+      {/* AUTOMATED BULK CSV PRODUCT & INVENTORY IMPORT MODAL */}
+      {showImportModal && (
+        <ProductImportModal
+          existingProducts={allProducts}
+          categories={categories}
+          onClose={() => setShowImportModal(false)}
+          onSuccess={() => {
+            setShowImportModal(false);
+            addToast('Bulk catalog & inventory import completed successfully!', 'success');
+            loadDashboardData();
+          }}
+        />
+      )}
     </div>
   );
 }

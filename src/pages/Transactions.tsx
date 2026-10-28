@@ -1,17 +1,23 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
-import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer, ExternalLink } from 'lucide-react';
 import PrintPreviewModal from '../components/PrintPreviewModal';
+import { useNotifications } from '../context/NotificationContext';
 
 export default function Transactions() {
+  const [searchParams] = useSearchParams();
+  const { addToast } = useNotifications();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || searchParams.get('id') || '');
   const [userIdFilter, setUserIdFilter] = useState('');
   const [selectedSaleData, setSelectedSaleData] = useState<any | null>(null);
   const [loadingReceipt, setLoadingReceipt] = useState(false);
+  const highlightedId = searchParams.get('id');
+  const hasAutoOpenedReceipt = useRef(false);
 
   useEffect(() => {
     loadData();
@@ -25,6 +31,16 @@ export default function Transactions() {
     .then(([transRes, usersRes]) => {
       setTransactions(transRes);
       setUsers(usersRes);
+
+      // Deep-link auto-receipt trigger
+      const targetId = searchParams.get('id');
+      if (targetId && !hasAutoOpenedReceipt.current) {
+        hasAutoOpenedReceipt.current = true;
+        handlePrintReceipt(parseInt(targetId, 10));
+      }
+    })
+    .catch((err: any) => {
+      addToast(err.message || 'Failed to load transactions', 'error');
     })
     .finally(() => setLoading(false));
   };
@@ -35,15 +51,19 @@ export default function Transactions() {
       const sale = await fetchApi(`/sales/${saleId}`);
       setSelectedSaleData(sale);
     } catch (err: any) {
-      alert('Error fetching receipt: ' + err.message);
+      addToast('Error fetching receipt: ' + err.message, 'error');
     } finally {
       setLoadingReceipt(false);
     }
   };
 
   const filteredTransactions = transactions.filter(t => {
-    const matchesSearch = t.description.toLowerCase().includes(searchQuery.toLowerCase()) ||
-                         t.type.toLowerCase().includes(searchQuery.toLowerCase());
+    const q = searchQuery.toLowerCase();
+    const matchesSearch = 
+      t.description.toLowerCase().includes(q) ||
+      t.type.toLowerCase().includes(q) ||
+      String(t.id).includes(q) ||
+      (t.user_name && t.user_name.toLowerCase().includes(q));
     const matchesUser = userIdFilter === '' || t.user_name === users.find(u => u.id.toString() === userIdFilter)?.name;
     return matchesSearch && matchesUser;
   });
@@ -101,8 +121,14 @@ export default function Transactions() {
           <tbody className="bg-white divide-y divide-slate-100">
             {filteredTransactions.map((t, idx) => {
               const isIncome = t.amount > 0;
+              const isHighlighted = highlightedId && String(t.id) === highlightedId;
               return (
-                <tr key={`${t.type}-${t.id}-${idx}`} className="hover:bg-slate-50 transition-colors">
+                <tr 
+                  key={`${t.type}-${t.id}-${idx}`} 
+                  className={`transition-colors ${
+                    isHighlighted ? 'bg-blue-50/90 ring-2 ring-blue-500/50' : 'hover:bg-slate-50'
+                  }`}
+                >
                   <td className="px-5 py-3 whitespace-nowrap text-[13px] text-slate-500">
                     {new Date(t.created_at).toLocaleString()}
                   </td>

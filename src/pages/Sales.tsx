@@ -35,6 +35,8 @@ export default function Sales() {
   const [categories, setCategories] = useState<any[]>([]);
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [currentShift, setCurrentShift] = useState<any | null>(null);
+  const [showShiftWarningModal, setShowShiftWarningModal] = useState(false);
 
   // Performance Chart View States
   const [chartMetric, setChartMetric] = useState<'revenue' | 'orders' | 'dual'>('revenue');
@@ -94,15 +96,17 @@ export default function Sales() {
       if (statusFilter) query.append('status', statusFilter);
       if (user?.role === 'admin' && cashierFilter) query.append('userId', cashierFilter);
 
-      const [salesRes, prodRes, usersRes, customersRes, categoriesRes, trendsRes] = await Promise.all([
+      const [salesRes, prodRes, usersRes, customersRes, categoriesRes, trendsRes, shiftRes] = await Promise.all([
         fetchApi(`/sales?${query.toString()}`),
         fetchApi('/products'),
         fetchApi('/users'),
         fetchApi('/customers'),
         fetchApi('/categories'),
-        fetchApi('/reports/sales-trends?timeframe=weekly').catch(() => [])
+        fetchApi('/reports/sales-trends?timeframe=weekly').catch(() => []),
+        fetchApi('/shifts/current').catch(() => null)
       ]);
       setSales(salesRes);
+      setCurrentShift(shiftRes);
       if (Array.isArray(salesRes)) {
         setSessionSales(prev => {
           if (prev.length > 0) return prev;
@@ -221,15 +225,23 @@ export default function Sales() {
 
   const totalCart = cart.reduce((sum, item) => sum + (item.quantity * item.unit_price), 0);
 
-  const handleCheckout = async () => {
+  const handleCheckout = async (bypassShiftWarning = false) => {
     if (cart.length === 0) return;
+
+    if (!bypassShiftWarning && !currentShift && paymentMethod === 'Cash') {
+      setShowConfirmModal(false);
+      setShowShiftWarningModal(true);
+      return;
+    }
+
     try {
       const res = await fetchApi('/sales', {
         method: 'POST',
         body: JSON.stringify({ 
           items: cart, 
           customer_id: selectedCustomer ? parseInt(selectedCustomer, 10) : null,
-          payment_method: paymentMethod
+          payment_method: paymentMethod,
+          shift_id: currentShift?.id || null
         })
       });
       
@@ -484,12 +496,16 @@ export default function Sales() {
           customers={customers}
           user={user}
           onCheckout={async (items, customerId, paymentMethod) => {
+            if (!currentShift && paymentMethod === 'Cash') {
+              addToast('Notice: No active shift register open. Cash sale logged without drawer shift linkage.', 'warning');
+            }
             const res = await fetchApi('/sales', {
               method: 'POST',
               body: JSON.stringify({ 
                 items, 
                 customer_id: customerId ? parseInt(customerId, 10) : null,
-                payment_method: paymentMethod
+                payment_method: paymentMethod,
+                shift_id: currentShift?.id || null
               })
             });
             addToast('Sale recorded successfully!', 'success');
@@ -593,34 +609,6 @@ export default function Sales() {
           >
             <Tablet size={16} className="text-blue-400" />
             <span>Tablet POS Mode</span>
-          </button>
-
-          {/* Recent Transactions Side Panel Trigger */}
-          <button 
-            type="button"
-            id="open-recent-transactions-btn"
-            onClick={() => setShowRecentPanel(true)} 
-            className="min-h-[48px] px-4 py-2.5 bg-white hover:bg-slate-50 text-slate-800 rounded-xl font-bold text-xs border border-slate-200 transition shadow-2xs flex items-center gap-2 cursor-pointer active:scale-95 hover:border-slate-300"
-            title="View recent transactions and reprint receipts from current session"
-          >
-            <Receipt size={16} className="text-blue-600" />
-            <span>Recent Transactions</span>
-            {sessionSales.length > 0 && (
-              <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 text-[10px] font-black rounded-full">
-                {sessionSales.length}
-              </span>
-            )}
-          </button>
-
-          <button 
-            type="button"
-            id="export-sales-header-csv-btn"
-            onClick={handleExportCSV} 
-            disabled={filteredSalesTable.length === 0} 
-            className="min-h-[48px] px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs border border-slate-200 transition disabled:opacity-50 flex items-center gap-1.5 cursor-pointer"
-            title="Export current table data to CSV"
-          >
-            <Download size={15} /> Export CSV ({filteredSalesTable.length})
           </button>
 
           <button 
@@ -1848,6 +1836,62 @@ export default function Sales() {
           onClose={() => setInvoiceSaleData(null)}
           onNewSale={() => setShowPOSModal(true)}
         />
+      )}
+
+      {/* Shift Warning Modal */}
+      {showShiftWarningModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-[70] no-print">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-amber-200 overflow-hidden shadow-2xl">
+            <div className="p-6 text-center bg-amber-50/60 border-b border-amber-100">
+              <div className="w-12 h-12 bg-amber-100 text-amber-700 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertCircle size={24} />
+              </div>
+              <h2 className="text-base font-black text-slate-900 tracking-tight">No Active Cashier Shift Detected</h2>
+              <p className="text-xs text-slate-600 mt-1">
+                You are processing a <strong>Cash sale</strong> of <strong>{formatGHS(totalCart)}</strong> without an active shift register open.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <p className="text-slate-600 leading-relaxed">
+                Opening a cashier shift connects this transaction to cash drawer tracking, float calculations, and shift closing reconciliations.
+              </p>
+
+              <div className="flex flex-col gap-2 pt-2">
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowShiftWarningModal(false);
+                    navigate('/shifts');
+                  }}
+                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                >
+                  <span>Open Shift Register Now</span>
+                  <ArrowRight size={14} />
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => {
+                    setShowShiftWarningModal(false);
+                    handleCheckout(true);
+                  }} 
+                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer border border-slate-200"
+                >
+                  Proceed Anyway (Unlinked Sale)
+                </button>
+
+                <button 
+                  type="button"
+                  onClick={() => setShowShiftWarningModal(false)} 
+                  className="w-full py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
+                >
+                  Cancel & Return to Cart
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

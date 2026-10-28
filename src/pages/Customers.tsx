@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Users, Search, Plus, CreditCard, Mail, Phone, Award, X, CheckCircle2, UserPlus, ShoppingBag, Trash2 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import { useFormValidation, validators } from '../lib/validation';
+import { useNotifications } from '../context/NotificationContext';
 import { FormField, ValidatedInput } from '../components/common/FormField';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
@@ -55,6 +56,8 @@ function AddCustomerModal({ isOpen, onClose, onSuccess }: AddCustomerModalProps)
     resetForm,
   } = useFormValidation<CustomerFormData>(initialValues, validationRules);
 
+  const { addToast } = useNotifications();
+
   const handleCustomerSubmit = handleSubmit(async (formValues) => {
     setIsSubmitting(true);
     try {
@@ -63,10 +66,11 @@ function AddCustomerModal({ isOpen, onClose, onSuccess }: AddCustomerModalProps)
         body: JSON.stringify(formValues),
       });
       resetForm();
+      addToast('Customer profile registered successfully', 'success');
       onSuccess();
       onClose();
     } catch (err: any) {
-      alert(err.message || 'Failed to create customer');
+      addToast(err.message || 'Failed to create customer', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -189,6 +193,7 @@ function AddCustomerModal({ isOpen, onClose, onSuccess }: AddCustomerModalProps)
 
 export default function Customers() {
   const { user } = useAuth();
+  const { addToast } = useNotifications();
   const navigate = useNavigate();
   const [customers, setCustomers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -222,12 +227,12 @@ export default function Customers() {
   }, [searchQuery]);
 
   const handleDeleteCustomer = async (c: any) => {
-    if (!confirm(`Are you sure you want to delete customer profile "${c.name}"?`)) return;
     try {
       await fetchApi(`/customers/${c.id}`, { method: 'DELETE' });
+      addToast(`Customer "${c.name}" deleted successfully`, 'success');
       loadData();
     } catch (err: any) {
-      alert(err.message || 'Failed to delete customer');
+      addToast(err.message || 'Failed to delete customer', 'error');
     }
   };
 

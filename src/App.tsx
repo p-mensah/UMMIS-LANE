@@ -50,7 +50,7 @@ function PurchasesRoute() {
   if (user?.role === 'supplier') {
     return <SupplierDashboard initialTab="shipments" />;
   }
-  if (user?.role !== 'admin') {
+  if (user?.role !== 'admin' && user?.role !== 'manager') {
     return <Navigate to="/" replace />;
   }
   return <Purchases />;

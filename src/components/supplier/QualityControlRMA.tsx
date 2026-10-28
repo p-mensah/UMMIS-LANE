@@ -15,6 +15,7 @@ import {
   ArrowRight,
   TrendingDown
 } from 'lucide-react';
+import { useNotifications } from '../../context/NotificationContext';
 
 interface QCLog {
   id: number;
@@ -68,6 +69,7 @@ export default function QualityControlRMA({
   onUpdateRMAStatus,
   purchasesList = []
 }: QualityControlRMAProps) {
+  const { addToast } = useNotifications();
   const [activeSubTab, setActiveSubTab] = useState<'qc_inspection' | 'rma_returns'>('qc_inspection');
 
   // Modal states
@@ -114,9 +116,10 @@ export default function QualityControlRMA({
         qc_status: qcStatus,
         discrepancy_notes: qcNotes
       });
+      addToast('QC inspection report logged successfully.', 'success');
       setShowQcModal(false);
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to submit QC log', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -136,9 +139,10 @@ export default function QualityControlRMA({
         credit_amount: Number(rmaCreditAmount),
         status: 'pending'
       });
+      addToast('RMA claim ticket created successfully.', 'success');
       setShowRmaModal(false);
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to create RMA', 'error');
     } finally {
       setIsSubmitting(false);
     }

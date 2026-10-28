@@ -32,6 +32,7 @@ export interface NavItemConfig {
   label: string;
   badge?: string;
   adminOnly?: boolean;
+  managerAllowed?: boolean;
 }
 
 interface SidebarProps {
@@ -86,11 +87,11 @@ export default function Sidebar({
     { to: '/categories', icon: <FolderTree size={18} />, label: 'Product Categories' },
     { to: '/customers', icon: <UserCheck size={18} />, label: 'Customers Directory' },
     { to: '/communication', icon: <MessageSquare size={18} />, label: 'Communication', badge: totalUnread > 0 ? `${totalUnread}` : undefined },
-    { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true },
-    { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true },
-    { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true },
-    { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true },
-    { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true },
+    { to: '/adjustments', icon: <Scale size={18} />, label: 'Stock Adjustments', adminOnly: true, managerAllowed: true },
+    { to: '/purchases', icon: <Truck size={18} />, label: 'Purchase Orders', adminOnly: true, managerAllowed: true },
+    { to: '/suppliers', icon: <Building2 size={18} />, label: 'Suppliers Directory', adminOnly: true, managerAllowed: true },
+    { to: '/expenses', icon: <CreditCard size={18} />, label: 'Expenses Ledger', adminOnly: true, managerAllowed: true },
+    { to: '/transactions', icon: <ArrowLeftRight size={18} />, label: 'Cash Transactions', adminOnly: true, managerAllowed: true },
     { to: '/users', icon: <UsersIcon size={18} />, label: 'User Management', adminOnly: true },
     { to: '/audit-logs', icon: <ShieldCheck size={18} />, label: 'Audit Security Logs', adminOnly: true },
     { to: '/settings', icon: <SettingsIcon size={18} />, label: 'Store Settings', adminOnly: true },
@@ -101,7 +102,10 @@ export default function Sidebar({
   const renderNavList = () => (
     <nav className="flex-1 px-2.5 py-3 space-y-1 overflow-y-auto custom-scrollbar">
       {activeNavItems.map((item) => {
-        if (item.adminOnly && user?.role !== 'admin') return null;
+        if (item.adminOnly) {
+          const isAllowed = user?.role === 'admin' || (item.managerAllowed && user?.role === 'manager');
+          if (!isAllowed) return null;
+        }
 
         const isItemActive = item.to === '/'
           ? (location.pathname === '/' || location.pathname === '/supplier/overview' || (isSupplier && location.pathname === '/supplier-dashboard'))

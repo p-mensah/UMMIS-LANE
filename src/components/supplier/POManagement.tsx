@@ -398,9 +398,10 @@ export default function POManagement({
     setIsSubmitting(true);
     try {
       await onAcknowledgePO(ackModalPo.id, ackNotes);
+      addToast(`Purchase Order #PO-${ackModalPo.id} acknowledged successfully.`, 'success');
       setAckModalPo(null);
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to acknowledge PO', 'error');
     } finally {
       setIsSubmitting(false);
     }
@@ -417,10 +418,11 @@ export default function POManagement({
         type: docType,
         size: `${Math.floor(Math.random() * 200 + 150)} KB`
       });
+      addToast(`Document "${generatedName}" attached to PO #PO-${attachModalPo.id}.`, 'success');
       setAttachModalPo(null);
       setDocName('');
     } catch (err: any) {
-      alert(err.message);
+      addToast(err.message || 'Failed to attach document', 'error');
     } finally {
       setIsSubmitting(false);
     }
