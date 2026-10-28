@@ -1,13 +1,15 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
-import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer, ExternalLink } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer, ExternalLink, RotateCcw, Truck, CreditCard, Copy, Eye, ShoppingCart } from 'lucide-react';
 import PrintPreviewModal from '../components/PrintPreviewModal';
+import RowActionMenu from '../components/common/RowActionMenu';
 import { useNotifications } from '../context/NotificationContext';
 
 export default function Transactions() {
   const [searchParams] = useSearchParams();
+  const navigate = useNavigate();
   const { addToast } = useNotifications();
   const [transactions, setTransactions] = useState<any[]>([]);
   const [users, setUsers] = useState<any[]>([]);
@@ -157,19 +159,52 @@ export default function Transactions() {
                     </span>
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap text-right text-[12px]">
-                    {t.type === 'sale' ? (
-                      <button
-                        onClick={() => handlePrintReceipt(t.id)}
-                        disabled={loadingReceipt}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 hover:bg-emerald-50 text-slate-700 hover:text-emerald-700 font-bold text-[11px] rounded border border-slate-200 transition-colors cursor-pointer"
-                        title="Print Official Sales Receipt"
-                      >
-                        <Printer size={12} />
-                        <span>Print Receipt</span>
-                      </button>
-                    ) : (
-                      <span className="text-slate-300 font-mono text-xs">—</span>
-                    )}
+                    <div className="flex items-center justify-end">
+                      <RowActionMenu
+                        triggerTitle={`Actions for #${t.type}-${t.id}`}
+                        actions={[
+                          t.type === 'sale' ? {
+                            label: 'Print Thermal Receipt',
+                            sublabel: '80mm POS receipt format',
+                            icon: <Printer size={14} />,
+                            onClick: () => handlePrintReceipt(t.id)
+                          } : null,
+                          t.type === 'sale' ? {
+                            label: 'View In Sales Terminal',
+                            sublabel: 'Inspect in sales register',
+                            icon: <ShoppingCart size={14} />,
+                            onClick: () => navigate(`/sales?search=#SALE-${t.id}`)
+                          } : null,
+                          t.type === 'return' ? {
+                            label: 'View Returns Ledger',
+                            sublabel: 'Open customer returns register',
+                            icon: <RotateCcw size={14} />,
+                            onClick: () => navigate('/returns')
+                          } : null,
+                          t.type === 'purchase' ? {
+                            label: 'View Purchase Orders',
+                            sublabel: 'Open vendor purchases',
+                            icon: <Truck size={14} />,
+                            onClick: () => navigate('/purchases')
+                          } : null,
+                          t.type === 'expense' ? {
+                            label: 'View Expenses Ledger',
+                            sublabel: 'Open operating expenses',
+                            icon: <CreditCard size={14} />,
+                            onClick: () => navigate('/expenses')
+                          } : null,
+                          {
+                            label: 'Copy Reference ID',
+                            sublabel: `#${t.type.substring(0, 1).toUpperCase()}-${t.id}`,
+                            icon: <Copy size={14} />,
+                            onClick: () => {
+                              navigator.clipboard.writeText(`#${t.type.substring(0, 1).toUpperCase()}-${t.id}`);
+                              addToast('Transaction reference copied to clipboard', 'info');
+                            }
+                          }
+                        ]}
+                      />
+                    </div>
                   </td>
                 </tr>
               );

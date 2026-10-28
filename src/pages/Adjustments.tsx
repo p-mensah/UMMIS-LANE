@@ -1,11 +1,14 @@
 import React, { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
-import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert } from 'lucide-react';
+import RowActionMenu from '../components/common/RowActionMenu';
+import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert, Package, Eye, Copy } from 'lucide-react';
 
 export default function Adjustments() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { addToast } = useNotifications();
   const [adjustments, setAdjustments] = useState<any[]>([]);
   const [products, setProducts] = useState<any[]>([]);
@@ -213,6 +216,7 @@ export default function Adjustments() {
                 <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Cashier / Staff</th>
                 <th className="px-5 py-3 text-center text-[10px] font-black text-slate-400 uppercase tracking-wider">Quantity Change</th>
                 <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Reason & Note</th>
+                <th className="px-5 py-3 text-right text-[10px] font-black text-slate-400 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
@@ -241,13 +245,43 @@ export default function Adjustments() {
                     <td className="px-5 py-3.5 text-slate-600 font-medium max-w-xs truncate">
                       {adj.reason}
                     </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for ${adj.product_name}`}
+                          actions={[
+                            {
+                              label: 'View Product Details',
+                              sublabel: 'Stock levels & audit history',
+                              icon: <Package size={14} />,
+                              onClick: () => navigate(`/products/${adj.product_id}`)
+                            },
+                            {
+                              label: 'View in Product Catalog',
+                              sublabel: 'Catalog & batch pricing',
+                              icon: <Eye size={14} />,
+                              onClick: () => navigate(`/products?search=${encodeURIComponent(adj.product_name)}`)
+                            },
+                            {
+                              label: 'Copy Product Name',
+                              sublabel: adj.product_name,
+                              icon: <Copy size={14} />,
+                              onClick: () => {
+                                navigator.clipboard.writeText(adj.product_name);
+                                addToast('Copied product name to clipboard', 'info');
+                              }
+                            }
+                          ]}
+                        />
+                      </div>
+                    </td>
                   </tr>
                 );
               })}
 
               {filteredAdjustments.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-12 text-center text-slate-400">
+                  <td colSpan={6} className="px-5 py-12 text-center text-slate-400">
                     <FileText size={32} className="mx-auto mb-2 opacity-30" />
                     <p className="font-bold text-xs">No stock adjustment records match your filters.</p>
                   </td>

@@ -1,15 +1,20 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
+import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
+import RowActionMenu from '../components/common/RowActionMenu';
 import { 
   Receipt, Plus, Search, Calendar, User, ArrowDownRight,
-  TrendingDown, FileText, X, AlertCircle
+  TrendingDown, FileText, X, AlertCircle, Trash2, Copy, Eye, ArrowLeftRight
 } from 'lucide-react';
 import { CediSign } from '../components/common/CediSign';
 
 export default function Expenses() {
+  const { user } = useAuth();
+  const navigate = useNavigate();
   const [expenses, setExpenses] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
@@ -17,7 +22,7 @@ export default function Expenses() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [formData, setFormData] = useState({ description: '', amount: '', category: 'General' });
 
-  const { addToast } = useNotifications();
+  const { addToast, confirmModal } = useNotifications();
 
   useModalDismiss(showModal, () => setShowModal(false));
 
@@ -37,6 +42,32 @@ export default function Expenses() {
         });
       })
       .finally(() => setLoading(false));
+  };
+
+  const handleDeleteExpense = async (id: number, desc: string) => {
+    const confirmed = await confirmModal({
+      title: 'Delete Expense Record?',
+      message: `Are you sure you want to remove expense "${desc}"? This will permanently update current financial ledgers.`,
+      confirmText: 'Delete Expense',
+      type: 'danger'
+    });
+    if (!confirmed) return;
+
+    try {
+      await fetchApi(`/expenses/${id}`, { method: 'DELETE' });
+      addToast({
+        type: 'success',
+        title: 'Expense Deleted',
+        message: 'The expense record was successfully removed.'
+      });
+      loadData();
+    } catch (err: any) {
+      addToast({
+        type: 'danger',
+        title: 'Delete Failed',
+        message: err.message || 'Could not delete expense.'
+      });
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -193,6 +224,7 @@ export default function Expenses() {
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Description</th>
                 <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
                 <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Logged By</th>
+                <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Actions</th>
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100">
@@ -203,11 +235,12 @@ export default function Expenses() {
                     <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-48"></div></td>
                     <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-20 ml-auto"></div></td>
                     <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-24"></div></td>
+                    <td className="px-5 py-4"><div className="h-4 bg-slate-100 rounded w-10 ml-auto"></div></td>
                   </tr>
                 ))
               ) : filteredExpenses.length === 0 ? (
                 <tr>
-                  <td colSpan={4} className="px-6 py-12 text-center">
+                  <td colSpan={5} className="px-6 py-12 text-center">
                     <div className="max-w-sm mx-auto flex flex-col items-center">
                       <div className="p-3 bg-slate-100 text-slate-400 rounded-full mb-3">
                         <Receipt size={24} />
@@ -243,6 +276,41 @@ export default function Expenses() {
                       <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[11px] font-medium">
                         <User size={12} className="text-slate-400" /> {exp.user_name || 'System Staff'}
                       </span>
+                    </td>
+                    <td className="px-5 py-3.5 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for expense #${exp.id}`}
+                          actions={[
+                            {
+                              label: 'View Cash Transaction',
+                              sublabel: 'Reconcile in cash ledger',
+                              icon: <ArrowLeftRight size={14} />,
+                              onClick: () => navigate('/transactions?search=' + encodeURIComponent(exp.description))
+                            },
+                            {
+                              label: 'Copy Description',
+                              sublabel: exp.description,
+                              icon: <Copy size={14} />,
+                              onClick: () => {
+                                navigator.clipboard.writeText(exp.description);
+                                addToast({
+                                  type: 'info',
+                                  title: 'Copied',
+                                  message: 'Copied expense description to clipboard.'
+                                });
+                              }
+                            },
+                            (user?.role === 'admin' || user?.role === 'manager') ? {
+                              label: 'Delete Expense',
+                              sublabel: 'Remove from ledger',
+                              icon: <Trash2 size={14} />,
+                              destructive: true,
+                              onClick: () => handleDeleteExpense(exp.id, exp.description)
+                            } : null
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))

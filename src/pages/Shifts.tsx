@@ -1,12 +1,15 @@
 import React, { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { fetchApi } from '../lib/api';
 import { formatGHS } from '../lib/formatters';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import RowActionMenu from '../components/common/RowActionMenu';
 import { 
   Clock, CheckCircle2, AlertCircle, PlayCircle, StopCircle, RefreshCw, 
   Search, Filter, Edit3, User, DollarSign, ArrowUpRight, ArrowDownRight, 
-  ShieldCheck, AlertTriangle, Check, X, Calendar, Layers, SlidersHorizontal, Lock
+  ShieldCheck, AlertTriangle, Check, X, Calendar, Layers, SlidersHorizontal, Lock,
+  ShoppingCart, FileText, Eye
 } from 'lucide-react';
 
 interface ShiftItem {
@@ -29,6 +32,7 @@ interface ShiftItem {
 
 export default function Shifts() {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const { addToast, confirmModal } = useNotifications();
 
   const isAdmin = user?.role === 'admin';
@@ -667,17 +671,33 @@ export default function Shifts() {
                             )}
                           </td>
 
-                          {/* Management Action Button */}
+                          {/* Management Action Kebab Menu */}
                           <td className="py-3.5 px-4 whitespace-nowrap text-right">
-                            <button
-                              type="button"
-                              onClick={() => openEditShiftModal(s)}
-                              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 rounded-lg text-xs font-black transition cursor-pointer active:scale-95 shadow-2xs"
-                              title="Update starting or ending cash float, notes, or reconcile shift"
-                            >
-                              <Edit3 size={13} />
-                              <span>Manage Shift</span>
-                            </button>
+                            <div className="flex items-center justify-end">
+                              <RowActionMenu
+                                triggerTitle={`Shift #${s.id} Options`}
+                                actions={[
+                                  {
+                                    label: 'Manage & Reconcile',
+                                    sublabel: 'Adjust cash float & notes',
+                                    icon: <Edit3 size={14} />,
+                                    onClick: () => openEditShiftModal(s)
+                                  },
+                                  {
+                                    label: 'Open POS Counter',
+                                    sublabel: 'Go to sales terminal',
+                                    icon: <ShoppingCart size={14} />,
+                                    onClick: () => navigate('/sales')
+                                  },
+                                  {
+                                    label: 'View Cash Transactions',
+                                    sublabel: 'Audit shift transactions',
+                                    icon: <FileText size={14} />,
+                                    onClick: () => navigate('/transactions')
+                                  }
+                                ]}
+                              />
+                            </div>
                           </td>
                         </tr>
                       );

@@ -39,6 +39,7 @@ import {
   MoreHorizontal,
   Printer
 } from 'lucide-react';
+import RowActionMenu from '../common/RowActionMenu';
 
 interface PurchaseItem {
   id: number;
@@ -692,62 +693,7 @@ export default function POManagement({
 
                         <td className="py-3.5 px-4 text-right whitespace-nowrap">
                           <div className="flex items-center justify-end gap-1.5">
-                            {/* Action: Supplier Accept / Reject Decision */}
-                            {(isDraft || (isPending && !po.acknowledged_at)) && (
-                              <>
-                                <button
-                                  onClick={() => {
-                                    setAckModalPo(po);
-                                    setAckNotes(`Order #PO-${po.id} accepted and confirmed for production.`);
-                                  }}
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-semibold text-[11px] rounded border border-amber-200 transition cursor-pointer"
-                                  title="Accept PO Order"
-                                >
-                                  Accept
-                                </button>
-                                <button
-                                  onClick={() => onUpdateStatus(po.id, 'cancelled')}
-                                  className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-800 font-semibold text-[11px] rounded border border-rose-200 transition cursor-pointer"
-                                  title="Reject PO Order"
-                                >
-                                  Reject
-                                </button>
-                              </>
-                            )}
-
-                            {/* Action: Submit ASN (Advance Shipping Notice) */}
-                            {!isReceived && po.status !== 'cancelled' && (
-                              <button
-                                onClick={() => onOpenASNModal ? onOpenASNModal(po) : handleOpenLogistics(po)}
-                                className="px-2 py-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold text-[11px] rounded transition shadow-2xs flex items-center gap-1 cursor-pointer"
-                                title="Submit Advanced Shipping Notice (ASN) with tracking & batch/lot details"
-                              >
-                                <Truck size={11} /> ASN
-                              </button>
-                            )}
-
-                            {/* Action: Upload Invoice */}
-                            {po.status !== 'cancelled' && (
-                              <button
-                                onClick={() => onOpenInvoiceModal ? onOpenInvoiceModal(po) : setAttachModalPo(po)}
-                                className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-semibold text-[11px] rounded border border-emerald-200 transition cursor-pointer flex items-center gap-1"
-                                title="Upload Supplier Invoice & 3-Way Match"
-                              >
-                                <FileText size={11} className="text-emerald-600" /> Invoice
-                              </button>
-                            )}
-
-                            {/* Action: Print Formal PO Document */}
-                            <button
-                              onClick={() => setDocumentModalPo(po)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-[11px] rounded border border-slate-200 transition cursor-pointer flex items-center gap-1"
-                              title="View & Print Official Purchase Order Document"
-                            >
-                              <Printer size={11} className="text-blue-600" />
-                              <span className="hidden sm:inline">Print</span>
-                            </button>
-
-                            {/* Action: Receive & Stock via GRN */}
+                            {/* Primary Quick Action: Receive & Stock via GRN */}
                             {!isReceived && po.status !== 'cancelled' && (
                               <button
                                 onClick={() => setReceiveModalPo(po)}
@@ -758,20 +704,63 @@ export default function POManagement({
                               </button>
                             )}
 
-                            {/* Cancel Option */}
-                            {!isReceived && po.status !== 'cancelled' && (
-                              <button
-                                onClick={() => {
-                                  if (confirm(`Cancel Purchase Order #PO-${po.id}?`)) {
-                                    onUpdateStatus(po.id, 'cancelled');
+                            {/* Kebab RowActionMenu with complete workflow options */}
+                            <RowActionMenu
+                              triggerTitle={`Options for #PO-${po.id}`}
+                              actions={[
+                                {
+                                  label: 'View & Print Document',
+                                  sublabel: 'Official Purchase Order form',
+                                  icon: <Printer size={14} />,
+                                  onClick: () => setDocumentModalPo(po)
+                                },
+                                (!isReceived && po.status !== 'cancelled') ? {
+                                  label: 'Receive Goods (GRN)',
+                                  sublabel: 'Verify batch & stock inventory',
+                                  icon: <CheckCircle2 size={14} />,
+                                  onClick: () => setReceiveModalPo(po)
+                                } : null,
+                                (!isReceived && po.status !== 'cancelled') ? {
+                                  label: 'Submit ASN Notice',
+                                  sublabel: 'Advanced shipping & tracking',
+                                  icon: <Truck size={14} />,
+                                  onClick: () => onOpenASNModal ? onOpenASNModal(po) : handleOpenLogistics(po)
+                                } : null,
+                                (po.status !== 'cancelled') ? {
+                                  label: 'Upload Supplier Invoice',
+                                  sublabel: '3-way match & accounting',
+                                  icon: <FileText size={14} />,
+                                  onClick: () => onOpenInvoiceModal ? onOpenInvoiceModal(po) : setAttachModalPo(po)
+                                } : null,
+                                (isDraft || (isPending && !po.acknowledged_at)) ? {
+                                  label: 'Accept Order',
+                                  sublabel: 'Confirm PO for production',
+                                  icon: <Check size={14} />,
+                                  onClick: () => {
+                                    setAckModalPo(po);
+                                    setAckNotes(`Order #PO-${po.id} accepted and confirmed for production.`);
                                   }
-                                }}
-                                className="p-1 hover:bg-rose-50 text-slate-300 hover:text-rose-600 rounded transition cursor-pointer"
-                                title="Cancel PO"
-                              >
-                                <X size={13} />
-                              </button>
-                            )}
+                                } : null,
+                                (isDraft || (isPending && !po.acknowledged_at)) ? {
+                                  label: 'Reject Order',
+                                  sublabel: 'Decline purchase order',
+                                  icon: <X size={14} />,
+                                  destructive: true,
+                                  onClick: () => onUpdateStatus(po.id, 'cancelled')
+                                } : null,
+                                (!isReceived && po.status !== 'cancelled') ? {
+                                  label: 'Cancel Purchase Order',
+                                  sublabel: 'Mark PO as cancelled',
+                                  icon: <X size={14} />,
+                                  destructive: true,
+                                  onClick: () => {
+                                    if (confirm(`Cancel Purchase Order #PO-${po.id}?`)) {
+                                      onUpdateStatus(po.id, 'cancelled');
+                                    }
+                                  }
+                                } : null
+                              ]}
+                            />
                           </div>
                         </td>
                       </tr>

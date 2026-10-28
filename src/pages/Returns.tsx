@@ -358,7 +358,7 @@ export default function Returns() {
                 <th className="px-4 py-3">Method</th>
                 <th className="px-4 py-3">Reason</th>
                 <th className="px-4 py-3">Processed By</th>
-                <th className="px-4 py-3 text-center">Credit Note</th>
+                <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -413,19 +413,32 @@ export default function Returns() {
                     <td className="px-4 py-3 text-slate-700 font-medium">
                       {ret.user_name || 'Staff'}
                     </td>
-                    <td className="px-4 py-3 text-center">
-                      <button
-                        onClick={() => handleViewCreditNote(ret.id)}
-                        disabled={loadingCreditNoteId === ret.id}
-                        className="px-2.5 py-1 bg-slate-800 hover:bg-rose-600 text-white rounded font-bold text-[10px] uppercase tracking-wider transition shadow-2xs flex items-center gap-1 mx-auto"
-                      >
-                        {loadingCreditNoteId === ret.id ? (
-                          <RefreshCw size={12} className="animate-spin" />
-                        ) : (
-                          <FileText size={12} />
-                        )}
-                        Credit Note
-                      </button>
+                    <td className="px-4 py-3 text-right whitespace-nowrap">
+                      <div className="flex items-center justify-end">
+                        <RowActionMenu
+                          triggerTitle={`Actions for #RET-${ret.id}`}
+                          actions={[
+                            {
+                              label: 'View Credit Note',
+                              sublabel: 'Print formal refund note',
+                              icon: <FileText size={14} />,
+                              onClick: () => handleViewCreditNote(ret.id)
+                            },
+                            {
+                              label: 'View Original Sale',
+                              sublabel: `#SALE-${ret.sale_id}`,
+                              icon: <ShoppingCart size={14} />,
+                              onClick: () => navigate(`/sales?search=#SALE-${ret.sale_id}`)
+                            },
+                            ret.customer_name ? {
+                              label: 'Customer Directory',
+                              sublabel: ret.customer_name,
+                              icon: <Eye size={14} />,
+                              onClick: () => navigate(`/customers?search=${encodeURIComponent(ret.customer_name)}`)
+                            } : null
+                          ]}
+                        />
+                      </div>
                     </td>
                   </tr>
                 ))
