@@ -2219,6 +2219,63 @@ app.delete('/api/products/:id', authenticate, requireManagerOrAdmin, (req, res) 
   res.json({ success: true });
 });
 
+// Batch Delete Products
+app.post('/api/products/batch-delete', authenticate, requireManagerOrAdmin, (req: any, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No product IDs provided for batch deletion.' });
+  }
+
+  const deleteTx = db.transaction((idList: number[]) => {
+    let deleted = 0;
+    const stmt = db.prepare('DELETE FROM products WHERE id = ?');
+    for (const id of idList) {
+      const result = stmt.run(id);
+      if (result.changes > 0) deleted++;
+    }
+    return deleted;
+  });
+
+  try {
+    const deletedCount = deleteTx(ids);
+    res.json({ success: true, count: deletedCount, message: `Successfully deleted ${deletedCount} products.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch Update Products Status & Category
+app.post('/api/products/batch-update-status', authenticate, requireManagerOrAdmin, (req: any, res) => {
+  const { ids, category, sub_category, min_stock_level } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No product IDs provided for batch update.' });
+  }
+
+  const updateTx = db.transaction((idList: number[]) => {
+    let updated = 0;
+    for (const id of idList) {
+      if (category !== undefined && category !== '') {
+        db.prepare('UPDATE products SET category = ? WHERE id = ?').run(category, id);
+      }
+      if (sub_category !== undefined && sub_category !== '') {
+        db.prepare('UPDATE products SET sub_category = ? WHERE id = ?').run(sub_category, id);
+      }
+      if (min_stock_level !== undefined && min_stock_level !== null) {
+        db.prepare('UPDATE products SET min_stock_level = ? WHERE id = ?').run(Number(min_stock_level), id);
+      }
+      updated++;
+    }
+    return updated;
+  });
+
+  try {
+    const updatedCount = updateTx(ids);
+    res.json({ success: true, count: updatedCount, message: `Successfully updated ${updatedCount} products.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Bulk Product Updates & Imports
 app.post('/api/products/bulk-update', authenticate, requireManagerOrAdmin, (req: any, res) => {
   const { updates } = req.body; // Array of product updates from CSV
@@ -2654,6 +2711,61 @@ app.get('/api/sales/:id', authenticate, (req: any, res) => {
     res.json({ ...sale, items });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
+  }
+});
+
+// Batch Delete Sales Transactions
+app.post('/api/sales/batch-delete', authenticate, requireManagerOrAdmin, (req: any, res) => {
+  const { ids } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No sale IDs provided for batch deletion.' });
+  }
+
+  const deleteTx = db.transaction((idList: number[]) => {
+    let deleted = 0;
+    const deleteItemsStmt = db.prepare('DELETE FROM sale_items WHERE sale_id = ?');
+    const deleteSaleStmt = db.prepare('DELETE FROM sales WHERE id = ?');
+    for (const id of idList) {
+      deleteItemsStmt.run(id);
+      const result = deleteSaleStmt.run(id);
+      if (result.changes > 0) deleted++;
+    }
+    return deleted;
+  });
+
+  try {
+    const count = deleteTx(ids);
+    res.json({ success: true, count, message: `Successfully deleted ${count} sales records.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Batch Update Sales Status
+app.post('/api/sales/batch-update-status', authenticate, requireManagerOrAdmin, (req: any, res) => {
+  const { ids, status } = req.body;
+  if (!ids || !Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ error: 'No sale IDs provided for batch status update.' });
+  }
+  if (!status) {
+    return res.status(400).json({ error: 'No target status provided.' });
+  }
+
+  const updateTx = db.transaction((idList: number[], targetStatus: string) => {
+    let updated = 0;
+    const stmt = db.prepare('UPDATE sales SET status = ? WHERE id = ?');
+    for (const id of idList) {
+      const result = stmt.run(targetStatus, id);
+      if (result.changes > 0) updated++;
+    }
+    return updated;
+  });
+
+  try {
+    const count = updateTx(ids, status);
+    res.json({ success: true, count, message: `Successfully updated ${count} sales to status '${status}'.` });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
   }
 });
 

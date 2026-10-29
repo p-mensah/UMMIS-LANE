@@ -79,6 +79,16 @@ export default function Products() {
   const [parsedImportProducts, setParsedImportProducts] = useState<any[]>([]);
   const [bulkStatus, setBulkStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
 
+  // Multi-Select Batch Actions State
+  const [selectedProductIds, setSelectedProductIds] = useState<number[]>([]);
+  const [showBatchDeleteModal, setShowBatchDeleteModal] = useState(false);
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false);
+  const [showBatchCategoryModal, setShowBatchCategoryModal] = useState(false);
+  const [batchTargetCategory, setBatchTargetCategory] = useState('');
+  const [batchTargetSubCategory, setBatchTargetSubCategory] = useState('');
+  const [batchMinStockLevel, setBatchMinStockLevel] = useState('');
+  const [isBatchUpdating, setIsBatchUpdating] = useState(false);
+
   useEffect(() => {
     loadProducts();
     const handleCloseMenu = () => {
@@ -516,6 +526,115 @@ export default function Products() {
     addToast(`Exported ${filteredProducts.length} product records to CSV.`, 'success');
   };
 
+  const toggleSelectProduct = (id: number) => {
+    setSelectedProductIds(prev => 
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const isAllPageSelected = paginatedProducts.length > 0 && paginatedProducts.every(p => selectedProductIds.includes(p.id));
+
+  const toggleSelectAllOnPage = () => {
+    if (isAllPageSelected) {
+      const pageIds = paginatedProducts.map(p => p.id);
+      setSelectedProductIds(prev => prev.filter(id => !pageIds.includes(id)));
+    } else {
+      const pageIds = paginatedProducts.map(p => p.id);
+      setSelectedProductIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const selectAllFiltered = () => {
+    setSelectedProductIds(filteredProducts.map(p => p.id));
+  };
+
+  const deselectAll = () => {
+    setSelectedProductIds([]);
+  };
+
+  const exportSelectedProductsCSV = () => {
+    const selected = products.filter(p => selectedProductIds.includes(p.id));
+    if (selected.length === 0) return;
+
+    const headers = ['ID', 'Product Name', 'Brand', 'SKU', 'Barcode', 'Unit', 'Category', 'Sub Category', 'Cost Price', 'Selling Price', 'Stock Quantity', 'Min Stock Level'];
+    const rows = selected.map(p => [
+      p.id,
+      p.name,
+      p.brand || '',
+      p.sku || '',
+      p.barcode || '',
+      p.unit_of_measure || '',
+      p.category || '',
+      p.sub_category || '',
+      p.cost_price,
+      p.selling_price,
+      p.stock_quantity,
+      p.min_stock_level ?? 10
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `selected_products_batch_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${selected.length} selected products to CSV.`, 'success');
+  };
+
+  const handleConfirmBatchDelete = async () => {
+    if (selectedProductIds.length === 0) return;
+    setIsBatchDeleting(true);
+    try {
+      const res = await fetchApi('/products/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedProductIds })
+      });
+      addToast(res.message || `Deleted ${selectedProductIds.length} products.`, 'success');
+      setSelectedProductIds([]);
+      setShowBatchDeleteModal(false);
+      loadProducts();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete products.', 'error');
+    } finally {
+      setIsBatchDeleting(false);
+    }
+  };
+
+  const handleConfirmBatchUpdate = async () => {
+    if (selectedProductIds.length === 0) return;
+    setIsBatchUpdating(true);
+    try {
+      const payload: any = { ids: selectedProductIds };
+      if (batchTargetCategory) payload.category = batchTargetCategory;
+      if (batchTargetSubCategory) payload.sub_category = batchTargetSubCategory;
+      if (batchMinStockLevel) payload.min_stock_level = parseInt(batchMinStockLevel, 10);
+
+      const res = await fetchApi('/products/batch-update-status', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      addToast(res.message || `Updated ${selectedProductIds.length} products.`, 'success');
+      setSelectedProductIds([]);
+      setShowBatchCategoryModal(false);
+      setBatchTargetCategory('');
+      setBatchTargetSubCategory('');
+      setBatchMinStockLevel('');
+      loadProducts();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update products.', 'error');
+    } finally {
+      setIsBatchUpdating(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* SOLID BLUE PAGE HEADER (No gradient) */}
@@ -754,10 +873,86 @@ export default function Products() {
         )}
       </div>
 
+      {/* Floating / Sticky Batch Actions Bar */}
+      {selectedProductIds.length > 0 && (
+        <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="flex items-center gap-3">
+            <span className="px-2.5 py-1 bg-blue-600 text-white rounded-md font-black text-xs">
+              {selectedProductIds.length} Selected
+            </span>
+            <span className="text-xs text-slate-300 font-medium">
+              of {products.length} total products
+            </span>
+            {selectedProductIds.length < filteredProducts.length && (
+              <button
+                type="button"
+                onClick={selectAllFiltered}
+                className="text-xs text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+              >
+                Select all {filteredProducts.length} filtered
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={exportSelectedProductsCSV}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-2xs cursor-pointer active:scale-95"
+              title="Export selected products to CSV"
+            >
+              <Download size={13} className="text-blue-400" />
+              <span>Export CSV ({selectedProductIds.length})</span>
+            </button>
+
+            {user?.role === 'admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchCategoryModal(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-2xs cursor-pointer active:scale-95"
+                  title="Update category or restock threshold on selected products"
+                >
+                  <Tag size={13} className="text-emerald-400" />
+                  <span>Update Category / Status</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteModal(true)}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                  title="Delete selected products"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete ({selectedProductIds.length})</span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={deselectAll}
+              className="px-2.5 py-1.5 text-slate-400 hover:text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+
       <div className="bg-white border border-slate-200 rounded-sm overflow-x-auto min-h-[300px]">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
+              <th className="px-4 py-3 w-10 text-center">
+                <input
+                  type="checkbox"
+                  checked={isAllPageSelected}
+                  onChange={toggleSelectAllOnPage}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                  title={isAllPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                />
+              </th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Image</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product Name</th>
               <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Brand</th>
@@ -773,7 +968,7 @@ export default function Products() {
           <tbody className="bg-white divide-y divide-slate-100">
             {filteredProducts.length === 0 ? (
               <tr>
-                <td colSpan={10} className="py-16 text-center">
+                <td colSpan={11} className="py-16 text-center">
                   <div className="flex flex-col items-center justify-center max-w-md mx-auto text-slate-500 space-y-3">
                     <div className="w-12 h-12 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center border border-blue-100">
                       <PackageSearch size={24} />
@@ -814,17 +1009,30 @@ export default function Products() {
                 const isOutOfStock = (p.stock_quantity || 0) <= 0;
                 const isBelowMin = (p.stock_quantity || 0) <= minLevel;
 
+                const isSelected = selectedProductIds.includes(p.id);
+
                 return (
                   <tr 
                     key={p.id} 
                     className={`transition-colors ${
-                      isOutOfStock 
+                      isSelected
+                        ? 'bg-blue-50/70 hover:bg-blue-100/70 border-l-4 border-l-blue-600'
+                        : isOutOfStock 
                         ? 'bg-rose-50/60 hover:bg-rose-100/70 border-l-4 border-l-rose-500' 
                         : isBelowMin 
                         ? 'bg-amber-50/60 hover:bg-amber-100/70 border-l-4 border-l-amber-500' 
                         : 'hover:bg-slate-50'
                     }`}
                   >
+                    <td className="px-4 py-3 w-10 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectProduct(p.id)}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                        title={`Select ${p.name}`}
+                      />
+                    </td>
                     <td className="px-5 py-3 whitespace-nowrap text-[13px]">
                        {p.image_url ? (
                          <img src={p.image_url} alt={p.name} className="w-10 h-10 object-cover rounded-sm border border-slate-200" />
@@ -1264,6 +1472,149 @@ export default function Products() {
                 </button>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Confirmation Modal */}
+      {showBatchDeleteModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center bg-rose-50/70 border-b border-rose-100">
+              <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-base font-black text-slate-900">Delete {selectedProductIds.length} Products</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Are you sure you want to permanently delete these selected products from your inventory catalog? This action cannot be undone.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                {products.filter(p => selectedProductIds.includes(p.id)).slice(0, 10).map(p => (
+                  <div key={p.id} className="flex items-center justify-between font-medium text-slate-700">
+                    <span className="truncate max-w-[240px]">{p.name}</span>
+                    <span className="font-mono text-[10px] text-slate-400">{p.sku}</span>
+                  </div>
+                ))}
+                {selectedProductIds.length > 10 && (
+                  <div className="text-[11px] text-slate-400 italic text-center pt-1">
+                    ...and {selectedProductIds.length - 10} more products
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmBatchDelete}
+                  disabled={isBatchDeleting}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isBatchDeleting ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  <span>{isBatchDeleting ? 'Deleting...' : `Confirm Delete (${selectedProductIds.length})`}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteModal(false)}
+                  disabled={isBatchDeleting}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Update Category / Status Modal */}
+      {showBatchCategoryModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tag size={18} className="text-blue-600" />
+                <h3 className="text-sm font-black text-slate-900">Batch Update ({selectedProductIds.length} Products)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatchCategoryModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Assign Category
+                </label>
+                <select
+                  value={batchTargetCategory}
+                  onChange={e => setBatchTargetCategory(e.target.value)}
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                >
+                  <option value="">-- Keep Existing Categories --</option>
+                  {categories.map((c: any) => (
+                    <option key={c.id || c.name} value={c.name}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Sub-Category (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={batchTargetSubCategory}
+                  onChange={e => setBatchTargetSubCategory(e.target.value)}
+                  placeholder="e.g. Antibiotics, Beverages, Snacks"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Set Minimum Restock Threshold (Baseline Units)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={batchMinStockLevel}
+                  onChange={e => setBatchMinStockLevel(e.target.value)}
+                  placeholder="Leave blank to keep existing levels"
+                  className="w-full border border-slate-300 rounded-xl px-3 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl text-blue-900 text-[11px] leading-relaxed">
+                Applying will update all {selectedProductIds.length} currently selected products with the specified attributes.
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmBatchUpdate}
+                  disabled={isBatchUpdating || (!batchTargetCategory && !batchTargetSubCategory && !batchMinStockLevel)}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isBatchUpdating ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  <span>{isBatchUpdating ? 'Updating...' : `Apply to ${selectedProductIds.length} Products`}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchCategoryModal(false)}
+                  disabled={isBatchUpdating}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

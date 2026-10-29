@@ -150,8 +150,8 @@ export default function SupplierAnalytics({ analyticsData, activeSupplier }: Sup
             <span className="text-[10px] text-slate-400 font-medium">Last 6 Months</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-w-0 min-h-[240px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240} initialDimension={{ width: 400, height: 240 }}>
               <BarChart data={spendByCategory} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="category" tick={{ fontSize: 10, fill: '#64748b' }} />
@@ -176,8 +176,8 @@ export default function SupplierAnalytics({ analyticsData, activeSupplier }: Sup
             <span className="text-[10px] text-slate-400 font-medium">Recent Order Batches</span>
           </div>
 
-          <div className="h-64 w-full">
-            <ResponsiveContainer width="100%" height="100%">
+          <div className="h-64 w-full min-w-0 min-h-[240px]">
+            <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240} initialDimension={{ width: 400, height: 240 }}>
               <LineChart data={leadTimeTrends} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
                 <XAxis dataKey="batch" tick={{ fontSize: 10, fill: '#64748b' }} />

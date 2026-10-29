@@ -5,7 +5,7 @@ import {
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
-  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet, Receipt
+  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet, Receipt, AlertTriangle, RefreshCw
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -304,6 +304,14 @@ export default function Sales() {
   const [currentPage, setCurrentPage] = useState(1);
   const [itemsPerPage, setItemsPerPage] = useState(15);
 
+  // Multi-Select Batch Sales State
+  const [selectedSaleIds, setSelectedSaleIds] = useState<number[]>([]);
+  const [showBatchDeleteSalesModal, setShowBatchDeleteSalesModal] = useState(false);
+  const [isBatchDeletingSales, setIsBatchDeletingSales] = useState(false);
+  const [showBatchStatusModal, setShowBatchStatusModal] = useState(false);
+  const [batchTargetSaleStatus, setBatchTargetSaleStatus] = useState<'completed' | 'refunded'>('completed');
+  const [isBatchUpdatingSales, setIsBatchUpdatingSales] = useState(false);
+
   useEffect(() => {
     setCurrentPage(1);
   }, [tableSearchQuery, startDate, endDate, categoryFilter, paymentFilter, statusFilter, cashierFilter]);
@@ -359,6 +367,105 @@ export default function Sales() {
     const start = (currentPage - 1) * itemsPerPage;
     return filteredSalesTable.slice(start, start + itemsPerPage);
   }, [filteredSalesTable, currentPage, itemsPerPage]);
+
+  const toggleSelectSale = (id: number) => {
+    setSelectedSaleIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const isAllSalesPageSelected = paginatedSales.length > 0 && paginatedSales.every(s => selectedSaleIds.includes(s.id));
+
+  const toggleSelectAllSalesOnPage = () => {
+    if (isAllSalesPageSelected) {
+      const pageIds = paginatedSales.map(s => s.id);
+      setSelectedSaleIds(prev => prev.filter(id => !pageIds.includes(id)));
+    } else {
+      const pageIds = paginatedSales.map(s => s.id);
+      setSelectedSaleIds(prev => Array.from(new Set([...prev, ...pageIds])));
+    }
+  };
+
+  const selectAllFilteredSales = () => {
+    setSelectedSaleIds(filteredSalesTable.map(s => s.id));
+  };
+
+  const deselectAllSales = () => {
+    setSelectedSaleIds([]);
+  };
+
+  const exportSelectedSalesCSV = () => {
+    const selected = sales.filter(s => selectedSaleIds.includes(s.id));
+    if (selected.length === 0) return;
+
+    const headers = ['Sale ID', 'Invoice #', 'Date Time', 'Cashier', 'Customer', 'Phone', 'Payment Method', 'Status', 'Total (GHS)', 'Profit (GHS)'];
+    const rows = selected.map(s => [
+      s.id,
+      `#SALE-${s.id}`,
+      new Date(s.created_at + 'Z').toLocaleString(),
+      s.user_name || '',
+      s.customer_name || 'Walk-in',
+      s.customer_phone || '',
+      s.payment_method || '',
+      s.status || 'completed',
+      s.total_amount,
+      s.profit || 0
+    ]);
+
+    const csvContent = [
+      headers.join(','),
+      ...rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
+    ].join('\n');
+
+    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', `selected_sales_batch_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+    addToast(`Exported ${selected.length} selected sales records to CSV.`, 'success');
+  };
+
+  const handleConfirmBatchDeleteSales = async () => {
+    if (selectedSaleIds.length === 0) return;
+    setIsBatchDeletingSales(true);
+    try {
+      const res = await fetchApi('/sales/batch-delete', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedSaleIds })
+      });
+      addToast(res.message || `Deleted ${selectedSaleIds.length} sales records.`, 'success');
+      setSelectedSaleIds([]);
+      setShowBatchDeleteSalesModal(false);
+      loadData();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to delete sales records.', 'error');
+    } finally {
+      setIsBatchDeletingSales(false);
+    }
+  };
+
+  const handleConfirmBatchUpdateSaleStatus = async () => {
+    if (selectedSaleIds.length === 0) return;
+    setIsBatchUpdatingSales(true);
+    try {
+      const res = await fetchApi('/sales/batch-update-status', {
+        method: 'POST',
+        body: JSON.stringify({ ids: selectedSaleIds, status: batchTargetSaleStatus })
+      });
+      addToast(res.message || `Updated status of ${selectedSaleIds.length} sales.`, 'success');
+      setSelectedSaleIds([]);
+      setShowBatchStatusModal(false);
+      loadData();
+    } catch (err: any) {
+      addToast(err.message || 'Failed to update sale status.', 'error');
+    } finally {
+      setIsBatchUpdatingSales(false);
+    }
+  };
 
   const handleExportCSV = () => {
     if (filteredSalesTable.length === 0) {
@@ -950,6 +1057,73 @@ export default function Sales() {
         </div>
       </div>
 
+      {/* Floating / Sticky Batch Sales Action Bar */}
+      {selectedSaleIds.length > 0 && (
+        <div className="bg-slate-900 text-white p-3.5 rounded-xl shadow-lg border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2 duration-150 no-print">
+          <div className="flex items-center gap-3">
+            <span className="px-2.5 py-1 bg-blue-600 text-white rounded-md font-black text-xs">
+              {selectedSaleIds.length} Selected
+            </span>
+            <span className="text-xs text-slate-300 font-medium">
+              Total: <strong className="text-emerald-400 font-mono">{formatGHS(sales.filter(s => selectedSaleIds.includes(s.id)).reduce((sum, s) => sum + s.total_amount, 0))}</strong>
+            </span>
+            {selectedSaleIds.length < filteredSalesTable.length && (
+              <button
+                type="button"
+                onClick={selectAllFilteredSales}
+                className="text-xs text-blue-400 hover:text-blue-300 font-bold underline cursor-pointer"
+              >
+                Select all {filteredSalesTable.length} filtered
+              </button>
+            )}
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={exportSelectedSalesCSV}
+              className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-2xs cursor-pointer active:scale-95"
+              title="Export selected sales transactions to CSV"
+            >
+              <Download size={13} className="text-blue-400" />
+              <span>Export CSV ({selectedSaleIds.length})</span>
+            </button>
+
+            {user?.role === 'admin' && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchStatusModal(true)}
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 border border-slate-700 shadow-2xs cursor-pointer active:scale-95"
+                  title="Update status for selected transactions"
+                >
+                  <Tag size={13} className="text-emerald-400" />
+                  <span>Update Status</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteSalesModal(true)}
+                  className="px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition flex items-center gap-1.5 shadow-2xs cursor-pointer active:scale-95"
+                  title="Delete selected sales transactions"
+                >
+                  <Trash2 size={13} />
+                  <span>Delete ({selectedSaleIds.length})</span>
+                </button>
+              </>
+            )}
+
+            <button
+              type="button"
+              onClick={deselectAllSales}
+              className="px-2.5 py-1.5 text-slate-400 hover:text-white rounded-lg text-xs font-semibold hover:bg-slate-800 transition cursor-pointer"
+            >
+              Deselect All
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Main Sales Table Card */}
       <div className="bg-white border border-slate-200 rounded overflow-hidden shadow-2xs no-print">
         <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-slate-100 border-b border-slate-100 bg-slate-50/50">
@@ -986,6 +1160,15 @@ export default function Sales() {
           <table className="min-w-full divide-y divide-slate-200">
             <thead className="bg-slate-50">
               <tr>
+                <th className="px-4 py-3 w-10 text-center">
+                  <input
+                    type="checkbox"
+                    checked={isAllSalesPageSelected}
+                    onChange={toggleSelectAllSalesOnPage}
+                    className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                    title={isAllSalesPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
+                  />
+                </th>
                 <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Invoice / Sale ID</th>
                 <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Date & Time</th>
                 <th className="px-5 py-3 text-left text-[10px] font-black text-slate-400 uppercase tracking-wider">Cashier</th>
@@ -998,11 +1181,31 @@ export default function Sales() {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-slate-100 text-xs">
-              {paginatedSales.map(s => (
-                <tr key={s.id} className={`hover:bg-slate-50/80 transition-colors ${s.status === 'refunded' ? 'bg-red-50/30' : ''}`}>
-                  <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">
-                    #SALE-{s.id}
-                  </td>
+              {paginatedSales.map(s => {
+                const isSelected = selectedSaleIds.includes(s.id);
+                return (
+                  <tr 
+                    key={s.id} 
+                    className={`transition-colors ${
+                      isSelected 
+                        ? 'bg-blue-50/70 hover:bg-blue-100/70 border-l-4 border-l-blue-600'
+                        : s.status === 'refunded' 
+                        ? 'bg-red-50/30 hover:bg-slate-50/80' 
+                        : 'hover:bg-slate-50/80'
+                    }`}
+                  >
+                    <td className="px-4 py-3.5 w-10 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
+                      <input
+                        type="checkbox"
+                        checked={isSelected}
+                        onChange={() => toggleSelectSale(s.id)}
+                        className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                        title={`Select #SALE-${s.id}`}
+                      />
+                    </td>
+                    <td className="px-5 py-3.5 font-bold text-slate-900 whitespace-nowrap">
+                      #SALE-{s.id}
+                    </td>
                   <td className="px-5 py-3.5 text-slate-500 whitespace-nowrap">
                     {new Date(s.created_at + 'Z').toLocaleString()}
                   </td>
@@ -1088,11 +1291,12 @@ export default function Sales() {
                     </div>
                   </td>
                 </tr>
-              ))}
+              );
+            })}
 
               {filteredSalesTable.length === 0 && !loading && (
                 <tr>
-                  <td colSpan={9} className="px-5 py-12 text-center text-slate-400">
+                  <td colSpan={user?.role === 'admin' ? 11 : 10} className="px-5 py-12 text-center text-slate-400">
                     <ShoppingCart size={32} className="mx-auto mb-2 opacity-30" />
                     <p className="font-bold text-xs">No sales transactions match your current filters.</p>
                   </td>
@@ -1887,6 +2091,140 @@ export default function Sales() {
                   className="w-full py-1.5 text-xs font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer"
                 >
                   Cancel & Return to Cart
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Delete Sales Confirmation Modal */}
+      {showBatchDeleteSalesModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-6 text-center bg-rose-50/70 border-b border-rose-100">
+              <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-full flex items-center justify-center mx-auto mb-3">
+                <AlertTriangle size={24} />
+              </div>
+              <h3 className="text-base font-black text-slate-900">Delete {selectedSaleIds.length} Sales Records</h3>
+              <p className="text-xs text-slate-500 mt-1">
+                Are you sure you want to permanently delete these selected sales transactions? This action will remove corresponding line items and cannot be undone.
+              </p>
+            </div>
+
+            <div className="p-6 space-y-4">
+              <div className="max-h-40 overflow-y-auto space-y-1.5 p-3 bg-slate-50 rounded-xl border border-slate-200 text-xs">
+                {sales.filter(s => selectedSaleIds.includes(s.id)).slice(0, 10).map(s => (
+                  <div key={s.id} className="flex items-center justify-between font-medium text-slate-700">
+                    <span className="font-bold">#SALE-{s.id}</span>
+                    <span className="text-slate-500">{s.customer_name || 'Walk-in'}</span>
+                    <span className="font-mono font-bold text-slate-900">{formatGHS(s.total_amount)}</span>
+                  </div>
+                ))}
+                {selectedSaleIds.length > 10 && (
+                  <div className="text-[11px] text-slate-400 italic text-center pt-1">
+                    ...and {selectedSaleIds.length - 10} more transactions
+                  </div>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmBatchDeleteSales}
+                  disabled={isBatchDeletingSales}
+                  className="flex-1 py-2.5 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isBatchDeletingSales ? <RefreshCw size={14} className="animate-spin" /> : <Trash2 size={14} />}
+                  <span>{isBatchDeletingSales ? 'Deleting...' : `Confirm Delete (${selectedSaleIds.length})`}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchDeleteSalesModal(false)}
+                  disabled={isBatchDeletingSales}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Batch Update Sales Status Modal */}
+      {showBatchStatusModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-100 bg-slate-50/70 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Tag size={18} className="text-blue-600" />
+                <h3 className="text-sm font-black text-slate-900">Batch Update Status ({selectedSaleIds.length} Sales)</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowBatchStatusModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="p-6 space-y-4 text-xs">
+              <div>
+                <label className="block text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                  Select Target Transaction Status
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setBatchTargetSaleStatus('completed')}
+                    className={`p-3 rounded-xl border text-center font-bold transition cursor-pointer ${
+                      batchTargetSaleStatus === 'completed'
+                        ? 'bg-emerald-50 text-emerald-800 border-emerald-400 ring-2 ring-emerald-500/30'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CheckCircle2 size={18} className="mx-auto mb-1 text-emerald-600" />
+                    <span>Completed</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setBatchTargetSaleStatus('refunded')}
+                    className={`p-3 rounded-xl border text-center font-bold transition cursor-pointer ${
+                      batchTargetSaleStatus === 'refunded'
+                        ? 'bg-rose-50 text-rose-800 border-rose-400 ring-2 ring-rose-500/30'
+                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
+                    }`}
+                  >
+                    <RotateCcw size={18} className="mx-auto mb-1 text-rose-600" />
+                    <span>Refunded</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-blue-50/60 border border-blue-200 rounded-xl text-blue-900 text-[11px] leading-relaxed">
+                Updating will set the status of all {selectedSaleIds.length} selected transactions to <strong>{batchTargetSaleStatus}</strong>.
+              </div>
+
+              <div className="flex items-center gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={handleConfirmBatchUpdateSaleStatus}
+                  disabled={isBatchUpdatingSales}
+                  className="flex-1 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs transition shadow-sm flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                >
+                  {isBatchUpdatingSales ? <RefreshCw size={14} className="animate-spin" /> : <CheckCircle2 size={14} />}
+                  <span>{isBatchUpdatingSales ? 'Updating...' : `Update ${selectedSaleIds.length} Sales`}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowBatchStatusModal(false)}
+                  disabled={isBatchUpdatingSales}
+                  className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+                >
+                  Cancel
                 </button>
               </div>
             </div>

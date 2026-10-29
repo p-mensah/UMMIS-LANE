@@ -38,11 +38,32 @@ html, body {
   width: 100%;
   overscroll-behavior: none;
   touch-action: pan-y;
+  -webkit-tap-highlight-color: transparent;
+}
+
+:root {
+  --sat: env(safe-area-inset-top, 0px);
+  --sar: env(safe-area-inset-right, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
+  --sal: env(safe-area-inset-left, 0px);
+}
+
+/* Prevent iOS Safari 16px auto-zoom bug on mobile input focus */
+@media (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
 }
 
 body {
   @apply bg-slate-100 text-slate-800 antialiased;
   overflow: hidden;
+  padding-top: var(--sat);
+  padding-bottom: var(--sab);
+  padding-left: var(--sal);
+  padding-right: var(--sar);
 }
 
 /* Custom Clean Scrollbars */

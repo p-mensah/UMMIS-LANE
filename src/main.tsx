@@ -2,6 +2,9 @@ import {StrictMode} from 'react';
 import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
+import { registerServiceWorker } from './lib/serviceWorkerRegistration';
+
+registerServiceWorker();
 
 // Silence benign dev WebSocket disconnections when HMR is disabled or sandboxed in cloud environments
 if (typeof window !== 'undefined') {

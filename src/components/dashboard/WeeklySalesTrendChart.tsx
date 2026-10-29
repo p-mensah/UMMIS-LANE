@@ -295,7 +295,7 @@ export default function WeeklySalesTrendChart({
             </div>
           )}
 
-          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240}>
+          <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={240} initialDimension={{ width: 500, height: 260 }}>
             <LineChart data={chartData} margin={{ top: 12, right: 16, left: -8, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
               

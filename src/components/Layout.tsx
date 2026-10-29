@@ -14,6 +14,8 @@ import NotificationBell from './NotificationBell';
 import ProfileModal from './ProfileModal';
 import Sidebar from './Sidebar';
 import GlobalSearchModal from './GlobalSearchModal';
+import OfflineSyncBanner from './common/OfflineSyncBanner';
+import NetworkStatusIndicator from './common/NetworkStatusIndicator';
 import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
@@ -240,6 +242,9 @@ export default function Layout({ children }: { children: React.ReactNode }) {
               <span>30m Inactivity Lock</span>
             </div>
 
+            {/* Real-time Network & Offline Cache Status Indicator */}
+            <NetworkStatusIndicator />
+
             {/* Real-time Ticking Digital Clock & Date */}
             <LiveRealtimeClock />
 
@@ -290,6 +295,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
           className="flex-1 overflow-y-auto overscroll-contain overscroll-y-contain px-3 py-4 sm:px-6 sm:py-6 lg:px-8 lg:py-8 2xl:px-10 custom-scrollbar print:overflow-visible print:p-0 print:m-0"
         >
           <div className="w-full max-w-[1680px] mx-auto min-w-0 print:max-w-none print:w-full">
+            <OfflineSyncBanner />
             {children}
           </div>
         </div>

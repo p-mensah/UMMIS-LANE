@@ -2,7 +2,12 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="format-detection" content="telephone=no" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="theme-color" content="#0f172a" />
     <script>
       (function() {
         function isBenignWsError(err) {
@@ -11,7 +16,10 @@
           return (
             str.indexOf('WebSocket') !== -1 ||
             str.indexOf('closed without opened') !== -1 ||
-            str.indexOf('failed to connect to websocket') !== -1
+            str.indexOf('failed to connect to websocket') !== -1 ||
+            str.indexOf('width(-1)') !== -1 ||
+            str.indexOf('height(-1)') !== -1 ||
+            str.indexOf('chart should be greater than 0') !== -1
           );
         }
         window.addEventListener('unhandledrejection', function(e) {
@@ -46,6 +54,7 @@
     <meta name="description" content="A lightweight inventory and retail management system with sales, purchases, reporting, and role-based access control." />
     <meta property="og:title" content="Ummis Lane Enterprise" />
     <meta property="og:description" content="A lightweight inventory and retail management system with sales, purchases, reporting, and role-based access control." />
+    <link rel="manifest" href="/manifest.json" />
   </head>
   <body>
     <div id="root"></div>

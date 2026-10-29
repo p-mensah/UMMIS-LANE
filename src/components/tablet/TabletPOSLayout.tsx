@@ -28,7 +28,9 @@ import {
   Receipt,
   Maximize2,
   Minimize2,
-  Keyboard
+  Keyboard,
+  WifiOff,
+  Cloud
 } from 'lucide-react';
 import { formatGHS } from '../../lib/formatters';
 import { soundFeedback } from '../../lib/soundFeedback';
@@ -103,6 +105,20 @@ export default function TabletPOSLayout({
     typeof window !== 'undefined' ? window.innerWidth >= 1024 : true
   );
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isOnline, setIsOnline] = useState<boolean>(() => 
+    typeof navigator !== 'undefined' ? navigator.onLine : true
+  );
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   useEffect(() => {
     const handleResize = () => {
@@ -574,6 +590,17 @@ export default function TabletPOSLayout({
           >
             {isFullscreen ? <Minimize2 size={16} className="text-blue-400" /> : <Maximize2 size={16} />}
           </button>
+
+          {/* Offline Status Badge */}
+          {!isOnline && (
+            <div 
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold shrink-0 animate-pulse"
+              title="Network disconnected. Operating in local IndexedDB offline register mode."
+            >
+              <WifiOff size={14} className="text-amber-400" />
+              <span className="hidden md:inline">Offline POS</span>
+            </div>
+          )}
 
           {/* Cashier Badge */}
           <div className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-800 text-slate-200 text-xs font-bold shrink-0">

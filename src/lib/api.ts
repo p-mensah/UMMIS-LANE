@@ -1,4 +1,11 @@
 import { logNetworkError } from './networkLogger';
+import { 
+  saveProductsToCache, getCachedProducts,
+  saveCategoriesToCache, getCachedCategories,
+  saveCustomersToCache, getCachedCustomers,
+  saveSettingsToCache, getCachedSettings,
+  queueOfflineSale
+} from './offlineStore';
 
 export class ApiError extends Error {
   status: number;
@@ -149,64 +156,127 @@ export const fetchApi = async <T = any>(
       throw new ApiError(errorMessage, response.status, parsedErrorData);
     }
 
+    let resultData: any = null;
     if (isJson) {
-      return await response.json();
-    }
-
-    // Fallback text check
-    const text = await response.text();
-    if (!text || text.trim() === '') {
-      return null as unknown as T;
-    }
-
-    if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
-      const isStartingServer = text.includes('Starting Server...') || text.includes('Starting Server') || text.includes('Vite');
-      const currentRetry = options._retryCount || 0;
-      const maxRetries = isStartingServer ? 10 : 3;
-
-      // If we received an HTML page (e.g. during Cloud Run container startup/restart or warmup),
-      // retry with backoff before erroring out, without polluting the error console
-      if (currentRetry < maxRetries) {
-        const delay = isStartingServer ? 1000 : 500;
-        await new Promise(res => setTimeout(res, delay));
-        return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
+      resultData = await response.json();
+    } else {
+      const text = await response.text();
+      if (!text || text.trim() === '') {
+        return null as unknown as T;
       }
 
-      // For polling endpoints like notifications, return safe default rather than hard erroring
-      if (cleanEndpoint.includes('notifications')) {
-        return { notifications: [], unread_count: 0 } as unknown as T;
+      if (text.trim().startsWith('<') || text.includes('<!DOCTYPE')) {
+        const isStartingServer = text.includes('Starting Server...') || text.includes('Starting Server') || text.includes('Vite');
+        const currentRetry = options._retryCount || 0;
+        const maxRetries = isStartingServer ? 10 : 3;
+
+        if (currentRetry < maxRetries) {
+          const delay = isStartingServer ? 1000 : 500;
+          await new Promise(res => setTimeout(res, delay));
+          return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
+        }
+
+        if (cleanEndpoint.includes('notifications')) {
+          return { notifications: [], unread_count: 0 } as unknown as T;
+        }
+
+        if (!options.silent) {
+          logNetworkError({
+            url,
+            status: response.status,
+            statusText: response.statusText,
+            headers: responseHeaders,
+            contentType,
+            bodySnippet: text,
+            sourceHook: options.sourceHook || 'fetchApi',
+            isHtml: true
+          });
+        }
+
+        throw new Error(`The backend service is currently initializing. Please refresh in a moment.`);
       }
 
-      // Only log diagnostics error if retries are fully exhausted and not marked silent
-      if (!options.silent) {
-        logNetworkError({
-          url,
-          status: response.status,
-          statusText: response.statusText,
-          headers: responseHeaders,
-          contentType,
-          bodySnippet: text,
-          sourceHook: options.sourceHook || 'fetchApi',
-          isHtml: true
-        });
+      try {
+        resultData = JSON.parse(text);
+      } catch {
+        resultData = text;
       }
+    }
 
-      throw new Error(`The backend service is currently initializing. Please refresh in a moment.`);
+    // Cache critical retail entities into IndexedDB for offline continuity
+    if (resultData && (!options.method || options.method.toUpperCase() === 'GET')) {
+      if (cleanEndpoint === '/products' && Array.isArray(resultData)) {
+        saveProductsToCache(resultData);
+      } else if (cleanEndpoint === '/categories' && Array.isArray(resultData)) {
+        saveCategoriesToCache(resultData);
+      } else if (cleanEndpoint === '/customers' && Array.isArray(resultData)) {
+        saveCustomersToCache(resultData);
+      } else if (cleanEndpoint === '/settings') {
+        saveSettingsToCache(resultData);
+      }
     }
-    
-    try {
-      return JSON.parse(text);
-    } catch {
-      return text as unknown as T;
-    }
+
+    return resultData as T;
   } catch (err: any) {
-    if ((err.name === 'TypeError' && /fetch/i.test(err.message)) || err.message?.includes('Failed to fetch')) {
+    const isNetworkError = 
+      (err.name === 'TypeError' && /fetch/i.test(err.message)) || 
+      err.message?.includes('Failed to fetch') ||
+      (typeof navigator !== 'undefined' && !navigator.onLine);
+
+    if (isNetworkError) {
+      // Offline retail continuity layer: Serve cached data from IndexedDB
+      const method = (options.method || 'GET').toUpperCase();
+
+      if (method === 'GET') {
+        if (cleanEndpoint.startsWith('/products')) {
+          const cached = await getCachedProducts();
+          if (cached && cached.length > 0) {
+            console.info('[OfflineDB] Serving products catalog from local IndexedDB cache.');
+            return cached as unknown as T;
+          }
+        } else if (cleanEndpoint.startsWith('/categories')) {
+          const cached = await getCachedCategories();
+          if (cached && cached.length > 0) {
+            return cached as unknown as T;
+          }
+        } else if (cleanEndpoint.startsWith('/customers')) {
+          const cached = await getCachedCustomers();
+          if (cached && cached.length > 0) {
+            return cached as unknown as T;
+          }
+        } else if (cleanEndpoint.startsWith('/settings')) {
+          const cached = await getCachedSettings();
+          if (cached) {
+            return cached as unknown as T;
+          }
+        }
+      }
+
+      // Offline checkout interception: Safely queue sale locally
+      if (method === 'POST' && cleanEndpoint.startsWith('/sales')) {
+        let bodyData: any = {};
+        try {
+          bodyData = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+        } catch (e) {}
+
+        const queued = await queueOfflineSale(bodyData);
+        console.info('[OfflineDB] Connection unavailable. Sale queued in IndexedDB:', queued.id);
+        return {
+          success: true,
+          saleId: queued.id,
+          offline: true,
+          total: queued.total_amount,
+          message: 'Saved to local offline register. Sale will auto-synchronize when connection returns.'
+        } as unknown as T;
+      }
+
       const currentRetry = options._retryCount || 0;
-      if (currentRetry < 3) {
+      if (currentRetry < 2 && method === 'GET') {
         await new Promise(res => setTimeout(res, 800));
         return await fetchApi<T>(endpoint, { ...options, _retryCount: currentRetry + 1 });
       }
-      throw new Error('Unable to connect to the server. Please check your network or server status.');
+
+      throw new Error('Connection lost. Operating in offline mode from local storage.');
     }
     throw err;
   }

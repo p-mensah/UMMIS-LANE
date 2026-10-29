@@ -5,9 +5,17 @@ import {
   Store, ShieldCheck, Database, Receipt, CheckCircle2, 
   Trash2, RefreshCw, SlidersHorizontal, Eye, Lock,
   Save, Download, Upload, Building2, Phone, Mail, FileText,
-  TrendingUp, Zap, AlertTriangle
+  TrendingUp, Zap, AlertTriangle, Wifi, WifiOff, HardDrive, Cloud, Layers
 } from 'lucide-react';
 import { CediSign } from '../components/common/CediSign';
+import { 
+  getOfflineMetrics, 
+  saveProductsToCache, 
+  saveCategoriesToCache, 
+  saveCustomersToCache, 
+  getOfflineSalesQueue, 
+  removeSyncedSale 
+} from '../lib/offlineStore';
 
 export default function Settings() {
   // Store Identity
@@ -58,7 +66,93 @@ export default function Settings() {
 
   const { addToast, confirmModal } = useNotifications();
 
+  // Offline Resilience & IndexedDB State
+  const [offlineMetrics, setOfflineMetrics] = useState({
+    cachedProductsCount: 0,
+    cachedCustomersCount: 0,
+    pendingSalesCount: 0
+  });
+  const [isOnlineStatus, setIsOnlineStatus] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
+  const [primingCache, setPrimingCache] = useState(false);
+  const [syncingOfflineSales, setSyncingOfflineSales] = useState(false);
+  const [offlineSyncMessage, setOfflineSyncMessage] = useState<string | null>(null);
+
+  const refreshOfflineMetrics = async () => {
+    try {
+      const metrics = await getOfflineMetrics();
+      setOfflineMetrics(metrics);
+    } catch {
+      // ignore
+    }
+  };
+
+  const handlePrimeOfflineCache = async () => {
+    setPrimingCache(true);
+    try {
+      const [prods, cats, custs] = await Promise.all([
+        fetchApi('/products'),
+        fetchApi('/categories'),
+        fetchApi('/customers')
+      ]);
+      if (Array.isArray(prods)) await saveProductsToCache(prods);
+      if (Array.isArray(cats)) await saveCategoriesToCache(cats);
+      if (Array.isArray(custs)) await saveCustomersToCache(custs);
+      await refreshOfflineMetrics();
+      setOfflineSyncMessage('Offline cache successfully primed with latest store data.');
+      setTimeout(() => setOfflineSyncMessage(null), 4000);
+    } catch (err: any) {
+      setOfflineSyncMessage('Failed to prime offline cache: ' + (err.message || 'Network error'));
+    } finally {
+      setPrimingCache(false);
+    }
+  };
+
+  const handleSyncOfflineSales = async () => {
+    setSyncingOfflineSales(true);
+    try {
+      const queue = await getOfflineSalesQueue();
+      let count = 0;
+      for (const sale of queue) {
+        try {
+          const res = await fetch('/api/sales', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              items: sale.items,
+              customer_id: sale.customer_id,
+              payment_method: sale.payment_method,
+              shift_id: sale.shift_id,
+              offline_id: sale.id,
+              created_at: sale.created_at
+            })
+          });
+          if (res.ok) {
+            await removeSyncedSale(sale.id!);
+            count++;
+          }
+        } catch {
+          break;
+        }
+      }
+      await refreshOfflineMetrics();
+      setOfflineSyncMessage(`Synced ${count} offline transactions to store database.`);
+      setTimeout(() => setOfflineSyncMessage(null), 4000);
+    } catch (err: any) {
+      setOfflineSyncMessage('Sync error: ' + (err.message || 'Network error'));
+    } finally {
+      setSyncingOfflineSales(false);
+    }
+  };
+
   useEffect(() => {
+    refreshOfflineMetrics();
+    const handleOnline = () => { setIsOnlineStatus(true); refreshOfflineMetrics(); };
+    const handleOffline = () => { setIsOnlineStatus(false); refreshOfflineMetrics(); };
+    const handleQueueUpdated = () => { refreshOfflineMetrics(); };
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    window.addEventListener('offline-sales-queue-updated', handleQueueUpdated);
+
     fetchApi('/settings')
       .then(data => {
         if (data.store_name) setStoreName(data.store_name);
@@ -87,6 +181,12 @@ export default function Settings() {
       })
       .catch(console.error)
       .finally(() => setLoading(false));
+
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('offline-sales-queue-updated', handleQueueUpdated);
+    };
   }, []);
 
   const handleSave = async (e: React.FormEvent) => {
@@ -279,7 +379,7 @@ export default function Settings() {
   );
 
   return (
-    <div className="space-y-6 max-w-4xl pb-12">
+    <div className="space-y-6 pb-12">
       {/* Hidden File Input for JSON Database Restore */}
       <input 
         type="file" 
@@ -816,6 +916,127 @@ export default function Settings() {
               <div className="p-3 bg-blue-50 border border-blue-200 text-blue-800 text-xs font-bold rounded-xl flex items-center gap-2">
                 <CheckCircle2 size={16} className="text-blue-600 shrink-0" />
                 <span>{cleanupMessage}</span>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Offline Resilience & Local Storage Cache Card */}
+        <div className="bg-white border border-slate-200 rounded-2xl shadow-2xs overflow-hidden">
+          <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <HardDrive size={16} className="text-teal-600" />
+              <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">Offline Resilience & Local IndexedDB Cache</h2>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className={`px-2.5 py-0.5 text-[10px] font-extrabold uppercase rounded-full border flex items-center gap-1.5 ${
+                isOnlineStatus 
+                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200' 
+                  : 'bg-amber-50 text-amber-700 border-amber-300'
+              }`}>
+                {isOnlineStatus ? (
+                  <>
+                    <Wifi size={12} className="text-emerald-600" />
+                    <span>Network Connected</span>
+                  </>
+                ) : (
+                  <>
+                    <WifiOff size={12} className="text-amber-600 animate-pulse" />
+                    <span>Offline Standalone Mode</span>
+                  </>
+                )}
+              </span>
+              <span className="px-2 py-0.5 bg-teal-50 text-teal-700 text-[10px] font-extrabold uppercase rounded border border-teal-200">
+                PWA Service Worker Active
+              </span>
+            </div>
+          </div>
+
+          <div className="p-6 space-y-6">
+            {/* Metric Counters Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Cached Products</span>
+                  <Database size={15} className="text-teal-600" />
+                </div>
+                <div className="text-xl font-black text-slate-900 mt-1">
+                  {offlineMetrics.cachedProductsCount} <span className="text-xs font-normal text-slate-500">Items</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Full catalog available for offline barcode scanning</p>
+              </div>
+
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-slate-500 uppercase">Cached Customers</span>
+                  <Building2 size={15} className="text-blue-600" />
+                </div>
+                <div className="text-xl font-black text-slate-900 mt-1">
+                  {offlineMetrics.cachedCustomersCount} <span className="text-xs font-normal text-slate-500">Accounts</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Available for quick lookup and invoice attachment</p>
+              </div>
+
+              <div className={`p-4 rounded-xl border ${
+                offlineMetrics.pendingSalesCount > 0 
+                  ? 'bg-amber-50/70 border-amber-300 text-amber-950' 
+                  : 'bg-slate-50 border-slate-200 text-slate-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase text-slate-500">Unsynced Sales Queue</span>
+                  <Cloud size={15} className={offlineMetrics.pendingSalesCount > 0 ? 'text-amber-600' : 'text-slate-400'} />
+                </div>
+                <div className="text-xl font-black mt-1">
+                  {offlineMetrics.pendingSalesCount} <span className="text-xs font-normal text-slate-500">Sales</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Transactions captured offline waiting for server sync</p>
+              </div>
+            </div>
+
+            <div className="text-[11px] text-slate-600 leading-relaxed bg-teal-50/40 p-3.5 rounded-xl border border-teal-100 flex items-start gap-2.5">
+              <Layers size={16} className="text-teal-600 shrink-0 mt-0.5" />
+              <div>
+                <strong>Intermittent Network Tolerance:</strong> When network or Wi-Fi connectivity experiences outages, the POS terminal switches seamlessly to IndexedDB local storage. Cashiers can continue barcode scanning, creating sales, and issuing printed thermal receipts without interruption.
+              </div>
+            </div>
+
+            {/* Offline Cache Maintenance Actions */}
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 pt-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={handlePrimeOfflineCache}
+                  disabled={primingCache}
+                  className="px-3.5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
+                  title="Download and refresh latest catalog into local IndexedDB storage"
+                >
+                  {primingCache ? <RefreshCw size={14} className="animate-spin" /> : <HardDrive size={14} />}
+                  <span>{primingCache ? 'Priming Local Cache...' : 'Refresh Offline Cache'}</span>
+                </button>
+
+                {offlineMetrics.pendingSalesCount > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleSyncOfflineSales}
+                    disabled={syncingOfflineSales || !isOnlineStatus}
+                    className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
+                    title="Upload queued offline sales to the central server"
+                  >
+                    {syncingOfflineSales ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
+                    <span>{syncingOfflineSales ? 'Syncing...' : `Sync ${offlineMetrics.pendingSalesCount} Queued Sales Now`}</span>
+                  </button>
+                )}
+              </div>
+
+              <span className="text-[11px] text-slate-400 font-medium">
+                Storage: <span className="font-mono text-slate-600 font-bold">retailos_offline_db (v1)</span>
+              </span>
+            </div>
+
+            {offlineSyncMessage && (
+              <div className="p-3 bg-teal-50 border border-teal-200 text-teal-900 text-xs font-bold rounded-xl flex items-center gap-2 animate-in fade-in duration-150">
+                <CheckCircle2 size={16} className="text-teal-600 shrink-0" />
+                <span>{offlineSyncMessage}</span>
               </div>
             )}
           </div>
