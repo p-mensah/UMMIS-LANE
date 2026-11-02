@@ -638,89 +638,87 @@ export default function Products() {
 
   return (
     <div className="space-y-6">
-      {/* SOLID BLUE PAGE HEADER (No gradient) */}
-      <div id="products-page-header" className="bg-blue-600 text-white rounded-lg p-5 shadow-sm border border-blue-700/50">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="flex items-start sm:items-center gap-3.5">
-            <div className="w-11 h-11 rounded-lg bg-blue-700/80 border border-blue-500/50 flex items-center justify-center text-white shrink-0 shadow-xs">
-              <Package size={22} className="text-white" />
-            </div>
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h1 className="text-xl sm:text-2xl font-black text-white tracking-tight">
-                  Products Catalog
-                </h1>
-                <span className="px-2 py-0.5 bg-blue-700/90 text-blue-100 rounded text-[11px] font-bold border border-blue-500/40">
-                  {products.length} Products
-                </span>
-                {lowStockCount > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setFilterBelowMinStock(!filterBelowMinStock)}
-                    className={`px-2.5 py-0.5 rounded text-[11px] font-black transition cursor-pointer flex items-center gap-1.5 shadow-2xs ${
-                      filterBelowMinStock
-                        ? 'bg-amber-400 text-slate-950 ring-2 ring-white font-extrabold'
-                        : 'bg-amber-500 text-slate-900 hover:bg-amber-400'
-                    }`}
-                    title="Click to filter items below their minimum stock level"
-                  >
-                    <AlertTriangle size={12} className="text-slate-950" />
-                    <span>{lowStockCount} Below Min Stock</span>
-                    <span className="text-[10px] opacity-80 underline">{filterBelowMinStock ? 'Clear' : 'Filter'}</span>
-                  </button>
-                )}
-              </div>
-              <p className="text-xs text-blue-100 font-medium mt-0.5">
-                Manage inventory stock levels, barcode tracking, retail pricing, and supplier reorder points
-              </p>
-            </div>
+      {/* UNIFIED APPLICATION PAGE HEADER (Matches Purchases, Dashboard, Sales, Users) */}
+      <div id="products-page-header" className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+        <div className="flex items-start sm:items-center gap-3">
+          <div className="p-2.5 bg-slate-900 text-white rounded-lg shrink-0 shadow-2xs">
+            <Package size={22} />
           </div>
-
-          {/* Action buttons with clean contrast against the blue background */}
-          {user?.role === 'admin' && (
-            <div className="flex items-center flex-wrap gap-2">
-              <button 
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
+                Products Catalog
+              </h1>
+              <span className="px-2 py-0.5 bg-slate-100 text-slate-700 rounded text-xs font-bold border border-slate-200">
+                {products.length} Products
+              </span>
+              {lowStockCount > 0 && (
+                <button
                   type="button"
-                  onClick={openNew} 
-                  className="flex items-center justify-center px-3.5 py-2 bg-white text-blue-900 hover:bg-blue-50 rounded font-black text-xs uppercase tracking-wider transition shadow-sm cursor-pointer active:scale-95"
+                  onClick={() => setFilterBelowMinStock(!filterBelowMinStock)}
+                  className={`px-2.5 py-0.5 rounded text-xs font-bold transition cursor-pointer flex items-center gap-1.5 border shadow-2xs ${
+                    filterBelowMinStock
+                      ? 'bg-amber-500 text-slate-950 border-amber-600 ring-2 ring-amber-300'
+                      : 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300'
+                  }`}
+                  title="Click to filter items below their minimum stock level"
                 >
-                  <Plus size={15} className="mr-1 text-blue-700" /> Add Product
+                  <AlertTriangle size={12} className={filterBelowMinStock ? 'text-slate-950 animate-bounce' : 'text-amber-600'} />
+                  <span>{lowStockCount} Below Min Stock</span>
+                  <span className="text-[10px] opacity-80 underline">{filterBelowMinStock ? 'Clear' : 'Filter'}</span>
                 </button>
-                <button 
-                  type="button"
-                  id="import-products-csv-btn"
-                  onClick={() => setShowImportModal(true)}
-                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
-                  title="Bulk import products from CSV file with column mapping and data integrity validation"
-                >
-                  <Upload size={14} className="mr-1.5 text-blue-200" /> Bulk CSV Import
-                </button>
-                <button 
-                  type="button"
-                  id="quick-csv-paste-btn"
-                  onClick={() => setShowBulkCsvModal(true)}
-                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
-                  title="Quick CSV text input with real-time format validation"
-                >
-                  <FileSpreadsheet size={14} className="mr-1.5 text-blue-200" /> Quick CSV
-                </button>
-                <button 
-                  type="button"
-                  id="export-products-header-csv-btn"
-                  onClick={exportTableToCSV}
-                  disabled={filteredProducts.length === 0}
-                  className="flex items-center justify-center px-3 py-2 bg-blue-700/90 hover:bg-blue-700 text-white border border-blue-500/50 rounded font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer disabled:opacity-50"
-                  title="Export current table data to CSV"
-                >
-                  <Download size={14} className="mr-1.5 text-blue-200" /> Export CSV ({filteredProducts.length})
-                </button>
+              )}
             </div>
-          )}
+            <p className="text-xs text-slate-500 font-medium mt-0.5">
+              Manage inventory stock levels, barcode tracking, retail pricing, and supplier reorder points
+            </p>
+          </div>
         </div>
+
+        {/* Action buttons styled consistently with application design system */}
+        {user?.role === 'admin' && (
+          <div className="flex items-center flex-wrap gap-2">
+            <button 
+              type="button"
+              onClick={openNew} 
+              className="flex items-center justify-center px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer active:scale-95"
+            >
+              <Plus size={15} className="mr-1" /> Add Product
+            </button>
+            <button 
+              type="button"
+              id="import-products-csv-btn"
+              onClick={() => setShowImportModal(true)}
+              className="flex items-center justify-center px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+              title="Bulk import products from CSV file with column mapping and data integrity validation"
+            >
+              <Upload size={14} className="mr-1.5 text-slate-500" /> Bulk CSV Import
+            </button>
+            <button 
+              type="button"
+              id="quick-csv-paste-btn"
+              onClick={() => setShowBulkCsvModal(true)}
+              className="flex items-center justify-center px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer"
+              title="Quick CSV text input with real-time format validation"
+            >
+              <FileSpreadsheet size={14} className="mr-1.5 text-slate-500" /> Quick CSV
+            </button>
+            <button 
+              type="button"
+              id="export-products-header-csv-btn"
+              onClick={exportTableToCSV}
+              disabled={filteredProducts.length === 0}
+              className="flex items-center justify-center px-3 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Export current table data to CSV"
+            >
+              <Download size={14} className="mr-1.5" /> Export CSV ({filteredProducts.length})
+            </button>
+          </div>
+        )}
       </div>
 
       {/* ROBUST REAL-TIME SEARCH & FILTER TOOLBAR */}
-      <div className="bg-white border border-slate-200 rounded-lg p-3.5 sm:p-4 shadow-xs space-y-3">
+      <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3">
         <div className="flex flex-col md:flex-row items-stretch md:items-center gap-3">
           {/* Real-time search field */}
           <div className="relative flex-1 group">
@@ -941,7 +939,7 @@ export default function Products() {
         </div>
       )}
 
-      <div className="bg-white border border-slate-200 rounded-sm overflow-x-auto min-h-[300px]">
+      <div className="bg-white border border-slate-200 rounded-xl shadow-2xs overflow-x-auto min-h-[300px]">
         <table className="min-w-full divide-y divide-slate-200">
           <thead className="bg-slate-50">
             <tr>
@@ -954,16 +952,16 @@ export default function Products() {
                   title={isAllPageSelected ? 'Deselect all on this page' : 'Select all on this page'}
                 />
               </th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Image</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Product Name</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Brand</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">SKU</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">UOM</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Barcode</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Category</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Price</th>
-              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-400 uppercase tracking-wider">Stock & Restock Status</th>
-              <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-400 uppercase tracking-wider">Action</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Image</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Product Name</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Brand</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">SKU</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">UOM</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Barcode</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Category</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Price</th>
+              <th className="px-5 py-3 text-left text-[11px] font-bold text-slate-500 uppercase tracking-wider">Stock & Restock Status</th>
+              <th className="px-5 py-3 text-right text-[11px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-100">
@@ -1017,12 +1015,8 @@ export default function Products() {
                     key={p.id} 
                     className={`transition-colors ${
                       isSelected
-                        ? 'bg-blue-50/70 hover:bg-blue-100/70 border-l-4 border-l-blue-600'
-                        : isOutOfStock 
-                        ? 'bg-rose-50/60 hover:bg-rose-100/70 border-l-4 border-l-rose-500' 
-                        : isBelowMin 
-                        ? 'bg-amber-50/60 hover:bg-amber-100/70 border-l-4 border-l-amber-500' 
-                        : 'hover:bg-slate-50'
+                        ? 'bg-blue-50/70 hover:bg-blue-50'
+                        : 'hover:bg-slate-50/80'
                     }`}
                   >
                     <td className="px-4 py-3 w-10 text-center whitespace-nowrap" onClick={(e) => e.stopPropagation()}>

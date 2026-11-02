@@ -484,7 +484,7 @@ export default function Dashboard() {
             <div className="flex items-center bg-slate-100 p-0.5 sm:p-1 rounded-lg border border-slate-200 text-xs">
               <button
                 onClick={() => setViewMode('admin')}
-                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 ${
+                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 cursor-pointer ${
                   viewMode === 'admin' ? 'bg-slate-900 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -492,7 +492,7 @@ export default function Dashboard() {
               </button>
               <button
                 onClick={() => setViewMode('staff')}
-                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 ${
+                className={`px-2.5 sm:px-3 py-1.5 text-xs font-black uppercase tracking-wider rounded transition-all min-h-[36px] sm:min-h-0 cursor-pointer ${
                   viewMode === 'staff' ? 'bg-blue-600 text-white shadow-2xs' : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -501,32 +501,33 @@ export default function Dashboard() {
             </div>
           )}
 
+          {/* Create Purchase Order */}
+          {(user?.role === 'admin' || user?.role === 'manager') && (
+            <button
+              onClick={() => setShowCreatePoModal(true)}
+              className="px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
+              title="Create and issue a Purchase Order to supplier"
+            >
+              <Plus size={15} className="text-slate-500" /> <span>Create PO</span>
+            </button>
+          )}
+
           {/* Automated Bulk CSV Product & Inventory Import */}
           {(user?.role === 'admin' || user?.role === 'manager') && (
             <button
               onClick={() => setShowImportModal(true)}
-              className="px-3 py-2 bg-indigo-50 hover:bg-indigo-100 active:bg-indigo-200 text-indigo-700 border border-indigo-200 rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
+              className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
               title="Bulk upload and automated CSV parser for inventory & products"
             >
-              <Upload size={14} className="text-indigo-600" />
+              <Upload size={14} className="text-slate-500" />
               <span>Import CSV</span>
             </button>
           )}
 
           {(user?.role === 'admin' || user?.role === 'manager') && (
             <button
-              onClick={() => setShowCreatePoModal(true)}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
-              title="Create and issue a Purchase Order to supplier"
-            >
-              <Plus size={15} /> <span>Create PO</span>
-            </button>
-          )}
-
-          {(user?.role === 'admin' || user?.role === 'manager') && (
-            <button
               onClick={() => setShowAdminReportsModal(true)}
-              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
+              className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs cursor-pointer min-h-[38px]"
             >
               <FileText size={15} /> <span className="hidden sm:inline">Reports & Audits</span><span className="sm:hidden">Reports</span>
             </button>
@@ -534,15 +535,15 @@ export default function Dashboard() {
 
           <button
             onClick={handleOpenDailySummary}
-            className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded font-bold text-xs uppercase tracking-wider transition border border-slate-200 flex items-center gap-1.5 min-h-[38px]"
+            className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs flex items-center gap-1.5 min-h-[38px] cursor-pointer"
           >
-            <Receipt size={14} /> <span>EOD Summary</span>
+            <Receipt size={14} className="text-slate-500" /> <span>EOD Summary</span>
           </button>
 
           <button
             onClick={loadDashboardData}
             disabled={loading}
-            className="p-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded transition border border-slate-200 min-h-[38px] min-w-[38px] flex items-center justify-center cursor-pointer"
+            className="p-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 rounded-lg transition shadow-2xs min-h-[38px] min-w-[38px] flex items-center justify-center cursor-pointer"
             title="Refresh Data"
           >
             <RefreshCw size={16} className={loading ? 'animate-spin' : ''} />
@@ -618,7 +619,7 @@ export default function Dashboard() {
             <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1 sm:space-y-2">
               <div className="flex items-center justify-between text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider">
                 <span className="truncate">Shift Cash Status</span>
-                <Clock size={15} className="text-indigo-600 hidden sm:block shrink-0" />
+                <Clock size={15} className="text-blue-600 hidden sm:block shrink-0" />
               </div>
               <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">
                 {summary?.activeShiftCount || 0} Open Shift(s)
@@ -716,7 +717,7 @@ export default function Dashboard() {
           <WeeklySalesTrendChart onRefreshParent={loadDashboardData} />
 
           {/* TOP SELLING PRODUCTS LEADERBOARD */}
-          <div className="bg-white p-5 rounded border border-slate-200 shadow-2xs space-y-4">
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
             <div className="pb-3 border-b border-slate-100 flex items-center justify-between">
               <div>
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
@@ -777,7 +778,7 @@ export default function Dashboard() {
           />
 
           {/* RECENT SALES ACTIVITY FEED & INVOICE VIEWER */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
             <div className="p-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
               <div>
                 <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
@@ -928,7 +929,7 @@ export default function Dashboard() {
           </div>
 
           {/* MONTHLY P&L FINANCIAL PERFORMANCE LEDGER */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div>
                 <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
@@ -942,7 +943,7 @@ export default function Dashboard() {
                 <select
                   value={selectedMonth}
                   onChange={(e) => setSelectedMonth(e.target.value)}
-                  className="px-3 py-1.5 border border-slate-300 rounded text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500"
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500"
                 >
                   {getMonthOptions().map(m => (
                     <option key={m.val} value={m.val}>{m.label}</option>
@@ -955,31 +956,31 @@ export default function Dashboard() {
               <div className="py-8 text-center text-slate-400">Loading P&L breakdown...</div>
             ) : monthlySummaryData ? (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 text-xs">
-                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <div className="text-[10px] font-black uppercase text-slate-400">Gross Sales Revenue</div>
                   <div className="text-lg font-black text-slate-900 mt-1">{formatGHS(monthlySummaryData.totalSales || 0)}</div>
                   <div className="text-[10px] text-slate-500 mt-0.5">{monthlySummaryData.salesCount || 0} sales orders</div>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <div className="text-[10px] font-black uppercase text-slate-400">Cost of Goods Sold (COGS)</div>
                   <div className="text-lg font-black text-rose-700 mt-1">{formatGHS(monthlySummaryData.cogs || 0)}</div>
                   <div className="text-[10px] text-slate-500 mt-0.5">Inventory cost value</div>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <div className="text-[10px] font-black uppercase text-slate-400">Gross Profit</div>
                   <div className="text-lg font-black text-emerald-700 mt-1">{formatGHS(monthlySummaryData.grossProfit || 0)}</div>
                   <div className="text-[10px] text-slate-500 mt-0.5">Sales minus COGS</div>
                 </div>
 
-                <div className="bg-slate-50 p-3 rounded border border-slate-200">
+                <div className="bg-slate-50 p-3 rounded-lg border border-slate-200">
                   <div className="text-[10px] font-black uppercase text-slate-400">Operating Expenses</div>
                   <div className="text-lg font-black text-amber-700 mt-1">{formatGHS(monthlySummaryData.totalExpenses || 0)}</div>
                   <div className="text-[10px] text-slate-500 mt-0.5">{monthlySummaryData.expenseCount || 0} expense voucher(s)</div>
                 </div>
 
-                <div className="bg-emerald-50 p-3 rounded border border-emerald-200">
+                <div className="bg-emerald-50 p-3 rounded-lg border border-emerald-200">
                   <div className="text-[10px] font-black uppercase text-emerald-800">Net Profit Margin</div>
                   <div className="text-lg font-black text-emerald-900 mt-1">{formatGHS(monthlySummaryData.netProfit || 0)}</div>
                   <div className="text-[10px] text-emerald-700 mt-0.5">
@@ -991,7 +992,7 @@ export default function Dashboard() {
           </div>
 
           {/* SYSTEM SECURITY & TERMINAL AUDIT ACTIVITY WIDGET */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-3">
                 <div className="p-2 bg-slate-900 text-white rounded-lg shrink-0">
@@ -1124,6 +1125,46 @@ export default function Dashboard() {
       ) : (
         /* STAFF TERMINAL VIEW */
         <div className="space-y-6">
+          {/* Cashier Quick Actions Bar */}
+          <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
+            <div className="flex items-center gap-2.5">
+              <div className="p-2 bg-slate-900 text-white rounded-lg shadow-2xs">
+                <Store size={18} />
+              </div>
+              <div>
+                <h3 className="text-xs sm:text-sm font-black text-slate-900 tracking-tight">Front Counter Station</h3>
+                <p className="text-[11px] text-slate-500 font-medium">Quick shortcuts for daily cashiering and register workflows.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center flex-wrap gap-2">
+              <Link
+                to="/sales"
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs flex items-center gap-1.5 active:scale-95"
+              >
+                <ShoppingCart size={15} /> <span>Open POS Terminal</span>
+              </Link>
+              <Link
+                to="/shifts"
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs flex items-center gap-1.5"
+              >
+                <Clock size={14} className="text-slate-500" /> <span>Cash Drawer & Shifts</span>
+              </Link>
+              <Link
+                to="/products"
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs flex items-center gap-1.5"
+              >
+                <Search size={14} className="text-slate-500" /> <span>Price Lookup</span>
+              </Link>
+              <Link
+                to="/customers"
+                className="px-3 py-2 bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 rounded-lg font-bold text-xs uppercase tracking-wider transition shadow-2xs flex items-center gap-1.5"
+              >
+                <Users size={14} className="text-slate-500" /> <span>Customer Accounts</span>
+              </Link>
+            </div>
+          </div>
+
           {/* Staff Counter KPI Strip (2-col mobile, 4-col desktop) */}
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5 sm:gap-4">
             <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
@@ -1148,7 +1189,7 @@ export default function Dashboard() {
 
             <div className="bg-white p-3.5 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-1">
               <div className="text-slate-500 text-[10px] sm:text-[11px] font-black uppercase tracking-wider mb-1">Estimated Commission</div>
-              <div className="text-lg sm:text-2xl font-black text-indigo-700 truncate">{formatGHS(staffSummary?.myCommission || 0)}</div>
+              <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">{formatGHS(staffSummary?.myCommission || 0)}</div>
               <div className="text-[11px] sm:text-xs text-slate-500 truncate">Performance bonus</div>
             </div>
           </div>
@@ -1167,7 +1208,7 @@ export default function Dashboard() {
                 <select
                   value={staffReportPeriod}
                   onChange={(e) => setStaffReportPeriod(e.target.value as any)}
-                  className="px-3 py-1.5 border border-slate-300 rounded text-xs font-bold text-slate-800"
+                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:border-blue-500"
                 >
                   <option value="today">Today</option>
                   <option value="7days">Past 7 Days</option>
@@ -1287,8 +1328,8 @@ export default function Dashboard() {
             </div>
           </div>
 
-          {/* REORGANIZED STAFF COMMUNICATION & SHIFT NOTICE BOARD (Positioned down below transactions ledger) */}
-          <div className="bg-white rounded border border-slate-200 shadow-2xs p-5 space-y-4">
+          {/* REORGANIZED STAFF COMMUNICATION & SHIFT NOTICE BOARD */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-2xs p-4 sm:p-5 space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-blue-50 text-blue-600 rounded-lg border border-blue-100">
@@ -1310,7 +1351,7 @@ export default function Dashboard() {
               <div className="flex items-center gap-2">
                 <Link
                   to="/communication"
-                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs"
+                  className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-bold text-xs uppercase tracking-wider transition flex items-center gap-1.5 shadow-2xs"
                 >
                   <MessageSquare size={14} /> Open Communication Hub
                 </Link>

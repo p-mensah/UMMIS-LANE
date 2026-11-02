@@ -745,7 +745,7 @@ export default function Sales() {
       </div>
 
       {/* Past Week Daily Sales Performance (Recharts Line Graph) */}
-      <div className="bg-white rounded border border-slate-200 shadow-2xs overflow-hidden no-print">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden no-print">
         {/* Graph Header */}
         <div className="p-4 sm:p-5 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="flex items-start gap-3">
