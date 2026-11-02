@@ -276,9 +276,25 @@ export default function NetworkStatusIndicator() {
                 </button>
               )}
 
-              {(!isOnline || pendingQueueCount === 0) && (
+              {!isOnline && (
+                <button
+                  type="button"
+                  onClick={async () => {
+                    await checkStatus();
+                    if (navigator.onLine) {
+                      await handleManualSync();
+                    }
+                  }}
+                  className="w-full py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer shadow-xs"
+                >
+                  <RefreshCw size={13} />
+                  <span>Test Connection & Sync</span>
+                </button>
+              )}
+
+              {isOnline && pendingQueueCount === 0 && (
                 <div className="w-full text-center text-[10px] text-slate-400 font-medium py-1">
-                  {isOnline ? 'All transactions are synchronized.' : 'Sales will auto-sync when connection returns.'}
+                  All transactions are synchronized.
                 </div>
               )}
             </div>

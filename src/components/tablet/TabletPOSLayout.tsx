@@ -610,6 +610,21 @@ export default function TabletPOSLayout({
         </div>
       </header>
 
+      {/* Offline Status Alert Banner in Tablet POS */}
+      {!isOnline && (
+        <div className="bg-amber-500 text-slate-950 px-3.5 py-2 text-xs font-bold flex items-center justify-between border-b border-amber-600 shrink-0 shadow-sm select-none">
+          <div className="flex items-center gap-2">
+            <WifiOff size={15} className="text-slate-950 shrink-0 animate-pulse" />
+            <span>
+              <strong>You are offline:</strong> Working with cached catalog. Cash checkout and barcode scanning are fully operational. Sales will auto-sync upon reconnection.
+            </span>
+          </div>
+          <span className="hidden sm:inline-block px-2 py-0.5 bg-slate-900 text-amber-300 rounded font-black text-[10px]">
+            IndexedDB Cache Active
+          </span>
+        </div>
+      )}
+
       {/* ================= 2. ADAPTIVE VIEWPORT (FITS ALL SCREEN SIZES, NO SLIDING) ================= */}
       <div className="flex-1 min-h-0 w-full overflow-hidden flex flex-col lg:flex-row divide-y lg:divide-y-0 lg:divide-x divide-slate-800 bg-slate-900">
         

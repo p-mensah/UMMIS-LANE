@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, isConfiguredSupabaseUrl } from '../lib/supabase';
 import { logNetworkError } from '../lib/networkLogger';
 
 export interface User {
@@ -48,45 +48,38 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     }
 
-    // If Supabase session is available, sync with it safely
-    try {
-      if (typeof supabase?.auth?.getSession === 'function') {
-        supabase.auth.getSession()
-          .then(({ data }: any) => {
-            const session = data?.session;
-            if (session?.user) {
-              const email = session.user.email || '';
-              const role = email.includes('admin') ? 'admin' : (session.user.user_metadata?.role || 'staff');
-              const authUser: User = {
-                id: session.user.id,
-                name: session.user.user_metadata?.name || email.split('@')[0],
-                email,
-                role: role as 'admin' | 'staff'
-              };
-              setUser(authUser);
-              setToken(session.access_token);
-              localStorage.setItem('user', JSON.stringify(authUser));
-              localStorage.setItem('token', session.access_token);
-            }
-          })
-          .catch((err: any) => {
-            logNetworkError({
-              url: 'supabase.auth.getSession',
-              status: err?.status || 0,
-              statusText: err?.message || 'Auth getSession error',
-              headers: err?.headers || {},
-              sourceHook: 'useAuth (AuthContext)',
-              isHtml: typeof err?.message === 'string' && err.message.includes('<!DOCTYPE')
-            });
-            console.warn('[AuthContext] Supabase session check notice:', err?.message || err);
-          })
-          .finally(() => {
-            setLoading(false);
-          });
-        return;
-      }
-    } catch (e) {
-      // ignore
+    // Only check Supabase if real Supabase URL is configured
+    if (isConfiguredSupabaseUrl && typeof supabase?.auth?.getSession === 'function') {
+      const timeoutTimer = setTimeout(() => {
+        setLoading(false);
+      }, 1500);
+
+      supabase.auth.getSession()
+        .then(({ data }: any) => {
+          const session = data?.session;
+          if (session?.user) {
+            const email = session.user.email || '';
+            const role = email.includes('admin') ? 'admin' : (session.user.user_metadata?.role || 'staff');
+            const authUser: User = {
+              id: session.user.id,
+              name: session.user.user_metadata?.name || email.split('@')[0],
+              email,
+              role: role as 'admin' | 'staff'
+            };
+            setUser(authUser);
+            setToken(session.access_token);
+            localStorage.setItem('user', JSON.stringify(authUser));
+            localStorage.setItem('token', session.access_token);
+          }
+        })
+        .catch((err: any) => {
+          console.warn('[AuthContext] Supabase session check notice:', err?.message || err);
+        })
+        .finally(() => {
+          clearTimeout(timeoutTimer);
+          setLoading(false);
+        });
+      return;
     }
 
     setLoading(false);

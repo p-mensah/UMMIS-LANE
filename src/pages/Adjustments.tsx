@@ -235,10 +235,10 @@ export default function Adjustments() {
                       {adj.user_name}
                     </td>
                     <td className="px-5 py-3.5 whitespace-nowrap text-center">
-                      <span className={`inline-flex items-center gap-1 px-2.5 py-1 rounded text-xs font-black ${
-                        isPositive ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-red-50 text-red-700 border border-red-200'
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border shadow-2xs ${
+                        isPositive ? 'bg-emerald-50 text-emerald-800 border-emerald-200/80' : 'bg-rose-50 text-rose-800 border-rose-200/80'
                       }`}>
-                        {isPositive ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
+                        <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isPositive ? 'bg-emerald-500' : 'bg-rose-500'}`} />
                         {isPositive ? `+${adj.quantity_change}` : adj.quantity_change}
                       </span>
                     </td>

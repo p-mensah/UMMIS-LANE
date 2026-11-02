@@ -12,6 +12,7 @@ import { useNotifications } from '../context/NotificationContext';
 import { useModalDismiss } from '../hooks/useModalDismiss';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
+import StatusBadge from '../components/common/StatusBadge';
 
 interface PurchaseOrderItem {
   product_id: number;
@@ -349,43 +350,19 @@ export default function Purchases() {
   const getStatusBadge = (status: string) => {
     switch (status) {
       case 'received':
-        return (
-          <span className="px-2.5 py-1 bg-emerald-50 text-emerald-800 border border-emerald-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <CheckCircle2 size={12} className="text-emerald-600 shrink-0" /> Received
-          </span>
-        );
+        return <StatusBadge status="received" variant="received" label="Received" size="xs" />;
       case 'ordered':
       case 'submitted':
       case 'pending':
-        return (
-          <span className="px-2.5 py-1 bg-amber-50 text-amber-800 border border-amber-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <Clock size={12} className="text-amber-600 shrink-0" /> Pending Delivery
-          </span>
-        );
+        return <StatusBadge status="pending" variant="pending" label="Pending Delivery" size="xs" pulseDot />;
       case 'dispatched':
-        return (
-          <span className="px-2.5 py-1 bg-indigo-50 text-indigo-800 border border-indigo-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <Truck size={12} className="text-indigo-600 shrink-0" /> Dispatched
-          </span>
-        );
+        return <StatusBadge status="in_transit" variant="in_transit" label="Dispatched" size="xs" />;
       case 'draft':
-        return (
-          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-bold uppercase rounded-full inline-flex items-center gap-1.5">
-            <Clock size={12} className="text-slate-500 shrink-0" /> Draft
-          </span>
-        );
+        return <StatusBadge status="draft" variant="draft" label="Draft" size="xs" />;
       case 'cancelled':
-        return (
-          <span className="px-2.5 py-1 bg-rose-50 text-rose-800 border border-rose-300 text-[11px] font-black uppercase rounded-full inline-flex items-center gap-1.5 shadow-2xs">
-            <AlertCircle size={12} className="text-rose-600 shrink-0" /> Cancelled
-          </span>
-        );
+        return <StatusBadge status="cancelled" variant="cancelled" label="Cancelled" size="xs" />;
       default:
-        return (
-          <span className="px-2.5 py-1 bg-slate-100 text-slate-700 border border-slate-200 text-[11px] font-bold uppercase rounded-full">
-            {status}
-          </span>
-        );
+        return <StatusBadge status={status} size="xs" />;
     }
   };
 

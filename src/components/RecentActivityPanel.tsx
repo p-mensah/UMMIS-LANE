@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import RowActionMenu from './common/RowActionMenu';
+import StatusBadge from './common/StatusBadge';
 
 export interface RecentActivityItem {
   id: string | number;
@@ -325,9 +326,12 @@ export default function RecentActivityPanel({
                         {item.title}
                       </span>
                       {item.badge && (
-                        <span className={`text-[10px] font-black uppercase tracking-wider px-1.5 py-0.2 rounded border ${getBadgeStyle(item.badge.variant)}`}>
-                          {item.badge.text}
-                        </span>
+                        <StatusBadge
+                          status={item.badge.text}
+                          variant={item.badge.variant === 'emerald' ? 'completed' : item.badge.variant === 'rose' ? 'out_of_stock' : item.badge.variant === 'amber' ? 'breached' : 'neutral'}
+                          label={item.badge.text}
+                          size="xs"
+                        />
                       )}
                     </div>
                     <div className="text-[11px] text-slate-500 truncate flex items-center gap-1.5 mt-0.5">

@@ -7,6 +7,7 @@ import { supabase } from '../lib/supabase';
 import { callAdminApi, createUser as createAdminUser, suspendUser, reactivateUser, deleteUser as deleteAdminUser } from '../lib/adminApi';
 import ActionMenu, { ActionMenuItemUser } from '../components/ActionMenu';
 import UserManagementModal, { UserManagementData } from '../components/UserManagementModal';
+import StatusBadge from '../components/common/StatusBadge';
 import { 
   ShieldAlert, UserPlus, Users as UsersIcon, Shield, RefreshCw, AlertCircle, 
   CheckCircle2, Lock, Eye, ShieldCheck, Clock, KeyRound, Globe, Camera,
@@ -843,14 +844,17 @@ export default function Users() {
                           </td>
 
                           <td className="px-5 py-3.5 text-xs">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-wider border ${getRoleBadgeStyle(u.role)}`}>
-                              {getRoleDisplayName(u.role)}
-                            </span>
+                            <StatusBadge
+                              status={u.role}
+                              variant={u.role}
+                              label={getRoleDisplayName(u.role)}
+                              size="xs"
+                            />
                           </td>
 
                           <td className="px-5 py-3.5 text-xs">
                             {u.department ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200 uppercase tracking-wide">
                                 <Building2 size={11} className="text-slate-400" />
                                 {u.department}
                               </span>
@@ -860,17 +864,13 @@ export default function Users() {
                           </td>
 
                           <td className="px-5 py-3.5 text-xs">
-                            {isActive ? (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                Active
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
-                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
-                                Suspended
-                              </span>
-                            )}
+                            <StatusBadge
+                              status={isActive ? 'active' : 'suspended'}
+                              variant={isActive ? 'active' : 'suspended'}
+                              label={isActive ? 'Active' : 'Suspended'}
+                              size="xs"
+                              pulseDot={isActive}
+                            />
                           </td>
 
                           {/* Action Column */}

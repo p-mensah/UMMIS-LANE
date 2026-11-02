@@ -5,7 +5,8 @@ import {
   ShoppingCart, Printer, RotateCcw, Search, X, Tag, Minus, Plus, Trash2, 
   Scan, Volume2, VolumeX, CheckCircle2, AlertCircle, FileText, Download,
   Filter, Check, ArrowRight, Store, User, Layers, TrendingUp, Calendar,
-  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet, Receipt, AlertTriangle, RefreshCw
+  ChevronDown, ChevronUp, BarChart3, Eye, Mail, MoreVertical, Tablet, Receipt, AlertTriangle, RefreshCw,
+  Wifi, WifiOff
 } from 'lucide-react';
 import { 
   ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, 
@@ -13,6 +14,7 @@ import {
 } from 'recharts';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
+import { useNetworkStatus } from '../hooks/useNetworkStatus';
 import { formatGHS } from '../lib/formatters';
 import InvoiceModal from '../components/InvoiceModal';
 import RowActionMenu from '../components/common/RowActionMenu';
@@ -21,11 +23,13 @@ import { getDisplayCustomerPhone } from '../lib/privacy';
 import TabletPOSLayout from '../components/tablet/TabletPOSLayout';
 import PrintPreviewModal from '../components/PrintPreviewModal';
 import RecentTransactionsSidePanel from '../components/RecentTransactionsSidePanel';
+import StatusBadge from '../components/common/StatusBadge';
 
 export default function Sales() {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { addToast } = useNotifications();
+  const { isOnline, pendingSalesCount, cachedProductsCount } = useNetworkStatus();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isTabletMode, setIsTabletMode] = useState<boolean>(searchParams.get('mode') === 'tablet');
   const [sales, setSales] = useState<any[]>([]);
@@ -1227,20 +1231,14 @@ export default function Sales() {
                     )}
                   </td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
-                    <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                      {s.payment_method}
-                    </span>
+                    <StatusBadge status={s.payment_method || 'Cash'} size="xs" />
                   </td>
                   <td className="px-5 py-3.5 whitespace-nowrap">
-                     {s.status === 'refunded' ? (
-                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-700 border border-red-200 uppercase">
-                         Refunded
-                       </span>
-                     ) : (
-                       <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-700 border border-emerald-200 uppercase">
-                         Completed
-                       </span>
-                     )}
+                    <StatusBadge
+                      status={s.status || 'completed'}
+                      variant={s.status === 'refunded' ? 'refunded' : 'completed'}
+                      size="xs"
+                    />
                   </td>
                   <td className="px-5 py-3.5 text-right font-black text-slate-900 whitespace-nowrap">
                     {formatGHS(s.total_amount)}
@@ -1507,10 +1505,22 @@ export default function Sales() {
                    <ShoppingCart size={15} />
                 </div>
                 <div>
-                  <h2 className="text-xs font-black uppercase tracking-wider flex items-center gap-2">
-                    Point of Sale (POS) Session
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                  </h2>
+                  <div className="flex items-center gap-2">
+                    <h2 className="text-xs font-black uppercase tracking-wider">
+                      Point of Sale (POS) Session
+                    </h2>
+                    {isOnline ? (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-bold">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                        <span>Online</span>
+                      </span>
+                    ) : (
+                      <span className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] font-bold animate-pulse">
+                        <WifiOff size={10} className="text-amber-400" />
+                        <span>Offline (Cached)</span>
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[10px] text-slate-400 font-medium">Cashier: {user?.name || 'Staff'}</p>
                 </div>
               </div>
@@ -1551,6 +1561,23 @@ export default function Sales() {
                 </button>
               </div>
             </div>
+
+            {/* Offline Status Alert Banner in POS Session */}
+            {!isOnline && (
+              <div className="bg-amber-500 text-slate-950 px-3.5 py-2 text-xs font-bold flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 border-b border-amber-600 shrink-0 shadow-xs select-none">
+                <div className="flex items-center gap-2">
+                  <WifiOff size={15} className="text-slate-950 shrink-0 animate-pulse" />
+                  <span>
+                    <strong>Offline POS Active:</strong> You are working with cached data ({cachedProductsCount} products). Sales are stored locally in IndexedDB and will auto-sync when network returns.
+                  </span>
+                </div>
+                {pendingSalesCount > 0 && (
+                  <span className="px-2 py-0.5 bg-slate-900 text-amber-300 rounded font-black text-[10px] self-end sm:self-center shrink-0">
+                    {pendingSalesCount} {pendingSalesCount === 1 ? 'sale' : 'sales'} queued locally
+                  </span>
+                )}
+              </div>
+            )}
 
             {/* Optional Collapsible Barcode Scanner Drawer */}
             {scannerDrawerOpen && (
@@ -2062,28 +2089,44 @@ export default function Sales() {
               </p>
 
               <div className="flex flex-col gap-2 pt-2">
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowShiftWarningModal(false);
-                    navigate('/shifts');
-                  }}
-                  className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <span>Open Shift Register Now</span>
-                  <ArrowRight size={14} />
-                </button>
+                {!isOnline ? (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowShiftWarningModal(false);
+                      handleCheckout(true);
+                    }}
+                    className="w-full py-3 bg-amber-600 hover:bg-amber-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <WifiOff size={14} />
+                    <span>Proceed with Offline Sale (Queued Locally)</span>
+                  </button>
+                ) : (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowShiftWarningModal(false);
+                      navigate('/shifts');
+                    }}
+                    className="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-black text-xs uppercase tracking-wider transition shadow-sm flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    <span>Open Shift Register Now</span>
+                    <ArrowRight size={14} />
+                  </button>
+                )}
 
-                <button 
-                  type="button"
-                  onClick={() => {
-                    setShowShiftWarningModal(false);
-                    handleCheckout(true);
-                  }} 
-                  className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer border border-slate-200"
-                >
-                  Proceed Anyway (Unlinked Sale)
-                </button>
+                {isOnline && (
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setShowShiftWarningModal(false);
+                      handleCheckout(true);
+                    }} 
+                    className="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-xl font-bold text-xs transition cursor-pointer border border-slate-200"
+                  >
+                    Proceed Anyway (Unlinked Sale)
+                  </button>
+                )}
 
                 <button 
                   type="button"

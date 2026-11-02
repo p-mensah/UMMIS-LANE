@@ -5,6 +5,7 @@ import { formatGHS } from '../lib/formatters';
 import { ArrowUpRight, ArrowDownLeft, FileText, Filter, Printer, ExternalLink, RotateCcw, Truck, CreditCard, Copy, Eye, ShoppingCart } from 'lucide-react';
 import PrintPreviewModal from '../components/PrintPreviewModal';
 import RowActionMenu from '../components/common/RowActionMenu';
+import StatusBadge from '../components/common/StatusBadge';
 import { useNotifications } from '../context/NotificationContext';
 
 export default function Transactions() {
@@ -144,13 +145,12 @@ export default function Transactions() {
                     {t.description}
                   </td>
                   <td className="px-5 py-3 whitespace-nowrap">
-                    <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                      t.type === 'sale' ? 'bg-emerald-50 text-emerald-600 border border-emerald-200' : 
-                      t.type === 'return' ? 'bg-rose-100 text-rose-800 border border-rose-200' :
-                      t.type === 'purchase' ? 'bg-blue-50 text-blue-600 border border-blue-200' : 'bg-red-50 text-red-600 border border-red-200'
-                    }`}>
-                      {t.type}
-                    </span>
+                    <StatusBadge
+                      status={t.type}
+                      variant={t.type === 'sale' ? 'completed' : t.type === 'return' ? 'refunded' : t.type === 'purchase' ? 'in_transit' : 'cancelled'}
+                      label={t.type === 'sale' ? 'Sale' : t.type === 'return' ? 'Return' : t.type === 'purchase' ? 'Purchase' : 'Expense'}
+                      size="xs"
+                    />
                   </td>
                   <td className={`px-5 py-3 whitespace-nowrap text-right text-[13px] font-bold ${isIncome ? 'text-emerald-500' : 'text-red-500'}`}>
                     <span className="flex items-center justify-end">

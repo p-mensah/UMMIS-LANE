@@ -5,6 +5,7 @@ import { formatGHS } from '../lib/formatters';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import RowActionMenu from '../components/common/RowActionMenu';
+import StatusBadge from '../components/common/StatusBadge';
 import { 
   Clock, CheckCircle2, AlertCircle, PlayCircle, StopCircle, RefreshCw, 
   Search, Filter, Edit3, User, DollarSign, ArrowUpRight, ArrowDownRight, 
@@ -568,17 +569,13 @@ export default function Shifts() {
                               #SHIFT-{s.id}
                             </div>
                             <div className="mt-1">
-                              {isOpen ? (
-                                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
-                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                                  Active Open
-                                </span>
-                              ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-300">
-                                  <Check size={11} className="text-slate-500" />
-                                  Closed & Reconciled
-                                </span>
-                              )}
+                              <StatusBadge
+                                status={isOpen ? 'open' : 'closed'}
+                                variant={isOpen ? 'open' : 'closed'}
+                                label={isOpen ? 'Active Open' : 'Closed & Reconciled'}
+                                size="xs"
+                                pulseDot={isOpen}
+                              />
                             </div>
                           </td>
 

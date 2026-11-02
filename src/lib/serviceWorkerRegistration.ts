@@ -11,16 +11,18 @@ export function registerServiceWorker(): void {
     navigator.serviceWorker
       .register('/sw.js')
       .then((registration) => {
-        // Check for updates
+        // Immediately check for updates
+        registration.update().catch(() => {});
+
         registration.onupdatefound = () => {
           const installingWorker = registration.installing;
           if (installingWorker) {
             installingWorker.onstatechange = () => {
               if (installingWorker.state === 'installed') {
                 if (navigator.serviceWorker.controller) {
-                  console.info('[PWA] New version available; will activate on next visit.');
+                  console.info('[PWA] New service worker version installed and active.');
                 } else {
-                  console.info('[PWA] Content cached for offline use.');
+                  console.info('[PWA] Core shell cached for offline continuity.');
                 }
               }
             };

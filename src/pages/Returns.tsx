@@ -15,6 +15,7 @@ import {
   Printer, ShoppingCart, Eye
 } from 'lucide-react';
 import { CediSign } from '../components/common/CediSign';
+import StatusBadge from '../components/common/StatusBadge';
 
 export default function Returns() {
   const { user } = useAuth();
@@ -403,9 +404,7 @@ export default function Returns() {
                       {formatGHS(ret.refund_amount)}
                     </td>
                     <td className="px-4 py-3">
-                      <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
-                        {ret.refund_method || 'Cash'}
-                      </span>
+                      <StatusBadge status={ret.refund_method || 'Cash'} size="xs" />
                     </td>
                     <td className="px-4 py-3 text-slate-600 max-w-[180px] truncate" title={ret.return_reason}>
                       {ret.return_reason || 'General Return'}

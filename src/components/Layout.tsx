@@ -16,6 +16,7 @@ import Sidebar from './Sidebar';
 import GlobalSearchModal from './GlobalSearchModal';
 import OfflineSyncBanner from './common/OfflineSyncBanner';
 import NetworkStatusIndicator from './common/NetworkStatusIndicator';
+import GlobalOfflineAlert from './common/GlobalOfflineAlert';
 import { fetchApi } from '../lib/api';
 
 interface NavItemConfig {
@@ -288,6 +289,7 @@ export default function Layout({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </header>
+        <GlobalOfflineAlert />
 
         {/* Page Body Viewport (Fluid & responsive without hardcoded pixel widths, scroll contained) */}
         <div 

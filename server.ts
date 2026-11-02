@@ -5619,23 +5619,78 @@ app.get('/api/reports/transactions', authenticate, (req: any, res) => {
 });
 
 app.get('/api/reports/summary', authenticate, (req, res) => {
-  const thresholdRow: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
-  const threshold = parseInt(thresholdRow?.value || '10', 10);
+  try {
+    const thresholdRow: any = db.prepare("SELECT value FROM settings WHERE key = 'low_stock_threshold'").get();
+    const threshold = parseInt(thresholdRow?.value || '10', 10);
 
-  const totalProducts = db.prepare('SELECT COUNT(*) as count FROM products').get() as {count: number};
-  const lowStock = db.prepare('SELECT COUNT(*) as count FROM products WHERE stock_quantity <= COALESCE(min_stock_level, ?)').get(threshold) as {count: number};
-  const totalSalesValue = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed'").get() as {total: number};
-  const todaySales = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed' AND date(created_at) = date('now')").get() as {total: number};
-  const todayExpenses = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date(expense_date) = date('now')").get() as {total: number};
+    const totalProducts = (db.prepare('SELECT COUNT(*) as count FROM products').get() as {count: number})?.count || 0;
+    const lowStock = (db.prepare('SELECT COUNT(*) as count FROM products WHERE stock_quantity <= COALESCE(min_stock_level, ?)').get(threshold) as {count: number})?.count || 0;
+    const totalSalesValue = (db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed'").get() as {total: number})?.total || 0;
+    
+    // Today's Sales & Count
+    const todaySalesRow = db.prepare("SELECT SUM(total_amount) as total, COUNT(*) as count FROM sales WHERE status = 'completed' AND date(created_at) = date('now')").get() as {total: number, count: number};
+    const todaySales = todaySalesRow?.total || 0;
+    const todayCount = todaySalesRow?.count || 0;
 
-  res.json({
-    totalProducts: totalProducts.count,
-    lowStockProducts: lowStock.count,
-    totalSalesValue: totalSalesValue.total || 0,
-    todaySalesValue: todaySales.total || 0,
-    todayExpensesValue: todayExpenses.total || 0,
-    todayNetProfit: (todaySales.total || 0) - (todayExpenses.total || 0)
-  });
+    // Yesterday's Sales for Percent Change
+    const yesterdaySalesRow = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed' AND date(created_at) = date('now', '-1 day')").get() as {total: number};
+    const yesterdaySales = yesterdaySalesRow?.total || 0;
+    let percentChange = 0;
+    if (yesterdaySales > 0) {
+      percentChange = Math.round(((todaySales - yesterdaySales) / yesterdaySales) * 100);
+    } else if (todaySales > 0) {
+      percentChange = 100;
+    }
+
+    // Today's Expenses & Net Profit
+    const todayExpensesRow = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE date(expense_date) = date('now')").get() as {total: number};
+    const todayExpenses = todayExpensesRow?.total || 0;
+    const todayNetProfit = todaySales - todayExpenses;
+
+    // Current Month Completed Sales & Expenses
+    const monthSalesRow = db.prepare("SELECT SUM(total_amount) as total FROM sales WHERE status = 'completed' AND strftime('%Y-%m', created_at) = strftime('%Y-%m', 'now')").get() as {total: number};
+    const monthSales = monthSalesRow?.total || 0;
+
+    const monthExpensesRow = db.prepare("SELECT SUM(amount) as total FROM expenses WHERE strftime('%Y-%m', expense_date) = strftime('%Y-%m', 'now')").get() as {total: number};
+    const monthExpenses = monthExpensesRow?.total || 0;
+
+    // Month Gross Margin / Net Profit
+    const monthGrossProfitRow = db.prepare(`
+      SELECT SUM((si.unit_price - si.cost_price) * si.quantity) as total 
+      FROM sale_items si 
+      JOIN sales s ON si.sale_id = s.id 
+      WHERE s.status = 'completed' AND strftime('%Y-%m', s.created_at) = strftime('%Y-%m', 'now')
+    `).get() as {total: number};
+    const monthGrossProfit = monthGrossProfitRow?.total || (monthSales * 0.3);
+    const monthProfit = monthGrossProfit - monthExpenses;
+
+    // Open Shifts Cash & Status
+    const activeShiftsRow = db.prepare("SELECT COUNT(*) as count, SUM(COALESCE(expected_cash, starting_cash, 0)) as total FROM shifts WHERE status = 'open'").get() as {count: number, total: number};
+    const activeShiftCount = activeShiftsRow?.count || 0;
+    const openShiftsCashTotal = activeShiftsRow?.total || 0;
+
+    res.json({
+      totalProducts,
+      lowStockProducts: lowStock,
+      totalSalesValue,
+      todaySalesValue: todaySales,
+      todaySales,
+      todayCount,
+      yesterdaySales,
+      percentChange,
+      todayExpensesValue: todayExpenses,
+      todayNetProfit,
+      monthSales,
+      monthProfit,
+      monthGrossProfit,
+      monthExpenses,
+      activeShiftCount,
+      openShiftsCashTotal
+    });
+  } catch (err: any) {
+    console.error('Error in /api/reports/summary:', err);
+    res.status(500).json({ error: err.message });
+  }
 });
 
 app.get('/api/reports/daily-summary', authenticate, (req, res) => {

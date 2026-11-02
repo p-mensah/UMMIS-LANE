@@ -33,8 +33,17 @@ import TabletInventory from './pages/TabletInventory';
 
 function PrivateRoute({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="flex h-screen items-center justify-center">Loading...</div>;
-  return user ? <Layout>{children}</Layout> : <Navigate to="/login" />;
+  if (loading) {
+    return (
+      <div className="flex h-screen w-full items-center justify-center bg-slate-900 text-slate-200">
+        <div className="flex flex-col items-center gap-3">
+          <div className="w-8 h-8 border-3 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+          <span className="text-xs font-semibold tracking-wider text-slate-400 uppercase">Loading Ummis Retail OS...</span>
+        </div>
+      </div>
+    );
+  }
+  return user ? <Layout>{children}</Layout> : <Navigate to="/login" replace />;
 }
 
 function HomeRoute() {
@@ -108,6 +117,7 @@ export default function App() {
               <Route path="/tablet-pos" element={<PrivateRoute><Navigate to="/sales?mode=tablet" replace /></PrivateRoute>} />
               <Route path="/tablet-inventory" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
               <Route path="/tablet-mode" element={<PrivateRoute><TabletInventory /></PrivateRoute>} />
+              <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </ChatProvider>
         </NotificationProvider>

@@ -25,6 +25,7 @@ import AdminReportsModal from '../components/AdminReportsModal';
 import CreatePOModal from '../components/CreatePOModal';
 import ProductImportModal from '../components/ProductImportModal';
 import RowActionMenu from '../components/common/RowActionMenu';
+import StatusBadge from '../components/common/StatusBadge';
 import MiniPerformanceOverviewWidget from '../components/dashboard/MiniPerformanceOverviewWidget';
 import WeeklySalesTrendChart from '../components/dashboard/WeeklySalesTrendChart';
 
@@ -164,9 +165,9 @@ export default function Dashboard() {
     setLoading(true);
     const isAdmin = user?.role === 'admin';
     Promise.all([
-      fetchApi('/reports/summary'),
-      fetchApi('/reports/low-stock'),
-      fetchApi('/reports/best-sellers'),
+      fetchApi('/reports/summary').catch(() => ({})),
+      fetchApi('/reports/low-stock').catch(() => []),
+      fetchApi('/reports/best-sellers').catch(() => []),
       fetchApi('/reports/stock-threshold-proximity').catch(() => null),
       fetchApi('/sales').catch(() => []),
       fetchApi('/settings').catch(() => ({})),
@@ -176,9 +177,9 @@ export default function Dashboard() {
       fetchApi('/categories').catch(() => [])
     ])
       .then(([summaryData, lowStockData, top, proximityData, sales, settingsData, prods, audits, adjs, cats]) => {
-         setSummary(summaryData);
-         setLowStockProducts(lowStockData);
-         setBestSellers(top);
+         setSummary(summaryData && typeof summaryData === 'object' ? summaryData : {});
+         setLowStockProducts(Array.isArray(lowStockData) ? lowStockData : []);
+         setBestSellers(Array.isArray(top) ? top : []);
          if (proximityData) {
            setStockProximityData(proximityData);
          }
@@ -197,7 +198,7 @@ export default function Dashboard() {
          if (Array.isArray(cats)) {
            setCategories(cats);
          }
-         if (settingsData) {
+         if (settingsData && typeof settingsData === 'object') {
            if (settingsData.low_stock_threshold) {
              setGlobalThreshold(parseInt(settingsData.low_stock_threshold, 10));
            }
@@ -209,23 +210,51 @@ export default function Dashboard() {
            }
          }
       })
-      .catch(console.error)
+      .catch((err) => {
+        console.error('Failed to load dashboard data:', err);
+      })
       .finally(() => setLoading(false));
   };
 
   const loadMonthlySummary = (monthStr: string) => {
     setMonthlyLoading(true);
     fetchApi(`/reports/monthly-summary?month=${monthStr}`)
-      .then(data => setMonthlySummaryData(data))
-      .catch(console.error)
+      .then(data => {
+        if (data && typeof data === 'object') {
+          setMonthlySummaryData({
+            totalSales: data.revenue ?? data.totalSales ?? 0,
+            totalExpenses: data.expenses ?? data.totalExpenses ?? 0,
+            expenseCount: data.expensesCount ?? data.expenseCount ?? 0,
+            netProfit: data.netProfit ?? 0,
+            ...data
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load monthly summary:', err);
+      })
       .finally(() => setMonthlyLoading(false));
   };
 
   const loadStaffSummary = () => {
     setStaffLoading(true);
     fetchApi('/reports/staff-my-summary')
-      .then(data => setStaffSummary(data))
-      .catch(console.error)
+      .then(data => {
+        if (data && typeof data === 'object') {
+          setStaffSummary({
+            myTodaySales: data.todayRevenue ?? data.myTodaySales ?? 0,
+            myTodayCount: data.todaySalesCount ?? data.myTodayCount ?? 0,
+            myMonthSales: data.monthRevenue ?? data.myMonthSales ?? 0,
+            myMonthCount: data.monthSalesCount ?? data.myMonthCount ?? 0,
+            targetPercent: data.targetPercentage ?? data.targetPercent ?? 0,
+            myCommission: data.commissionEst ?? data.myCommission ?? 0,
+            ...data
+          });
+        }
+      })
+      .catch((err) => {
+        console.error('Failed to load staff summary:', err);
+      })
       .finally(() => setStaffLoading(false));
   };
 
@@ -439,9 +468,12 @@ export default function Dashboard() {
             <h1 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
               Retail OS Overview
             </h1>
-            <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
-              {(user?.role === 'admin' || user?.role === 'manager') ? (viewMode === 'admin' ? 'Executive Mode' : 'Cashier Mode') : `${user?.role || 'Staff'} Mode`}
-            </span>
+            <StatusBadge 
+              status={viewMode === 'admin' ? 'admin' : 'cashier'} 
+              variant={viewMode === 'admin' ? 'admin' : 'cashier'}
+              label={(user?.role === 'admin' || user?.role === 'manager') ? (viewMode === 'admin' ? 'Executive Mode' : 'Cashier Mode') : `${user?.role || 'Staff'} Mode`} 
+              size="xs" 
+            />
           </div>
           <p className="text-xs text-slate-500 font-medium">Real-time revenue monitoring, POS sales trends, stock alerts, and financial ledgers.</p>
         </div>
@@ -552,7 +584,7 @@ export default function Dashboard() {
                 <ShoppingCart size={15} className="text-blue-600 hidden sm:block shrink-0" />
               </div>
               <div className="text-lg sm:text-2xl font-black text-slate-900 truncate">
-                {formatGHS(summary?.todaySales || 0)}
+                {formatGHS(summary?.todaySales ?? summary?.todaySalesValue ?? 0)}
               </div>
               <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
                 <span className="truncate">{summary?.todayCount || 0} order(s)</span>
@@ -572,12 +604,12 @@ export default function Dashboard() {
                 <TrendingUp size={15} className="text-emerald-600 hidden sm:block shrink-0" />
               </div>
               <div className="text-lg sm:text-2xl font-black text-emerald-700 truncate">
-                {formatGHS(summary?.monthProfit || 0)}
+                {formatGHS(summary?.monthProfit ?? 0)}
               </div>
               <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
-                <span className="truncate">{formatGHS(summary?.monthSales || 0)}</span>
+                <span className="truncate">{formatGHS(summary?.monthSales ?? 0)}</span>
                 <span className="font-bold text-slate-900 shrink-0 text-[10px] sm:text-xs">
-                  {summary?.monthSales > 0 ? ((summary.monthProfit / summary.monthSales) * 100).toFixed(1) : 0}% Margin
+                  {(summary?.monthSales || 0) > 0 ? (((summary?.monthProfit || 0) / summary.monthSales) * 100).toFixed(1) : '0.0'}% Margin
                 </span>
               </div>
             </div>
@@ -593,7 +625,7 @@ export default function Dashboard() {
               </div>
               <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-slate-500 pt-1 border-t border-slate-100">
                 <span className="truncate">Expected: {formatGHS(summary?.openShiftsCashTotal || 0)}</span>
-                <span className="font-bold text-indigo-600 shrink-0 text-[10px]">Live</span>
+                <StatusBadge status="open" variant="open" label="Live" size="xs" pulseDot />
               </div>
             </div>
 
@@ -604,10 +636,10 @@ export default function Dashboard() {
                 <AlertTriangle size={15} className="text-amber-600 hidden sm:block shrink-0" />
               </div>
               <div className="text-lg sm:text-2xl font-black text-amber-900 truncate">
-                {lowStockProducts.length} Product(s)
+                {(lowStockProducts || []).length} Product(s)
               </div>
               <div className="flex items-center justify-between text-[11px] sm:text-xs font-medium text-amber-800 pt-1 border-t border-amber-200/60">
-                <span className="truncate">{lowStockProducts.filter(p => p.stock_quantity === 0).length} out of stock</span>
+                <span className="truncate">{(lowStockProducts || []).filter(p => p.stock_quantity === 0).length} out of stock</span>
                 <a 
                   href="#low-stock-notification-system" 
                   onClick={(e) => {
@@ -774,9 +806,7 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-xs text-blue-600">#SALE-{sale.id}</span>
-                        <span className="px-1.5 py-0.2 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
-                          {sale.payment_method || 'Cash'}
-                        </span>
+                        <StatusBadge status={sale.payment_method || 'Cash'} size="xs" />
                       </div>
                       <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
                         {sale.customer_name || 'Walk-in Customer'}
@@ -857,9 +887,7 @@ export default function Dashboard() {
                           {sale.customer_name || 'Walk-in Customer'}
                         </td>
                         <td className="px-4 py-3">
-                          <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
-                            {sale.payment_method || 'Cash'}
-                          </span>
+                          <StatusBadge status={sale.payment_method || 'Cash'} size="xs" />
                         </td>
                         <td className="px-4 py-3 text-right font-black text-slate-900">
                           {formatGHS(sale.total_amount)}
@@ -972,9 +1000,7 @@ export default function Dashboard() {
                 <div>
                   <h2 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
                     System Security & Terminal Activity
-                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-200 text-[10px] font-extrabold uppercase rounded-full">
-                      Ledger Live
-                    </span>
+                    <StatusBadge status="live" variant="live" label="Ledger Live" size="xs" pulseDot />
                   </h2>
                   <p className="text-[11px] text-slate-500 font-medium">Real-time audit trail of staff activities, terminal workstations, pricing edits, and stock movements.</p>
                 </div>
@@ -1162,9 +1188,7 @@ export default function Dashboard() {
                     <div className="min-w-0">
                       <div className="flex items-center gap-2">
                         <span className="font-mono font-bold text-xs text-blue-600">#SALE-{st.id}</span>
-                        <span className="px-1.5 py-0.2 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">
-                          {st.payment_method}
-                        </span>
+                        <StatusBadge status={st.payment_method || 'Cash'} size="xs" />
                       </div>
                       <div className="text-xs font-semibold text-slate-900 truncate mt-0.5">
                         {st.customer_name || 'Walk-in Customer'}
@@ -1230,7 +1254,9 @@ export default function Dashboard() {
                         <td className="px-4 py-3 font-mono font-bold text-blue-600">#SALE-{st.id}</td>
                         <td className="px-4 py-3 text-slate-500 font-mono text-[11px]">{new Date(st.created_at).toLocaleString()}</td>
                         <td className="px-4 py-3 font-medium text-slate-800">{st.customer_name || 'Walk-in Customer'}</td>
-                        <td className="px-4 py-3"><span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded uppercase text-[10px]">{st.payment_method}</span></td>
+                        <td className="px-4 py-3">
+                          <StatusBadge status={st.payment_method || 'Cash'} size="xs" />
+                        </td>
                         <td className="px-4 py-3 text-right font-black text-slate-900">{formatGHS(st.total_amount)}</td>
                         <td className="px-4 py-3 text-right">
                           <div className="flex items-center justify-end">

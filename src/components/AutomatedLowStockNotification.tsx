@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { formatGHS } from '../lib/formatters';
 import RowActionMenu from './common/RowActionMenu';
+import StatusBadge from './common/StatusBadge';
 
 export interface ProductStockAlert {
   id: number;
@@ -36,7 +37,7 @@ export interface ProductStockAlert {
 }
 
 interface AutomatedLowStockNotificationProps {
-  products: ProductStockAlert[];
+  products?: ProductStockAlert[];
   globalThreshold: number;
   proximityData?: {
     counts?: {
@@ -64,8 +65,8 @@ interface AutomatedLowStockNotificationProps {
 }
 
 export default function AutomatedLowStockNotification({
-  products,
-  globalThreshold,
+  products = [],
+  globalThreshold = 10,
   proximityData,
   onQuickRestock,
   onCreatePO,
@@ -82,13 +83,14 @@ export default function AutomatedLowStockNotification({
   const [filterQuery, setFilterQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'velocity' | 'nearing' | 'breached' | 'out_of_stock'>('all');
 
-  // Process products to determine proximity status and buffer values
+  // Process products to determine proximity status and buffer values safely
   const analyzedProducts = useMemo(() => {
     if (proximityData?.products && Array.isArray(proximityData.products) && proximityData.products.length > 0) {
       return proximityData.products;
     }
 
-    return products.map(p => {
+    const safeList = Array.isArray(products) ? products : [];
+    return safeList.map(p => {
       const thresh = p.min_stock_level ?? p.threshold ?? globalThreshold;
       const nearThreshold = thresh <= 10 ? thresh + 5 : Math.floor(thresh * 1.5);
       
@@ -592,29 +594,42 @@ export default function AutomatedLowStockNotification({
                           </div>
                         </td>
 
-                        {/* Alert Status Pill */}
+                        {/* Alert Status Badge */}
                         <td className="px-4 py-3 text-center">
                           <div className="flex flex-col items-center gap-1">
                             {product.is_velocity_breached && (
-                              <span className="px-2 py-0.5 bg-amber-500 text-slate-950 rounded font-black uppercase text-[10px] tracking-wider inline-flex items-center gap-1 shadow-2xs">
-                                <Zap size={10} className="fill-slate-950" />
-                                Velocity Alert
-                              </span>
+                              <StatusBadge
+                                status="velocity_warning"
+                                variant="velocity_warning"
+                                label="Velocity Alert"
+                                pulseDot
+                              />
                             )}
                             {isOut ? (
-                              <span className="px-2.5 py-0.5 bg-rose-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                                Out of Stock
-                              </span>
+                              <StatusBadge
+                                status="out_of_stock"
+                                variant="out_of_stock"
+                                label="Depleted"
+                                pulseDot
+                              />
                             ) : isBreached ? (
-                              <span className="px-2.5 py-0.5 bg-orange-600 text-white rounded font-bold uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                                Below Reorder Point
-                              </span>
+                              <StatusBadge
+                                status="breached"
+                                variant="breached"
+                                label="Below Reorder"
+                              />
                             ) : isNearing ? (
-                              <span className="px-2.5 py-0.5 bg-amber-500 text-slate-950 rounded font-black uppercase text-[10px] tracking-wider inline-block shadow-2xs">
-                                Nearing Reorder Point
-                              </span>
+                              <StatusBadge
+                                status="nearing"
+                                variant="nearing"
+                                label="Nearing Reorder"
+                              />
                             ) : !product.is_velocity_breached ? (
-                              <span className="text-slate-400 text-xs">Safe</span>
+                              <StatusBadge
+                                status="healthy"
+                                variant="healthy"
+                                label="Optimal"
+                              />
                             ) : null}
                           </div>
                         </td>

@@ -10,6 +10,7 @@ import BulkCsvProductModal from '../components/BulkCsvProductModal';
 import ProductFormModal from '../components/ProductFormModal';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
+import StatusBadge from '../components/common/StatusBadge';
 
 interface Product {
   id: number;
@@ -1061,32 +1062,39 @@ export default function Products() {
                     <td className="px-5 py-3 whitespace-nowrap text-[13px]">
                       {isOutOfStock ? (
                         <div className="flex flex-col items-start gap-1">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black bg-rose-100 text-rose-800 border border-rose-300 shadow-2xs">
-                            <AlertCircle size={13} className="text-rose-600 animate-pulse shrink-0" />
-                            OUT OF STOCK (0)
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-rose-700 bg-rose-50 px-1.5 py-0.5 rounded border border-rose-200 uppercase tracking-wider">
-                            Min: {minLevel} • Restock Urgent
+                          <StatusBadge
+                            status="out_of_stock"
+                            variant="out_of_stock"
+                            label="Out of Stock (0)"
+                            size="xs"
+                            pulseDot
+                          />
+                          <span className="text-[10px] font-mono font-bold text-rose-600 pl-0.5">
+                            Min: {minLevel} • Depleted
                           </span>
                         </div>
                       ) : isBelowMin ? (
                         <div className="flex flex-col items-start gap-1">
-                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-black bg-amber-100 text-amber-900 border border-amber-300 shadow-2xs">
-                            <AlertTriangle size={13} className="text-amber-600 shrink-0" />
-                            LOW: {p.stock_quantity} {p.unit_of_measure || 'pcs'}
-                          </span>
-                          <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-amber-800 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 uppercase tracking-wider">
-                            Min: {minLevel} • Below Min Level
+                          <StatusBadge
+                            status="breached"
+                            variant="breached"
+                            label={`Low: ${p.stock_quantity} ${p.unit_of_measure || 'pcs'}`}
+                            size="xs"
+                          />
+                          <span className="text-[10px] font-mono font-bold text-amber-700 pl-0.5">
+                            Min: {minLevel} • Deficit
                           </span>
                         </div>
                       ) : (
-                        <div className="flex flex-col items-start">
-                          <span className="inline-flex items-center gap-1.5 font-bold text-emerald-700 text-xs">
-                            <CheckCircle2 size={13} className="text-emerald-500 shrink-0" />
-                            {p.stock_quantity} {p.unit_of_measure || 'pcs'}
-                          </span>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            Min Level: {minLevel}
+                        <div className="flex flex-col items-start gap-0.5">
+                          <StatusBadge
+                            status="healthy"
+                            variant="healthy"
+                            label={`${p.stock_quantity} ${p.unit_of_measure || 'pcs'}`}
+                            size="xs"
+                          />
+                          <span className="text-[10px] font-mono text-slate-400 pl-0.5">
+                            Min: {minLevel}
                           </span>
                         </div>
                       )}
