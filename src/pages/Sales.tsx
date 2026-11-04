@@ -254,12 +254,7 @@ export default function Sales() {
 
       // Fetch full sale details for print invoice modal and session tracking
       let completedSaleObj: any = null;
-      try {
-        const fullSale = await fetchApi(`/sales/${res.saleId}`);
-        completedSaleObj = fullSale;
-        setInvoiceSaleData(fullSale);
-      } catch (e) {
-        // Fallback invoice payload
+      if (res.offline || String(res.saleId).startsWith('OFFLINE-')) {
         completedSaleObj = {
           saleId: res.saleId,
           id: res.saleId,
@@ -270,11 +265,35 @@ export default function Sales() {
           customer_name: customers.find(c => c.id.toString() === selectedCustomer)?.name || null,
           customer_id: selectedCustomer ? parseInt(selectedCustomer, 10) : null,
           payment_method: paymentMethod,
-          user_name: user?.name || 'Cashier',
+          user_name: user?.name || 'Cashier (Offline)',
           user_id: user?.id,
-          status: 'completed'
+          status: 'completed',
+          offline: true
         };
         setInvoiceSaleData(completedSaleObj);
+      } else {
+        try {
+          const fullSale = await fetchApi(`/sales/${res.saleId}`);
+          completedSaleObj = fullSale;
+          setInvoiceSaleData(fullSale);
+        } catch (e) {
+          // Fallback invoice payload
+          completedSaleObj = {
+            saleId: res.saleId,
+            id: res.saleId,
+            items: [...cart],
+            total: totalCart,
+            total_amount: totalCart,
+            created_at: new Date().toISOString(),
+            customer_name: customers.find(c => c.id.toString() === selectedCustomer)?.name || null,
+            customer_id: selectedCustomer ? parseInt(selectedCustomer, 10) : null,
+            payment_method: paymentMethod,
+            user_name: user?.name || 'Cashier',
+            user_id: user?.id,
+            status: 'completed'
+          };
+          setInvoiceSaleData(completedSaleObj);
+        }
       }
 
       if (completedSaleObj) {
@@ -297,8 +316,28 @@ export default function Sales() {
       setSelectedCustomer('');
       setPaymentMethod('Cash');
       setPosSearchQuery('');
-      loadData();
-      addToast('Sale transaction completed successfully', 'success');
+
+      if (res.offline || String(res.saleId).startsWith('OFFLINE-')) {
+        addToast({
+          title: 'Offline Sale Recorded',
+          message: `Ticket #${res.saleId} saved in local register queue. Will automatically synchronize upon reconnection.`,
+          type: 'info'
+        });
+        // Immediately decrement local product stock in products state so cashier can continue ringing up items
+        setProducts(prev => {
+          const cartMap = new Map<number, number>(cart.map(c => [c.product_id, Number(c.quantity) || 0]));
+          return prev.map(p => {
+            const qty = cartMap.get(p.id);
+            if (qty && qty > 0) {
+              return { ...p, stock_quantity: Math.max(0, (p.stock_quantity || 0) - qty) };
+            }
+            return p;
+          });
+        });
+      } else {
+        loadData();
+        addToast('Sale transaction completed successfully', 'success');
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to complete sale', 'error');
     }

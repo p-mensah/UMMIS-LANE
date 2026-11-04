@@ -4,7 +4,9 @@ import {
   saveCategoriesToCache, getCachedCategories,
   saveCustomersToCache, getCachedCustomers,
   saveSettingsToCache, getCachedSettings,
-  queueOfflineSale
+  queueOfflineSale,
+  queueOfflineAdjustment,
+  getOfflineAdjustmentsQueue
 } from './offlineStore';
 
 export class ApiError extends Error {
@@ -249,6 +251,9 @@ export const fetchApi = async <T = any>(
           if (cached) {
             return cached as unknown as T;
           }
+        } else if (cleanEndpoint.startsWith('/inventory/adjustments')) {
+          const offlineAdjs = await getOfflineAdjustmentsQueue();
+          return offlineAdjs as unknown as T;
         }
       }
 
@@ -267,6 +272,23 @@ export const fetchApi = async <T = any>(
           offline: true,
           total: queued.total_amount,
           message: 'Saved to local offline register. Sale will auto-synchronize when connection returns.'
+        } as unknown as T;
+      }
+
+      // Offline inventory adjustment interception: Safely queue adjustment locally
+      if (method === 'POST' && (cleanEndpoint.startsWith('/inventory/adjust') || cleanEndpoint === '/inventory/adjust')) {
+        let bodyData: any = {};
+        try {
+          bodyData = typeof options.body === 'string' ? JSON.parse(options.body) : (options.body || {});
+        } catch (e) {}
+
+        const queued = await queueOfflineAdjustment(bodyData);
+        console.info('[OfflineDB] Connection unavailable. Stock adjustment queued in IndexedDB:', queued.id);
+        return {
+          success: true,
+          offline: true,
+          offlineId: queued.id,
+          message: 'Stock adjustment saved offline. It will auto-synchronize when connection returns.'
         } as unknown as T;
       }
 

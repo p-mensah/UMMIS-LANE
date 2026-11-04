@@ -11,6 +11,7 @@ import ProductFormModal from '../components/ProductFormModal';
 import RowActionMenu from '../components/common/RowActionMenu';
 import Pagination from '../components/common/Pagination';
 import StatusBadge from '../components/common/StatusBadge';
+import OfflineSyncBanner from '../components/common/OfflineSyncBanner';
 
 interface Product {
   id: number;
@@ -354,17 +355,35 @@ export default function Products() {
     }
     
     try {
-      await fetchApi('/inventory/adjust', {
+      const res = await fetchApi('/inventory/adjust', {
         method: 'POST',
         body: JSON.stringify({
           product_id: adjustingProduct.id,
+          product_name: adjustingProduct.name,
+          sku: adjustingProduct.sku,
           quantity_change: adjustData.quantity_change,
-          reason: adjustData.reason
+          reason: adjustData.reason,
+          user_id: user?.id,
+          user_name: user?.name || 'Staff'
         })
       });
       setShowAdjustModal(false);
-      loadProducts();
-      addToast('Stock level adjusted successfully', 'success');
+
+      if (res && res.offline) {
+        // Immediately update local product stock in state so catalog reflects adjustment right away
+        setProducts(prev => prev.map(p => p.id === adjustingProduct.id ? {
+          ...p,
+          stock_quantity: Math.max(0, (p.stock_quantity || 0) + adjustData.quantity_change)
+        } : p));
+        addToast({
+          title: 'Stock Adjustment Saved Offline',
+          message: `Recorded ${adjustData.quantity_change > 0 ? '+' : ''}${adjustData.quantity_change} units for ${adjustingProduct.name}. Will auto-sync when connection is restored.`,
+          type: 'info'
+        });
+      } else {
+        loadProducts();
+        addToast('Stock level adjusted successfully', 'success');
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to adjust stock', 'error');
     }
@@ -716,6 +735,9 @@ export default function Products() {
           </div>
         )}
       </div>
+
+      {/* Offline Sync Status Banner */}
+      <OfflineSyncBanner />
 
       {/* ROBUST REAL-TIME SEARCH & FILTER TOOLBAR */}
       <div className="bg-white border border-slate-200 rounded-xl p-3.5 sm:p-4 shadow-2xs space-y-3">

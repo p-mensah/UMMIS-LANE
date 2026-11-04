@@ -4,7 +4,8 @@ import { fetchApi } from '../lib/api';
 import { useAuth } from '../context/AuthContext';
 import { useNotifications } from '../context/NotificationContext';
 import RowActionMenu from '../components/common/RowActionMenu';
-import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert, Package, Eye, Copy } from 'lucide-react';
+import OfflineSyncBanner from '../components/common/OfflineSyncBanner';
+import { Plus, ArrowUpRight, ArrowDownRight, Search, RotateCcw, Filter, CheckCircle2, AlertTriangle, FileText, Lock, ShieldAlert, Package, Eye, Copy, CloudOff } from 'lucide-react';
 
 export default function Adjustments() {
   const { user } = useAuth();
@@ -75,27 +76,59 @@ export default function Adjustments() {
 
     setIsSubmitting(true);
     try {
-      await fetchApi('/inventory/adjust', {
+      const res = await fetchApi('/inventory/adjust', {
         method: 'POST',
         body: JSON.stringify({
           product_id: parseInt(selectedProductId, 10),
+          product_name: prod.name,
+          sku: prod.sku,
           quantity_change: qtyChange,
-          reason: `${reason}${notes ? ` - ${notes}` : ''}`
+          reason: `${reason}${notes ? ` - ${notes}` : ''}`,
+          user_id: user?.id,
+          user_name: user?.name || 'Staff'
         })
       });
 
-      const successMsg = `Successfully adjusted stock for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units)`;
-      setFeedback({ 
-        type: 'success', 
-        message: successMsg
-      });
-      addToast(successMsg, 'success');
+      if (res && res.offline) {
+        const offlineMsg = `Offline Mode: Stock adjustment for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units) saved locally. It will auto-sync upon reconnection.`;
+        setFeedback({ 
+          type: 'success', 
+          message: offlineMsg
+        });
+        addToast({
+          title: 'Stock Adjustment Saved Offline',
+          message: `Recorded ${qtyChange > 0 ? '+' : ''}${qtyChange} units for ${prod.name}. Will synchronize automatically when connected.`,
+          type: 'info'
+        });
+
+        // Immediately update local product stock in state so UI reflects the change right away
+        setProducts(prev => prev.map(p => p.id === prod.id ? { ...p, stock_quantity: Math.max(0, (p.stock_quantity || 0) + qtyChange) } : p));
+        // Add pending adjustment to table list with offline tag
+        const newOfflineAdj = {
+          id: res.offlineId || `OFFLINE-ADJ-${Date.now()}`,
+          product_id: prod.id,
+          product_name: prod.name,
+          user_name: user?.name || 'Staff (Offline)',
+          quantity_change: qtyChange,
+          reason: `${reason}${notes ? ` - ${notes}` : ''} [Offline Queue]`,
+          created_at: new Date().toISOString(),
+          offline: true
+        };
+        setAdjustments(prev => [newOfflineAdj, ...prev]);
+      } else {
+        const successMsg = `Successfully adjusted stock for ${prod.name} (${qtyChange > 0 ? '+' : ''}${qtyChange} units)`;
+        setFeedback({ 
+          type: 'success', 
+          message: successMsg
+        });
+        addToast(successMsg, 'success');
+        loadData();
+      }
 
       setShowModal(false);
       setSelectedProductId('');
       setQuantity(1);
       setNotes('');
-      loadData();
     } catch (err: any) {
       addToast(err.message || 'Failed to submit stock adjustment', 'error');
     } finally {
@@ -150,6 +183,9 @@ export default function Adjustments() {
           )}
         </div>
       </div>
+
+      {/* Offline Sync Banner */}
+      <OfflineSyncBanner />
 
       {/* Staff Restricted Notice if not allowed */}
       {!canAdjustStock && user?.role !== 'admin' && (

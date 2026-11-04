@@ -1,13 +1,16 @@
 import { useState, useEffect, useCallback } from 'react';
-import { getOfflineMetrics, getOfflineSalesQueue } from '../lib/offlineStore';
+import { getOfflineMetrics, syncAllOfflineData } from '../lib/offlineStore';
 
 export interface NetworkStatus {
   isOnline: boolean;
   isServiceWorkerReady: boolean;
   pendingSalesCount: number;
+  pendingAdjustmentsCount: number;
+  totalPendingCount: number;
   cachedProductsCount: number;
   lastChecked: Date;
   checkConnection: () => Promise<boolean>;
+  triggerSync: () => Promise<any>;
 }
 
 export function useNetworkStatus(): NetworkStatus {
@@ -16,6 +19,8 @@ export function useNetworkStatus(): NetworkStatus {
   });
   const [isServiceWorkerReady, setIsServiceWorkerReady] = useState<boolean>(false);
   const [pendingSalesCount, setPendingSalesCount] = useState<number>(0);
+  const [pendingAdjustmentsCount, setPendingAdjustmentsCount] = useState<number>(0);
+  const [totalPendingCount, setTotalPendingCount] = useState<number>(0);
   const [cachedProductsCount, setCachedProductsCount] = useState<number>(0);
   const [lastChecked, setLastChecked] = useState<Date>(new Date());
 
@@ -23,6 +28,8 @@ export function useNetworkStatus(): NetworkStatus {
     try {
       const metrics = await getOfflineMetrics();
       setPendingSalesCount(metrics.pendingSalesCount);
+      setPendingAdjustmentsCount(metrics.pendingAdjustmentsCount);
+      setTotalPendingCount(metrics.totalPendingCount);
       setCachedProductsCount(metrics.cachedProductsCount);
     } catch {
       // Non-fatal if IndexedDB is warming up
@@ -50,7 +57,7 @@ export function useNetworkStatus(): NetworkStatus {
         cache: 'no-store',
         signal: controller.signal,
       }).catch(async () => {
-        // Fallback ping to root favicon or manifest
+        // Fallback ping to root manifest
         return await fetch(`/manifest.json?t=${Date.now()}`, {
           method: 'HEAD',
           cache: 'no-store',
@@ -70,6 +77,12 @@ export function useNetworkStatus(): NetworkStatus {
     }
   }, [refreshMetrics]);
 
+  const triggerSync = useCallback(async () => {
+    const result = await syncAllOfflineData();
+    await refreshMetrics();
+    return result;
+  }, [refreshMetrics]);
+
   useEffect(() => {
     refreshMetrics();
 
@@ -77,6 +90,10 @@ export function useNetworkStatus(): NetworkStatus {
       setIsOnline(true);
       refreshMetrics();
       window.dispatchEvent(new CustomEvent('app-connectivity-changed', { detail: { online: true } }));
+      // Automatically trigger sync upon network reconnection
+      setTimeout(() => {
+        triggerSync().catch(() => {});
+      }, 1000);
     };
 
     const handleOffline = () => {
@@ -89,11 +106,24 @@ export function useNetworkStatus(): NetworkStatus {
       refreshMetrics();
     };
 
+    const handleSWMessage = (event: MessageEvent) => {
+      if (event.data && (event.data.type === 'OFFLINE_QUEUE_UPDATED' || event.data.type === 'OFFLINE_SYNC_COMPLETED')) {
+        refreshMetrics();
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('offline-sales-queue-updated', handleQueueUpdate);
+    window.addEventListener('offline-adjustments-queue-updated', handleQueueUpdate);
+    window.addEventListener('offline-sync-queue-updated', handleQueueUpdate);
+    window.addEventListener('offline-sync-completed', handleQueueUpdate);
 
-    // Periodic lightweight check every 30 seconds
+    if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('message', handleSWMessage);
+    }
+
+    // Periodic check every 30 seconds
     const interval = setInterval(() => {
       if (!document.hidden) {
         refreshMetrics();
@@ -104,16 +134,25 @@ export function useNetworkStatus(): NetworkStatus {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('offline-sales-queue-updated', handleQueueUpdate);
+      window.removeEventListener('offline-adjustments-queue-updated', handleQueueUpdate);
+      window.removeEventListener('offline-sync-queue-updated', handleQueueUpdate);
+      window.removeEventListener('offline-sync-completed', handleQueueUpdate);
+      if (typeof navigator !== 'undefined' && 'serviceWorker' in navigator) {
+        navigator.serviceWorker.removeEventListener('message', handleSWMessage);
+      }
       clearInterval(interval);
     };
-  }, [refreshMetrics]);
+  }, [refreshMetrics, triggerSync]);
 
   return {
     isOnline,
     isServiceWorkerReady,
     pendingSalesCount,
+    pendingAdjustmentsCount,
+    totalPendingCount,
     cachedProductsCount,
     lastChecked,
     checkConnection,
+    triggerSync,
   };
 }

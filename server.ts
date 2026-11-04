@@ -2495,13 +2495,19 @@ app.post('/api/inventory/adjust', authenticate, (req: any, res) => {
 
   const dbTx = db.transaction(() => {
     db.prepare('UPDATE products SET stock_quantity = stock_quantity + ? WHERE id = ?').run(quantity_change, product_id);
-    db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
-      product_id, req.user.id, reason, quantity_change
-    );
+    if (req.body.created_at) {
+      db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change, created_at) VALUES (?, ?, ?, ?, ?)').run(
+        product_id, req.user.id, reason, quantity_change, req.body.created_at
+      );
+    } else {
+      db.prepare('INSERT INTO stock_adjustments (product_id, user_id, reason, quantity_change) VALUES (?, ?, ?, ?)').run(
+        product_id, req.user.id, reason, quantity_change
+      );
+    }
   });
   try {
     dbTx();
-    res.json({ success: true });
+    res.json({ success: true, offline_id: req.body.offline_id });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }
@@ -2573,9 +2579,13 @@ app.post('/api/sales', authenticate, (req: any, res) => {
       finalShiftId = activeShift ? activeShift.id : null;
     }
 
-    const saleResult = db.prepare('INSERT INTO sales (user_id, total_amount, customer_id, shift_id, payment_method) VALUES (?, ?, ?, ?, ?)').run(
-      req.user.id, total_amount, customer_id || null, finalShiftId, payment_method || 'Cash'
-    );
+    const saleResult = req.body.created_at
+      ? db.prepare('INSERT INTO sales (user_id, total_amount, customer_id, shift_id, payment_method, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(
+          req.user.id, total_amount, customer_id || null, finalShiftId, payment_method || 'Cash', req.body.created_at
+        )
+      : db.prepare('INSERT INTO sales (user_id, total_amount, customer_id, shift_id, payment_method) VALUES (?, ?, ?, ?, ?)').run(
+          req.user.id, total_amount, customer_id || null, finalShiftId, payment_method || 'Cash'
+        );
     const saleId = saleResult.lastInsertRowid;
 
     for (const item of saleItems) {
@@ -2602,18 +2612,24 @@ app.post('/api/sales', authenticate, (req: any, res) => {
     // Trigger real-time sale notification
     createNotification(
       'New Sale Completed',
-      `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'}) by ${(req as any).user.name || 'Cashier'}.`,
+      `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'})${req.body.offline_id ? ' [Synced from Offline Queue]' : ''} by ${(req as any).user.name || 'Cashier'}.`,
       'success',
       '/transactions'
     );
 
     // Audit log
-    logAuditEvent((req as any).user.id, (req as any).user.name, 'Completed POS Sale', 'sales', `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'})`);
+    logAuditEvent(
+      (req as any).user.id, 
+      (req as any).user.name, 
+      req.body.offline_id ? 'Completed POS Sale (Offline Synced)' : 'Completed POS Sale', 
+      'sales', 
+      `Sale #${saleId} completed for GHS ${total_amount.toFixed(2)} (${payment_method || 'Cash'})${req.body.offline_id ? ` (Offline Ref: ${req.body.offline_id})` : ''}`
+    );
 
     // Check low stock levels
     checkStockAlerts();
 
-    res.json({ success: true, saleId });
+    res.json({ success: true, saleId, offline_id: req.body.offline_id });
   } catch (err: any) {
     res.status(400).json({ error: err.message });
   }

@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Wifi, WifiOff, RefreshCw, CheckCircle2, Database, ShieldCheck, Cloud, HardDrive, Info, X } from 'lucide-react';
-import { getOfflineSalesQueue, removeSyncedSale, getOfflineMetrics } from '../../lib/offlineStore';
+import { Wifi, WifiOff, RefreshCw, CheckCircle2, Database, ShieldCheck, Cloud, HardDrive, SlidersHorizontal, X } from 'lucide-react';
+import { getOfflineMetrics, syncAllOfflineData } from '../../lib/offlineStore';
 
 export default function NetworkStatusIndicator() {
   const [isOnline, setIsOnline] = useState<boolean>(
     typeof navigator !== 'undefined' ? navigator.onLine : true
   );
   const [swActive, setSwActive] = useState<boolean>(false);
-  const [pendingQueueCount, setPendingQueueCount] = useState<number>(0);
+  const [pendingSalesCount, setPendingSalesCount] = useState<number>(0);
+  const [pendingAdjustmentsCount, setPendingAdjustmentsCount] = useState<number>(0);
+  const [totalPendingCount, setTotalPendingCount] = useState<number>(0);
   const [cachedProductsCount, setCachedProductsCount] = useState<number>(0);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
   const [showPopover, setShowPopover] = useState<boolean>(false);
@@ -22,7 +24,9 @@ export default function NetworkStatusIndicator() {
     }
     try {
       const metrics = await getOfflineMetrics();
-      setPendingQueueCount(metrics.pendingSalesCount);
+      setPendingSalesCount(metrics.pendingSalesCount);
+      setPendingAdjustmentsCount(metrics.pendingAdjustmentsCount);
+      setTotalPendingCount(metrics.totalPendingCount);
       setCachedProductsCount(metrics.cachedProductsCount);
     } catch {
       // ignore
@@ -35,6 +39,10 @@ export default function NetworkStatusIndicator() {
     const handleOnline = () => {
       setIsOnline(true);
       checkStatus();
+      // Auto-sync upon reconnection
+      setTimeout(() => {
+        handleManualSync();
+      }, 1200);
     };
 
     const handleOffline = () => {
@@ -46,9 +54,21 @@ export default function NetworkStatusIndicator() {
       checkStatus();
     };
 
+    const handleSyncCompleted = (e: any) => {
+      checkStatus();
+      const { salesSynced, adjustmentsSynced } = e.detail || {};
+      if (salesSynced || adjustmentsSynced) {
+        setSyncFeedback(`Auto-synced: ${salesSynced || 0} sales, ${adjustmentsSynced || 0} adjustments.`);
+        setTimeout(() => setSyncFeedback(null), 4000);
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('offline-sales-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-adjustments-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-sync-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-sync-completed', handleSyncCompleted);
 
     // Close popover on click outside
     const handleClickOutside = (e: MouseEvent) => {
@@ -62,6 +82,9 @@ export default function NetworkStatusIndicator() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('offline-sales-queue-updated', handleQueueUpdated);
+      window.removeEventListener('offline-adjustments-queue-updated', handleQueueUpdated);
+      window.removeEventListener('offline-sync-queue-updated', handleQueueUpdated);
+      window.removeEventListener('offline-sync-completed', handleSyncCompleted);
       window.removeEventListener('mousedown', handleClickOutside);
     };
   }, []);
@@ -71,38 +94,18 @@ export default function NetworkStatusIndicator() {
     setIsSyncing(true);
     setSyncFeedback(null);
     try {
-      const queue = await getOfflineSalesQueue();
-      if (queue.length === 0) {
-        setSyncFeedback('No pending sales in queue.');
-        setIsSyncing(false);
-        return;
-      }
-
-      let synced = 0;
-      for (const sale of queue) {
-        try {
-          const res = await fetch('/api/sales', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: sale.items,
-              customer_id: sale.customer_id,
-              payment_method: sale.payment_method,
-              shift_id: sale.shift_id,
-              offline_id: sale.id,
-              created_at: sale.created_at
-            })
-          });
-          if (res.ok) {
-            await removeSyncedSale(sale.id!);
-            synced++;
-          }
-        } catch {
-          break;
-        }
-      }
+      const res = await syncAllOfflineData();
       await checkStatus();
-      setSyncFeedback(`Successfully synchronized ${synced} offline ${synced === 1 ? 'sale' : 'sales'}.`);
+      if (res.salesSynced > 0 || res.adjustmentsSynced > 0) {
+        const parts = [];
+        if (res.salesSynced > 0) parts.push(`${res.salesSynced} ${res.salesSynced === 1 ? 'sale' : 'sales'}`);
+        if (res.adjustmentsSynced > 0) parts.push(`${res.adjustmentsSynced} ${res.adjustmentsSynced === 1 ? 'adjustment' : 'adjustments'}`);
+        setSyncFeedback(`Synced ${parts.join(' & ')} to store server!`);
+      } else if (res.errors && res.errors.length > 0) {
+        setSyncFeedback(res.errors[0]);
+      } else {
+        setSyncFeedback('All offline data is up to date.');
+      }
       setTimeout(() => setSyncFeedback(null), 4000);
     } catch (err: any) {
       setSyncFeedback('Sync failed: ' + (err.message || 'Network error'));
@@ -159,11 +162,11 @@ export default function NetworkStatusIndicator() {
           </span>
         )}
 
-        {pendingQueueCount > 0 && (
+        {totalPendingCount > 0 && (
           <span className={`px-1.5 py-0.2 rounded-full font-black text-[10px] ${
             isOnline ? 'bg-emerald-200 text-emerald-900' : 'bg-amber-200 text-amber-950'
           }`}>
-            {pendingQueueCount}
+            {totalPendingCount}
           </span>
         )}
       </button>
@@ -212,7 +215,7 @@ export default function NetworkStatusIndicator() {
                 <div className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Service Worker</div>
                 <div className="font-bold text-slate-900 mt-0.5 flex items-center gap-1.5">
                   <ShieldCheck size={13} className="text-teal-600" />
-                  <span>{swActive ? 'Active & Caching' : 'Registered'}</span>
+                  <span>{swActive ? 'Active & Auto-Sync' : 'Registered'}</span>
                 </div>
               </div>
             </div>
@@ -229,7 +232,7 @@ export default function NetworkStatusIndicator() {
                 </span>
               ) : (
                 <span>
-                  <strong>Cached Data Active:</strong> You are currently working with cached catalog data. Product lookup, barcode scanning, cash tender, and receipt issuance remain 100% operational.
+                  <strong>Cached Data Active:</strong> You are currently working with cached catalog data. Adding sales and inventory adjustments is 100% operational and will auto-sync upon reconnection.
                 </span>
               )}
             </div>
@@ -249,8 +252,18 @@ export default function NetworkStatusIndicator() {
                   <Cloud size={13} className="text-slate-400" />
                   Unsynced Offline Sales
                 </span>
-                <span className={`font-black ${pendingQueueCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
-                  {pendingQueueCount} {pendingQueueCount === 1 ? 'sale' : 'sales'}
+                <span className={`font-black ${pendingSalesCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                  {pendingSalesCount} {pendingSalesCount === 1 ? 'sale' : 'sales'}
+                </span>
+              </div>
+
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-slate-500 font-medium flex items-center gap-1.5">
+                  <SlidersHorizontal size={13} className="text-slate-400" />
+                  Unsynced Stock Adjustments
+                </span>
+                <span className={`font-black ${pendingAdjustmentsCount > 0 ? 'text-amber-700' : 'text-slate-800'}`}>
+                  {pendingAdjustmentsCount} {pendingAdjustmentsCount === 1 ? 'adjustment' : 'adjustments'}
                 </span>
               </div>
             </div>
@@ -264,7 +277,7 @@ export default function NetworkStatusIndicator() {
 
             {/* Action Buttons */}
             <div className="pt-1 flex items-center justify-between gap-2">
-              {pendingQueueCount > 0 && isOnline && (
+              {totalPendingCount > 0 && isOnline && (
                 <button
                   type="button"
                   onClick={handleManualSync}
@@ -272,7 +285,7 @@ export default function NetworkStatusIndicator() {
                   className="w-full py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-xl font-bold text-xs flex items-center justify-center gap-1.5 transition cursor-pointer disabled:opacity-50"
                 >
                   <RefreshCw size={13} className={isSyncing ? 'animate-spin' : ''} />
-                  <span>{isSyncing ? 'Synchronizing...' : `Sync ${pendingQueueCount} Sales Now`}</span>
+                  <span>{isSyncing ? 'Synchronizing...' : `Sync All (${totalPendingCount}) Now`}</span>
                 </button>
               )}
 
@@ -292,9 +305,9 @@ export default function NetworkStatusIndicator() {
                 </button>
               )}
 
-              {isOnline && pendingQueueCount === 0 && (
+              {isOnline && totalPendingCount === 0 && (
                 <div className="w-full text-center text-[10px] text-slate-400 font-medium py-1">
-                  All transactions are synchronized.
+                  All transactions and adjustments are synchronized.
                 </div>
               )}
             </div>

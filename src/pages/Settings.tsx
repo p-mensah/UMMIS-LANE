@@ -14,7 +14,8 @@ import {
   saveCategoriesToCache, 
   saveCustomersToCache, 
   getOfflineSalesQueue, 
-  removeSyncedSale 
+  removeSyncedSale,
+  syncAllOfflineData
 } from '../lib/offlineStore';
 
 export default function Settings() {
@@ -70,7 +71,9 @@ export default function Settings() {
   const [offlineMetrics, setOfflineMetrics] = useState({
     cachedProductsCount: 0,
     cachedCustomersCount: 0,
-    pendingSalesCount: 0
+    pendingSalesCount: 0,
+    pendingAdjustmentsCount: 0,
+    totalPendingCount: 0
   });
   const [isOnlineStatus, setIsOnlineStatus] = useState(typeof navigator !== 'undefined' ? navigator.onLine : true);
   const [primingCache, setPrimingCache] = useState(false);
@@ -110,32 +113,18 @@ export default function Settings() {
   const handleSyncOfflineSales = async () => {
     setSyncingOfflineSales(true);
     try {
-      const queue = await getOfflineSalesQueue();
-      let count = 0;
-      for (const sale of queue) {
-        try {
-          const res = await fetch('/api/sales', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              items: sale.items,
-              customer_id: sale.customer_id,
-              payment_method: sale.payment_method,
-              shift_id: sale.shift_id,
-              offline_id: sale.id,
-              created_at: sale.created_at
-            })
-          });
-          if (res.ok) {
-            await removeSyncedSale(sale.id!);
-            count++;
-          }
-        } catch {
-          break;
-        }
-      }
+      const res = await syncAllOfflineData();
       await refreshOfflineMetrics();
-      setOfflineSyncMessage(`Synced ${count} offline transactions to store database.`);
+      if (res.salesSynced > 0 || res.adjustmentsSynced > 0) {
+        const parts = [];
+        if (res.salesSynced > 0) parts.push(`${res.salesSynced} sales`);
+        if (res.adjustmentsSynced > 0) parts.push(`${res.adjustmentsSynced} adjustments`);
+        setOfflineSyncMessage(`Synced ${parts.join(' and ')} to store database.`);
+      } else if (res.errors && res.errors.length > 0) {
+        setOfflineSyncMessage(`Sync notice: ${res.errors[0]}`);
+      } else {
+        setOfflineSyncMessage('All transactions are already synchronized.');
+      }
       setTimeout(() => setOfflineSyncMessage(null), 4000);
     } catch (err: any) {
       setOfflineSyncMessage('Sync error: ' + (err.message || 'Network error'));
@@ -152,6 +141,9 @@ export default function Settings() {
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('offline-sales-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-adjustments-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-sync-queue-updated', handleQueueUpdated);
+    window.addEventListener('offline-sync-completed', handleQueueUpdated);
 
     fetchApi('/settings')
       .then(data => {
@@ -954,7 +946,7 @@ export default function Settings() {
 
           <div className="p-6 space-y-6">
             {/* Metric Counters Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <div className="flex items-center justify-between">
                   <span className="text-[11px] font-bold text-slate-500 uppercase">Cached Products</span>
@@ -983,7 +975,7 @@ export default function Settings() {
                   : 'bg-slate-50 border-slate-200 text-slate-900'
               }`}>
                 <div className="flex items-center justify-between">
-                  <span className="text-[11px] font-bold uppercase text-slate-500">Unsynced Sales Queue</span>
+                  <span className="text-[11px] font-bold uppercase text-slate-500">Unsynced Sales</span>
                   <Cloud size={15} className={offlineMetrics.pendingSalesCount > 0 ? 'text-amber-600' : 'text-slate-400'} />
                 </div>
                 <div className="text-xl font-black mt-1">
@@ -991,12 +983,27 @@ export default function Settings() {
                 </div>
                 <p className="text-[10px] text-slate-400 mt-1">Transactions captured offline waiting for server sync</p>
               </div>
+
+              <div className={`p-4 rounded-xl border ${
+                offlineMetrics.pendingAdjustmentsCount > 0 
+                  ? 'bg-amber-50/70 border-amber-300 text-amber-950' 
+                  : 'bg-slate-50 border-slate-200 text-slate-900'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase text-slate-500">Unsynced Adjustments</span>
+                  <SlidersHorizontal size={15} className={offlineMetrics.pendingAdjustmentsCount > 0 ? 'text-amber-600' : 'text-slate-400'} />
+                </div>
+                <div className="text-xl font-black mt-1">
+                  {offlineMetrics.pendingAdjustmentsCount} <span className="text-xs font-normal text-slate-500">Items</span>
+                </div>
+                <p className="text-[10px] text-slate-400 mt-1">Inventory stock counts adjusted offline waiting for sync</p>
+              </div>
             </div>
 
             <div className="text-[11px] text-slate-600 leading-relaxed bg-teal-50/40 p-3.5 rounded-xl border border-teal-100 flex items-start gap-2.5">
               <Layers size={16} className="text-teal-600 shrink-0 mt-0.5" />
               <div>
-                <strong>Intermittent Network Tolerance:</strong> When network or Wi-Fi connectivity experiences outages, the POS terminal switches seamlessly to IndexedDB local storage. Cashiers can continue barcode scanning, creating sales, and issuing printed thermal receipts without interruption.
+                <strong>Intermittent Network Tolerance:</strong> When network or Wi-Fi connectivity experiences outages, the system switches seamlessly to IndexedDB local storage. Cashiers and inventory managers can continue barcode scanning, completing sales, and recording stock adjustments without interruption.
               </div>
             </div>
 
@@ -1014,22 +1021,22 @@ export default function Settings() {
                   <span>{primingCache ? 'Priming Local Cache...' : 'Refresh Offline Cache'}</span>
                 </button>
 
-                {offlineMetrics.pendingSalesCount > 0 && (
+                {(offlineMetrics.pendingSalesCount > 0 || offlineMetrics.pendingAdjustmentsCount > 0) && (
                   <button
                     type="button"
                     onClick={handleSyncOfflineSales}
                     disabled={syncingOfflineSales || !isOnlineStatus}
                     className="px-3.5 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-bold transition flex items-center gap-2 shadow-2xs cursor-pointer active:scale-95 disabled:opacity-50"
-                    title="Upload queued offline sales to the central server"
+                    title="Upload queued offline sales and adjustments to the central server"
                   >
                     {syncingOfflineSales ? <RefreshCw size={14} className="animate-spin" /> : <Cloud size={14} />}
-                    <span>{syncingOfflineSales ? 'Syncing...' : `Sync ${offlineMetrics.pendingSalesCount} Queued Sales Now`}</span>
+                    <span>{syncingOfflineSales ? 'Syncing...' : `Sync All Queued Data (${(offlineMetrics.pendingSalesCount || 0) + (offlineMetrics.pendingAdjustmentsCount || 0)}) Now`}</span>
                   </button>
                 )}
               </div>
 
               <span className="text-[11px] text-slate-400 font-medium">
-                Storage: <span className="font-mono text-slate-600 font-bold">retailos_offline_db (v1)</span>
+                Storage: <span className="font-mono text-slate-600 font-bold">retailos_offline_db (v2)</span>
               </span>
             </div>
 

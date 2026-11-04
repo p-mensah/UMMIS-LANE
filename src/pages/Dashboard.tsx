@@ -335,18 +335,30 @@ export default function Dashboard() {
     }
     setIsSubmittingRestock(true);
     try {
-      await fetchApi('/inventory/adjust', {
+      const res = await fetchApi('/inventory/adjust', {
         method: 'POST',
         body: JSON.stringify({
           product_id: selectedProductForRestock.id,
+          product_name: selectedProductForRestock.name,
+          sku: selectedProductForRestock.sku,
           quantity_change: Number(restockQty),
-          reason: restockReason || 'Restock via Dashboard'
+          reason: restockReason || 'Restock via Dashboard',
+          user_id: user?.id,
+          user_name: user?.name || 'Staff'
         })
       });
       setShowRestockModal(false);
       setSelectedProductForRestock(null);
-      addToast(`Restocked ${restockQty} units of ${selectedProductForRestock.name}`, 'success');
-      loadDashboardData();
+      if (res && res.offline) {
+        addToast({
+          title: 'Stock Adjustment Saved Offline',
+          message: `Restocked ${restockQty} units of ${selectedProductForRestock.name}. Will auto-sync when connection is restored.`,
+          type: 'info'
+        });
+      } else {
+        addToast(`Restocked ${restockQty} units of ${selectedProductForRestock.name}`, 'success');
+        loadDashboardData();
+      }
     } catch (err: any) {
       addToast(err.message || 'Failed to update stock', 'error');
     } finally {
