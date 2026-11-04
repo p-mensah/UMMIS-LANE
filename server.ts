@@ -6051,7 +6051,31 @@ app.get('/api/reports/sales-trends', authenticate, (req, res) => {
   const { timeframe } = req.query; // '30days', '7days', 'weekly', 'monthly', 'yearly'
   
   try {
-    if (timeframe === 'weekly' || timeframe === '7days') {
+    if (timeframe === 'today') {
+      const hours: any[] = [];
+      for (let h = 6; h <= 22; h++) {
+        const hourStr = `${h.toString().padStart(2, '0')}:00`;
+        hours.push({ date: hourStr, label: hourStr, day: hourStr, total: 0, sales_count: 0 });
+      }
+
+      const rows = db.prepare(`
+        SELECT strftime('%H:00', created_at) as hourStr, SUM(total_amount) as total, COUNT(*) as sales_count
+        FROM sales
+        WHERE status = 'completed' AND date(created_at) = date('now')
+        GROUP BY hourStr
+      `).all() as any[];
+
+      const map = new Map(rows.map(r => [r.hourStr, r]));
+      const result = hours.map(hr => {
+        const found = map.get(hr.date);
+        return {
+          ...hr,
+          total: found ? found.total : 0,
+          sales_count: found ? found.sales_count : 0
+        };
+      });
+      return res.json(result);
+    } else if (timeframe === 'weekly' || timeframe === '7days') {
       const days: any[] = [];
       const now = new Date();
       for (let i = 6; i >= 0; i--) {

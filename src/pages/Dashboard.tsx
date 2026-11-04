@@ -27,7 +27,7 @@ import ProductImportModal from '../components/ProductImportModal';
 import RowActionMenu from '../components/common/RowActionMenu';
 import StatusBadge from '../components/common/StatusBadge';
 import MiniPerformanceOverviewWidget from '../components/dashboard/MiniPerformanceOverviewWidget';
-import WeeklySalesTrendChart from '../components/dashboard/WeeklySalesTrendChart';
+import DailyRevenueChart from '../components/dashboard/DailyRevenueChart';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -725,8 +725,8 @@ export default function Dashboard() {
           {/* MINI-PERFORMANCE OVERVIEW WIDGET (SALES INFLOW VS PROCUREMENT OUTFLOW METRICS) */}
           <MiniPerformanceOverviewWidget />
 
-          {/* WEEKLY SALES TREND (RECHARTS 7-DAY REVENUE VELOCITY LINE CHART) */}
-          <WeeklySalesTrendChart onRefreshParent={loadDashboardData} />
+          {/* DAILY REVENUE & PERFORMANCE VISUALIZATION (RECHARTS DAILY REVENUE MONITORING) */}
+          <DailyRevenueChart onRefreshParent={loadDashboardData} />
 
           {/* TOP SELLING PRODUCTS LEADERBOARD */}
           <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
